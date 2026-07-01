@@ -228,12 +228,14 @@ Delete `structure_helpers.go` when empty (`git rm`).
 
 ---
 
-### Task 9: Split `internal/server/endpoints/books_audio.go` (867 → 2 files)
+### Task 9: Split `internal/server/endpoints/books_audio.go` (867 → 3 files)
 
-**Files:** Rename/modify `books_audio.go`; create `books_audio_status.go`.
+**Files:** Rename/modify `books_audio.go`; create `books_audio_status.go`, `books_audio_download.go`.
 
-- [ ] **Step 1:** `git mv internal/server/endpoints/books_audio.go internal/server/endpoints/books_audio_generate.go`. Move `GetAudioStatusEndpoint` (type, Route, RequiresInit, handler, Command) and `AudioStatusResponse` + any status-only helpers into new `books_audio_status.go`. `GenerateAudioEndpoint`, `DownloadChapterAudioEndpoint` (if present in this file), request/response types for generation stay in `books_audio_generate.go`.
-- [ ] **Step 2–4:** format/build/vet; `go test ./internal/server/... && make test`; both files < 400; diff shows only these two files.
+The file holds three endpoints: `GenerateAudioEndpoint` (line ~72), `GetAudioStatusEndpoint` (~339), `DownloadChapterAudioEndpoint` (~503). A two-way split would leave generate+download over 400 lines, so split three ways.
+
+- [ ] **Step 1:** `git mv internal/server/endpoints/books_audio.go internal/server/endpoints/books_audio_generate.go`. Then move: `GetAudioStatusEndpoint` (type, Route, RequiresInit, handler, Command) + `AudioStatusResponse` + status-only helpers → `books_audio_status.go`; `DownloadChapterAudioEndpoint` (type, Route, RequiresInit, handler, Command) + any shared audio-record query helpers used only by status/download → `books_audio_download.go`. `GenerateAudioEndpoint` + `GenerateAudioRequest`/`GenerateAudioResponse` stay in `books_audio_generate.go`. A helper used by more than one of the three endpoints goes in the file of its primary consumer; do not duplicate it.
+- [ ] **Step 2–4:** format/build/vet; `go test ./internal/server/... && make test`; all three files < 400; diff shows only these three files.
 - [ ] **Step 5: Commit** — `refactor: split books_audio endpoint file by endpoint (ADR 003)`.
 
 ---
@@ -247,7 +249,7 @@ Delete `structure_helpers.go` when empty (`git rm`).
 - Consumes: `getDetailedStatus(ctx context.Context, client *defra.Client, bookID string, agentLogLimit int) (*DetailedJobStatusResponse, error)` (current signature at `jobs_status_detailed.go:336`)
 - Produces: `TestGetDetailedStatus_ResponseShape` — the gate for Task 11.
 
-- [ ] **Step 1: Write the test.** Follow the `fakeDefra` pattern from `run_summary_test.go`: an `httptest.Server` that routes on the GraphQL request body and returns canned JSON for every query `getDetailedStatus` issues (Book, Job, Page, TocEntry, Chapter, AgentLog — grep the function for `client.Execute`/query strings and stub each; include a book with OCR partially complete, a linked ToC entry, one chapter, one agent log so every builder path is exercised). Then:
+- [ ] **Step 1: Write the test.** Follow the `fakeDefra` pattern from `run_summary_test.go`: an `httptest.Server` that routes on the GraphQL request body and returns canned JSON for every query `getDetailedStatus` issues (Book, Job, Page, TocEntry, Chapter, **AgentRun** — the agent-log section queries the `AgentRun` collection at `jobs_status_detailed.go:844`; grep the function for `client.Execute`/query strings and stub each; include a book with OCR partially complete, a linked ToC entry, one chapter, one agent run so every builder path is exercised). Then:
 
 ```go
 func TestGetDetailedStatus_ResponseShape(t *testing.T) {
@@ -265,6 +267,9 @@ func TestGetDetailedStatus_ResponseShape(t *testing.T) {
 	}
 	golden := filepath.Join("testdata", "detailed_status_book_a.json")
 	if os.Getenv("UPDATE_GOLDEN") == "1" {
+		if err := os.MkdirAll(filepath.Dir(golden), 0o755); err != nil { // testdata/ does not exist yet
+			t.Fatal(err)
+		}
 		if err := os.WriteFile(golden, got, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -335,7 +340,7 @@ func TestGetDetailedStatus_ResponseShape(t *testing.T) {
 
 **Files:**
 - Create: `internal/jobs/tts_generate/strategy.go`, `internal/jobs/tts_generate/persist.go`, `internal/jobs/tts_generate/segmentation.go`
-- Modify: `internal/jobs/tts_generate/tts_generate.go`, `types.go`, `job.go`, `handler.go`
+- Modify: `internal/jobs/tts_generate/tts_generate.go`, `types.go`, `job.go`, `handler.go`, and the two external ElevenLabs call sites that must adopt the new `NewJob` signature in this same task: `internal/jobcfg/builder.go:234` and `internal/server/endpoints/books_audio_generate.go` (the `tts_generate.NewJob(ctx, ttsCfg, bookID)` call, formerly `books_audio.go:264`) — both become `tts_generate.NewJob(ctx, tts_generate.JobTypeElevenLabs, ..., bookID)`. The `tts_generate_openai` call sites are untouched until Task 17.
 - Test: `internal/jobs/tts_generate/strategy_test.go` (create)
 
 **Interfaces:**
@@ -423,7 +428,7 @@ Run: `go test ./internal/jobs/tts_generate/ -run 'TestStrategy|TestJobReports|Te
   - Add the constants, interface, `strategyForJobType` (returning `elevenLabsStrategy` for `JobTypeElevenLabs`; `JobTypeOpenAI` returns a placeholder error until Task 16 — the test's OpenAI cases are added in Task 16; keep Task 15's tests ElevenLabs-only plus the identity-table entry gated accordingly, or implement a minimal `openAIStrategy` stub that fully satisfies identity methods, which is simpler and keeps the test table intact).
   - `elevenLabsStrategy` implements the interface by MOVING existing logic: `splitIntoParagraphs` → `segmentation.go`; the Start() queueing loop → `InitialWorkUnits`; the segment-completion block of `OnComplete` (request-ID storage, `getPreviousRequestIDs`, `clearRequestIDSequence`, `shouldDisableRequestStitching`, next-segment queueing) → `OnSegmentComplete`.
   - Move the shared DB operations (`ensureBookAudioRecord`, `saveAudioSegment`, `saveChapterAudio`, `updateBookAudioComplete`, `updateBookAudioFailed`, `markBookAudioFailed`, `ConcatenateChapterAudio`, `formatToExtension`) into `persist.go` unchanged.
-  - Thread `jobType` through `NewJob`/`NewJobFromState`; update in-package callers and existing tests to pass `JobTypeElevenLabs`.
+  - Thread `jobType` through `NewJob`/`NewJobFromState`; update in-package callers and existing tests to pass `JobTypeElevenLabs`, AND update the two external ElevenLabs call sites listed in **Files** (`jobcfg/builder.go`, `books_audio_generate.go`) — otherwise `go build ./...` in Step 3 fails.
 - [ ] **Step 3:** `go test ./internal/jobs/tts_generate/ -v` → all PASS (old + new). `go build ./... && make test` → green (the openai package still builds untouched).
 - [ ] **Step 4: Commit** — `refactor: introduce TTS provider strategy inside tts_generate`.
 
@@ -479,36 +484,53 @@ Run → FAIL.
 
 **Interfaces:**
 - Consumes: `strategyForJobType`, `NewJob(ctx, jobType, cfg, bookID)`.
-- Produces: `jobcfg.TTSJobFactory` → `tts_generate.NewJob(ctx, tts_generate.JobTypeElevenLabs, ...)`; `jobcfg.OpenAITTSJobFactory` → `tts_generate.NewJob(ctx, tts_generate.JobTypeOpenAI, ...)`. Both scheduler registrations in `server.go` keep their exact type strings.
+- Produces: `resolvePairing(jobType string, cfgProvider string) (providerStrategy, string, error)` — pure function, no context/DB: resolves the strategy from the job type, returns the pinned provider when `cfgProvider` is empty, and errors when `cfgProvider` conflicts with the pinning. `NewJob` calls it before touching any service. Also: `jobcfg.TTSJobFactory` → `tts_generate.NewJob(ctx, tts_generate.JobTypeElevenLabs, ...)`; `jobcfg.OpenAITTSJobFactory` → `tts_generate.NewJob(ctx, tts_generate.JobTypeOpenAI, ...)`. Both scheduler registrations in `server.go` keep their exact type strings.
 
-- [ ] **Step 1: Write failing pairing tests:**
+- [ ] **Step 1: Write failing pairing tests.** `resolvePairing` is a pure function, so the pairing rules are tested directly without service context; the resume cross-check uses the fake-defra httptest pattern because the real `NewJob` path loads the book:
 
 ```go
-func TestNewJobRejectsMismatchedProvider(t *testing.T) {
-	_, err := NewJob(context.Background(), JobTypeElevenLabs,
-		Config{TTSProvider: "openai"}, "book-1")
-	if err == nil {
-		t.Fatal("want pairing error, got nil")
+func TestResolvePairing(t *testing.T) {
+	cases := []struct {
+		jobType, cfgProvider, wantProvider string
+		wantErr                            bool
+	}{
+		{JobTypeElevenLabs, "", "elevenlabs", false},        // empty resolves from job type
+		{JobTypeElevenLabs, "elevenlabs", "elevenlabs", false},
+		{JobTypeElevenLabs, "openai", "", true},             // mismatch rejected
+		{JobTypeOpenAI, "", "openai", false},
+		{JobTypeOpenAI, "openai", "openai", false},
+		{JobTypeOpenAI, "elevenlabs", "", true},
+		{"bogus", "", "", true},
 	}
-}
-
-func TestNewJobDefaultsProviderFromJobType(t *testing.T) {
-	// Empty provider resolves to the strategy's pinned provider, ignoring
-	// defaults.tts_provider entirely.
-	j := newTestJob(t, JobTypeElevenLabs) // constructs with Config{TTSProvider: ""}
-	if got := j.State.TTSProvider; got != "elevenlabs" {
-		t.Errorf("TTSProvider = %q, want elevenlabs", got)
+	for _, c := range cases {
+		s, provider, err := resolvePairing(c.jobType, c.cfgProvider)
+		if c.wantErr {
+			if err == nil {
+				t.Errorf("(%s,%s): want error", c.jobType, c.cfgProvider)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("(%s,%s): %v", c.jobType, c.cfgProvider, err)
+		}
+		if provider != c.wantProvider || s.Provider() != c.wantProvider {
+			t.Errorf("(%s,%s): provider %q / strategy %q, want %q",
+				c.jobType, c.cfgProvider, provider, s.Provider(), c.wantProvider)
+		}
 	}
 }
 
 func TestResumeRejectsMismatchedBookAudioProvider(t *testing.T) {
-	// Seed a BookAudio record with provider "openai", then resume as
-	// tts-generate (elevenlabs). Job must fail with a pairing error, not run.
-	// Use the fake-defra httptest pattern to serve the BookAudio query.
+	// Seed the fake-defra httptest server so loadBookAudio returns a
+	// BookAudio record with provider "openai", then construct via the real
+	// NewJob as JobTypeElevenLabs. NewJob (or the first Start) must fail
+	// with a pairing error mentioning both providers, not run the wrong
+	// orchestration. Follow the fakeDefra body-routing pattern from
+	// endpoints/run_summary_test.go for the canned Book/BookAudio queries.
 }
 ```
 
-- [ ] **Step 2: Implement:** in `NewJob`: resolve strategy from jobType; `cfg.TTSProvider == ""` → `strategy.Provider()`; mismatch → error. In the resume/load path (`loadBookAudio` caller): if persisted `BookAudio.provider` is non-empty and != `strategy.Provider()` → fail the job with a descriptive error. Update `jobcfg.TTSJobFactory` to stop consulting `defaults.tts_provider` for strategy/provider selection (it may still read voice/format/instructions settings); update `OpenAITTSJobFactory` likewise with `JobTypeOpenAI`.
+- [ ] **Step 2: Implement:** add `resolvePairing` as specified; `NewJob` calls it first (`cfg.TTSProvider == ""` → pinned provider; mismatch → error) before any service access. In the resume/load path (`loadBookAudio` caller): if persisted `BookAudio.provider` is non-empty and != `strategy.Provider()` → fail the job with a descriptive error naming both. Update `jobcfg.TTSJobFactory` to stop consulting `defaults.tts_provider` for strategy/provider selection (it may still read voice/format/instructions settings); update `OpenAITTSJobFactory` likewise with `JobTypeOpenAI`.
 - [ ] **Step 3: Rewire and delete:** update the four importers (`jobcfg/builder.go`, `server/server.go`, `endpoints/books_audio_generate.go`, `endpoints/tts_config.go`) to use `tts_generate.JobTypeOpenAI` etc.; `git rm -r internal/jobs/tts_generate_openai`.
 - [ ] **Step 4:** `go build ./... && go vet ./... && make test` → green. `grep -rn "tts_generate_openai" --include="*.go" internal/ cmd/` → no hits. All files in `internal/jobs/tts_generate/` < 400 lines.
 - [ ] **Step 5: Commit** — `refactor: merge tts_generate_openai into tts_generate via provider strategies` with a body covering the invariants (both job-type strings registered, type/metrics/task-name reporting, provider-strategy pairing, BookAudio.provider resume check).
