@@ -8,7 +8,7 @@
 
 1. No multi-concept file over 400 lines; a developer can find "everything about X" in one predictably named file.
 2. Eliminate the ~60% duplication between the two TTS job packages while keeping both persisted job-type strings working.
-3. Zero behavior change for everything except the TTS merge; zero import-path changes anywhere.
+3. Zero behavior change for everything except the TTS merge. Zero import-path changes for the split tiers (same-package moves); the TTS merge is the sole exception — it deletes `internal/jobs/tts_generate_openai` and updates its four importers (`internal/jobcfg/builder.go`, `internal/server/server.go`, `internal/server/endpoints/books_audio.go`, `internal/server/endpoints/tts_config.go`). No compatibility facade: all call sites are in-repo and a hollow package would defeat the decluttering goal.
 
 ## Principles
 
@@ -30,6 +30,8 @@
 | `reset.go` (504) | `reset.go` (ResetOperation types, validation, ResetFrom orchestrator + cascade), `reset_ops.go` (resetOp, resetAllOcr), `reset_cleanup.go` (agent-state/ToC-entry/link cleanup) |
 | `page_reader_impl.go` (405) | `page_reader_impl.go` (core accessors + DB load), `page_reader_preload.go` (batch preloading), `page_reader_headings.go` (heading-aware access) |
 
+| `persist.go` (530) | `persist.go` (sink send helpers, op-state, book status, structure/finalize/toc-link async wrappers) + `persist_agent_state.go` (agent-state persist/delete, ~300 lines) |
+
 Left alone in this package: `state_persist_book.go` (669) and `state_persist_chapters.go` (534) are already organized as one persistence concern per section with no better seam; revisit only if they grow.
 
 ### internal/jobs/process_book/job/
@@ -45,7 +47,7 @@ Left alone in this package: `state_persist_book.go` (669) and `state_persist_cha
 ### internal/server/endpoints/
 
 - `books_audio.go` (867) → `books_audio_generate.go` + `books_audio_status.go` (two distinct endpoints).
-- `jobs_status_detailed.go` (891) → keep endpoint + types; extract the ~400-line `getDetailedStatus` into per-stage builders in `jobs_status_detailed_build.go` (`buildMetadataStatus`, `buildOcrProgress`, `buildTocStatus`, `buildStructureStatus`, `loadAgentLogs`). This is the one split that refactors a function body; still no behavior change.
+- `jobs_status_detailed.go` (891) → keep endpoint + types; extract the ~400-line `getDetailedStatus` into per-stage builders in `jobs_status_detailed_build.go` (`buildMetadataStatus`, `buildOcrProgress`, `buildTocStatus`, `buildStructureStatus`, `loadAgentLogs`). This is the one split that refactors a function body, so it is NOT covered by the pure-moves guarantee: it gets its own commit, preceded by a response-shape test (golden JSON against a seeded in-memory store) that must pass unchanged before and after the extraction.
 
 ### internal/agents/toc_entry_finder/tools/
 
@@ -91,8 +93,10 @@ internal/jobs/tts_generate/
 
 **Compatibility invariants:**
 - Both job-type strings `"tts-generate"` and `"tts-generate-openai"` remain registered (they are persisted in DefraDB job records). `jobcfg.TTSJobFactory` and `jobcfg.OpenAITTSJobFactory` both remain, constructing the unified Job with the matching strategy.
+- **The unified Job carries its persisted job-type string and reports it everywhere the packages hard-code it today**: `Type()` (`types.go:347` / `types.go:298`), `MetricsFor().Stage` (`types.go:363` / `types.go:314`), per-segment and concatenate work-unit metrics, and the CPU concat task name (`concatenate_chapter` vs `concatenate_chapter_openai`). A merged job must never report `tts-generate` for an OpenAI job or vice versa — that would corrupt resume routing and cost attribution.
+- **Strategy selection is pinned to the persisted job-type string, not to current config defaults.** Today `TTSJobFactory` reads `defaults.tts_provider` (`jobcfg/builder.go:213`); after the merge, a resumed `tts-generate` job always gets the sequential/stitching strategy and `tts-generate-openai` always gets the parallel/offset strategy, regardless of what `defaults.tts_provider` currently says. Provider *client* lookup may still come from config; orchestration strategy may not.
 - State documents (AudioState et al.) keep their field names; unified struct is the union (`Instructions`, `RequestIDSequence` used only by their provider).
-- Existing tests move with the code; add strategy-level tests asserting: ElevenLabs queues exactly one segment per chapter initially, OpenAI queues all; OpenAI recalculates offsets; ElevenLabs threads request IDs and handles stale-ID fallback.
+- Existing tests move with the code; add strategy-level tests asserting, per strategy: `Type()`, `MetricsFor().Stage`, segment work-unit metrics stage, concat work-unit metrics stage, and CPU task name all match the persisted job type; ElevenLabs queues exactly one segment per chapter initially, OpenAI queues all; OpenAI recalculates offsets; ElevenLabs threads request IDs and handles stale-ID fallback.
 
 ## Execution order & verification
 
