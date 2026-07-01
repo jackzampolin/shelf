@@ -507,6 +507,10 @@ type SyncCompleteJob struct {
 	done    bool
 }
 
+type ZeroWorkNotDoneJob struct {
+	id string
+}
+
 type OnCompleteErrorJob struct {
 	id            string
 	doneCh        chan struct{}
@@ -595,6 +599,22 @@ func (j *SyncCompleteJob) Start(ctx context.Context) ([]WorkUnit, error) {
 	return nil, nil // Zero work units
 }
 
+func (j *ZeroWorkNotDoneJob) ID() string                   { return j.id }
+func (j *ZeroWorkNotDoneJob) SetRecordID(id string)        { j.id = id }
+func (j *ZeroWorkNotDoneJob) Type() string                 { return "zero-work-not-done" }
+func (j *ZeroWorkNotDoneJob) Done() bool                   { return false }
+func (j *ZeroWorkNotDoneJob) MetricsFor() *WorkUnitMetrics { return nil }
+func (j *ZeroWorkNotDoneJob) Status(ctx context.Context) (map[string]string, error) {
+	return map[string]string{"done": "false"}, nil
+}
+func (j *ZeroWorkNotDoneJob) Progress() map[string]ProviderProgress { return nil }
+func (j *ZeroWorkNotDoneJob) OnComplete(ctx context.Context, result WorkResult) ([]WorkUnit, error) {
+	return nil, nil
+}
+func (j *ZeroWorkNotDoneJob) Start(ctx context.Context) ([]WorkUnit, error) {
+	return nil, nil
+}
+
 // TestScheduler_SyncCompleteJob tests jobs that complete synchronously with no work units.
 // This verifies the fix for ingest jobs that never completed.
 func TestScheduler_SyncCompleteJob(t *testing.T) {
@@ -625,4 +645,30 @@ func TestScheduler_SyncCompleteJob(t *testing.T) {
 	if !job.Done() {
 		t.Error("job.Done() = false, want true")
 	}
+}
+
+func TestScheduler_ZeroWorkNotDoneRemovesJob(t *testing.T) {
+	scheduler := NewScheduler(SchedulerConfig{
+		Logger: slog.Default(),
+	})
+
+	job := &ZeroWorkNotDoneJob{}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	go scheduler.Start(ctx)
+
+	if err := scheduler.Submit(ctx, job); err != nil {
+		t.Fatalf("Submit() error = %v", err)
+	}
+
+	for i := 0; i < 100; i++ {
+		if scheduler.ActiveJobs() == 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatalf("ActiveJobs() = %d, want 0 for zero-work non-done job", scheduler.ActiveJobs())
 }

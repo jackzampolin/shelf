@@ -289,12 +289,19 @@ func StoreToProviderRegistryConfig(ctx context.Context, store Store) (providers.
 	ocrProviders := extractProviders(all, "providers.ocr.")
 	for name, fields := range ocrProviders {
 		cfg.OCRProviders[name] = providers.OCRProviderConfig{
-			Type:          getString(fields, "type"),
-			APIKey:        ResolveEnvVars(getString(fields, "api_key")),
-			RateLimit:     getFloat(fields, "rate_limit"),
-			Enabled:       getBool(fields, "enabled"),
-			IncludeImages: getBool(fields, "include_images"),
-			BaseURLs:      resolveEnvVarsSlice(getStringSlice(fields, "base_urls")),
+			Type:                  getString(fields, "type"),
+			APIKey:                ResolveEnvVars(getString(fields, "api_key")),
+			RateLimit:             getFloat(fields, "rate_limit"),
+			Enabled:               getBool(fields, "enabled"),
+			IncludeImages:         getBool(fields, "include_images"),
+			IncludeHeadersFooters: getBool(fields, "include_headers_footers"),
+			MaxOutputTokens:       getInt(fields, "max_output_tokens"),
+			TimeoutSeconds:        getInt(fields, "timeout_seconds"),
+			Temperature:           getFloat(fields, "temperature"),
+			TopP:                  getFloat(fields, "top_p"),
+			BaseURLs:              resolveEnvVarsSlice(getStringSlice(fields, "base_urls")),
+			MaxConcurrency:        getInt(fields, "max_concurrency"),
+			MaxRetries:            getInt(fields, "max_retries"),
 		}
 	}
 
@@ -302,12 +309,13 @@ func StoreToProviderRegistryConfig(ctx context.Context, store Store) (providers.
 	llmProviders := extractProviders(all, "providers.llm.")
 	for name, fields := range llmProviders {
 		cfg.LLMProviders[name] = providers.LLMProviderConfig{
-			Type:      getString(fields, "type"),
-			Model:     getString(fields, "model"),
-			APIKey:    ResolveEnvVars(getString(fields, "api_key")),
-			RateLimit: getFloat(fields, "rate_limit"),
-			Enabled:   getBool(fields, "enabled"),
-			BaseURLs:  resolveEnvVarsSlice(getStringSlice(fields, "base_urls")),
+			Type:           getString(fields, "type"),
+			Model:          getString(fields, "model"),
+			APIKey:         ResolveEnvVars(getString(fields, "api_key")),
+			RateLimit:      getFloat(fields, "rate_limit"),
+			Enabled:        getBool(fields, "enabled"),
+			BaseURLs:       resolveEnvVarsSlice(getStringSlice(fields, "base_urls")),
+			MaxConcurrency: getInt(fields, "max_concurrency"),
 		}
 	}
 
@@ -359,6 +367,18 @@ func getFloat(m map[string]any, key string) float64 {
 		return float64(v)
 	case int64:
 		return float64(v)
+	}
+	return 0
+}
+
+func getInt(m map[string]any, key string) int {
+	switch v := m[key].(type) {
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
 	}
 	return 0
 }

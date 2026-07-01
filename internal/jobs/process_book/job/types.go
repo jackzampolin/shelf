@@ -18,6 +18,7 @@ const (
 	BookStatusIngested   BookStatus = "ingested"
 	BookStatusProcessing BookStatus = "processing"
 	BookStatusComplete   BookStatus = "complete"
+	BookStatusFailed     BookStatus = "failed"
 )
 
 // FrontMatterPageCount is the number of pages considered front matter for ToC search.
@@ -56,6 +57,14 @@ const MaxBookOpRetries = 3
 // MaxPageOpRetries is the maximum number of retries for page-level operations.
 // Set higher (10) to handle transient failures on difficult pages (maps, images).
 const MaxPageOpRetries = 10
+
+// MaxOCRPageRetries is the maximum number of process-book retries for OCR work
+// units after the provider worker has already applied its HTTP retry policy.
+// Self-hosted inference endpoints drop connections and time out under load, so a
+// few job-level retries (each re-reading the image and round-robining to a
+// healthy endpoint) absorb transient failures. A page that still fails after
+// these retries is skipped rather than failing the whole book.
+const MaxOCRPageRetries = 3
 
 // WorkUnitType constants for type-safe work unit handling.
 const (
@@ -103,6 +112,7 @@ type WorkUnitInfo struct {
 	Provider   string // for OCR units
 	RetryCount int    // number of times this work unit has been retried
 	EntryDocID string // for link_toc units - which ToC entry this belongs to
+	RetryHint  string // feedback to include in a fresh link_toc agent prompt after rejection
 
 	// Finalize ToC fields
 	FinalizePhase string // pattern, discover, validate
@@ -111,6 +121,13 @@ type WorkUnitInfo struct {
 	// Structure fields
 	StructurePhase string // classify, polish
 	ChapterID      string // chapter entry ID for polish
+}
+
+func maxRetriesForPageWorkUnit(unitType string) int {
+	if unitType == WorkUnitTypeOCR {
+		return MaxOCRPageRetries
+	}
+	return MaxPageOpRetries
 }
 
 // PDFInfo is an alias for common.PDFInfo for backwards compatibility.

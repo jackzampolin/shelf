@@ -7,6 +7,11 @@ import (
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
+// maxPageOcrToolTextRunes bounds the OCR text returned to the agent. A chapter
+// heading is at the top of a page, so the lead is sufficient for validation and
+// this keeps a single tool result from blowing the model context window.
+const maxPageOcrToolTextRunes = 6000
+
 func getPageOcrTool() providers.Tool {
 	return providers.Tool{
 		Type: "function",
@@ -37,14 +42,21 @@ func (t *ChapterFinderTools) getPageOcr(ctx context.Context, pageNum int) (strin
 		return jsonError(fmt.Sprintf("No OCR data for page %d: %v", pageNum, err)), nil
 	}
 
+	truncated := false
+	if runes := []rune(text); len(runes) > maxPageOcrToolTextRunes {
+		text = string(runes[:maxPageOcrToolTextRunes])
+		truncated = true
+	}
+
 	// Check if in excluded range
 	inExcluded := t.isInExcludedRange(pageNum)
 
 	result := map[string]any{
-		"page_num":          pageNum,
-		"ocr_text":          text,
-		"char_count":        len(text),
-		"in_excluded_range": inExcluded,
+		"page_num":           pageNum,
+		"ocr_text":           text,
+		"char_count":         len([]rune(text)),
+		"ocr_text_truncated": truncated,
+		"in_excluded_range":  inExcluded,
 	}
 
 	if inExcluded {

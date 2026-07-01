@@ -34,6 +34,41 @@ func TestBuildClassifyPromptIncludesContext(t *testing.T) {
 	}
 }
 
+func TestBuildClassifyPromptFlagsReferenceAppendixSignals(t *testing.T) {
+	chapter := &ChapterState{
+		EntryID:   "ch-appendix",
+		Title:     "Appendix B: Order of Battle",
+		StartPage: 560,
+		EndPage:   590,
+		Level:     1,
+		LevelName: "appendix",
+		MechanicalText: strings.Join([]string{
+			"1. Headquarters",
+			"2. First Army",
+			"3. Second Army",
+			"4. Division Roster",
+			"5. Supporting Units",
+		}, "\n"),
+	}
+
+	prompt := BuildClassifyPrompt([]*ChapterState{chapter}, 615)
+	for _, want := range []string{
+		"content_signals:",
+		"keyword:order of battle",
+		"keyword:roster",
+		"many_short_lines:5/5",
+		"list_like_lines:5/5",
+		"1. Headquarters | 2. First Army",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, prompt)
+		}
+	}
+	if !strings.Contains(ClassifySystemPrompt, "orders of battle") {
+		t.Fatal("system prompt should explicitly exclude order-of-battle reference appendices")
+	}
+}
+
 func TestClassifyResultUnmarshal(t *testing.T) {
 	payload := []byte(`{
 		"classifications": {"ch1": "front_matter"},
@@ -72,5 +107,18 @@ func TestStripHeaderFooter(t *testing.T) {
 	}
 	if !strings.Contains(cleaned, "Line one") || !strings.Contains(cleaned, "Line two") {
 		t.Fatalf("content missing after strip: %s", cleaned)
+	}
+}
+
+func TestBuildPolishPromptIncludesLongChapterText(t *testing.T) {
+	longText := strings.Repeat("A long OCR paragraph with enough text to review. ", 500)
+	chapter := &ChapterState{Title: "Long Chapter", MechanicalText: longText}
+
+	prompt := BuildPolishPrompt(chapter)
+	if !strings.Contains(prompt, longText) {
+		t.Fatal("polish prompt truncated chapter text below the configured long-chapter window")
+	}
+	if strings.Contains(prompt, "[... text truncated for length ...]") {
+		t.Fatal("polish prompt unexpectedly marked normal long chapter as truncated")
 	}
 }

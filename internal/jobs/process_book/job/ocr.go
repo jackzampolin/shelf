@@ -8,6 +8,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
+	"github.com/jackzampolin/shelf/internal/providers"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
@@ -23,6 +24,86 @@ func (j *Job) CreateOcrWorkUnit(ctx context.Context, pageNum int, provider strin
 		})
 	}
 	return unit
+}
+
+// skipFailedOcrPage records a page whose OCR exhausted its retries as resolved
+// with no text. A single pathological or persistently-failing page must not kill
+// the whole book; treating it like a blank page lets the remaining pages and the
+// downstream stages proceed.
+//
+// The skip is persisted like a blank page (an empty OcrResult row + ocr_complete)
+// so a server restart does not re-grind the page: LoadBook reads that row on
+// resume and treats the provider as done. When no sink is available (tests) or
+// persistence fails, fall back to the in-memory mark so the book still proceeds.
+func (j *Job) skipFailedOcrPage(ctx context.Context, info WorkUnitInfo, cause error) {
+	state := j.Book.GetPage(info.PageNum)
+	if state == nil {
+		return
+	}
+
+	persisted := false
+	if svcctx.DefraSinkFrom(ctx) != nil {
+		if _, err := common.PersistOCRResult(ctx, j.Book, state, j.Book.OcrProviders, info.Provider, &providers.OCRResult{}); err != nil {
+			if logger := svcctx.LoggerFrom(ctx); logger != nil {
+				logger.Warn("failed to persist skipped OCR page; continuing with in-memory mark",
+					"book_id", j.Book.BookID,
+					"page_num", info.PageNum,
+					"error", err)
+			}
+		} else {
+			persisted = true
+		}
+	}
+	if !persisted {
+		state.MarkOcrComplete(info.Provider, "")
+	}
+
+	if logger := svcctx.LoggerFrom(ctx); logger != nil {
+		logger.Warn("OCR failed after retries; skipping page to keep the book processing",
+			"book_id", j.Book.BookID,
+			"page_num", info.PageNum,
+			"provider", info.Provider,
+			"retry_count", info.RetryCount,
+			"persisted", persisted,
+			"error", cause)
+	}
+}
+
+// skipFailedExtractPage abandons a page whose image extraction exhausted its
+// retries. Without an image the page cannot be OCR'd, so it is resolved as a
+// blank page (extract-done + OCR resolved with no text) rather than failing the
+// whole book — with thousands of pages, corrupt/pathological PDF pages are
+// common. extract_complete is persisted best-effort and OCR is resolved per
+// provider (which persists too) so a restart does not re-grind the page.
+func (j *Job) skipFailedExtractPage(ctx context.Context, info WorkUnitInfo, cause error) {
+	state := j.Book.GetPage(info.PageNum)
+	if state == nil {
+		return
+	}
+	state.SetExtractDone(true)
+	if sink := svcctx.DefraSinkFrom(ctx); sink != nil {
+		if docID := state.GetPageDocID(); docID != "" {
+			sink.Send(defra.WriteOp{
+				Collection: "Page",
+				DocID:      docID,
+				Document:   map[string]any{"extract_complete": true},
+				Op:         defra.OpUpdate,
+				Source:     "skipFailedExtractPage",
+			})
+		}
+	}
+	if logger := svcctx.LoggerFrom(ctx); logger != nil {
+		logger.Warn("extract failed after retries; skipping page to keep the book processing",
+			"book_id", j.Book.BookID,
+			"page_num", info.PageNum,
+			"retry_count", info.RetryCount,
+			"error", cause)
+	}
+	// No image means no OCR is possible; resolve OCR as empty for every provider so
+	// the OCR stage can complete and downstream stages run.
+	for _, provider := range j.Book.OcrProviders {
+		j.skipFailedOcrPage(ctx, WorkUnitInfo{PageNum: info.PageNum, Provider: provider, RetryCount: info.RetryCount}, cause)
+	}
 }
 
 // HandleOcrComplete processes OCR completion.

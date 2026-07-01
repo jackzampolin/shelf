@@ -12,13 +12,19 @@ type Config struct {
 
 // OCRProviderCfg configures an OCR provider.
 type OCRProviderCfg struct {
-	Type           string   `mapstructure:"type" yaml:"type"`             // "mistral-ocr"
-	APIKey         string   `mapstructure:"api_key" yaml:"api_key"`       // API key (supports ${ENV_VAR} syntax)
-	RateLimit      float64  `mapstructure:"rate_limit" yaml:"rate_limit"` // Requests per second
-	Enabled        bool     `mapstructure:"enabled" yaml:"enabled"`
-	IncludeImages  bool     `mapstructure:"include_images" yaml:"include_images"`   // Extract images (Mistral only)
-	BaseURLs       []string `mapstructure:"base_urls" yaml:"base_urls"`             // Optional self-hosted endpoints (supports ${ENV_VAR})
-	MaxConcurrency int      `mapstructure:"max_concurrency" yaml:"max_concurrency"` // Max concurrent in-flight requests (0 = provider default)
+	Type                  string   `mapstructure:"type" yaml:"type"`             // "mistral-ocr" or "chandra"
+	APIKey                string   `mapstructure:"api_key" yaml:"api_key"`       // API key (supports ${ENV_VAR} syntax)
+	RateLimit             float64  `mapstructure:"rate_limit" yaml:"rate_limit"` // Requests per second
+	Enabled               bool     `mapstructure:"enabled" yaml:"enabled"`
+	IncludeImages         bool     `mapstructure:"include_images" yaml:"include_images"`                   // Extract images from OCR output when supported
+	IncludeHeadersFooters bool     `mapstructure:"include_headers_footers" yaml:"include_headers_footers"` // Include page furniture in OCR markdown when supported
+	MaxOutputTokens       int      `mapstructure:"max_output_tokens" yaml:"max_output_tokens"`             // Max OCR output tokens per page (0 = provider default)
+	TimeoutSeconds        int      `mapstructure:"timeout_seconds" yaml:"timeout_seconds"`                 // OCR HTTP timeout in seconds (0 = provider default)
+	Temperature           float64  `mapstructure:"temperature" yaml:"temperature"`                         // OCR generation temperature
+	TopP                  float64  `mapstructure:"top_p" yaml:"top_p"`                                     // OCR nucleus sampling value
+	BaseURLs              []string `mapstructure:"base_urls" yaml:"base_urls"`                             // Optional self-hosted endpoints (supports ${ENV_VAR})
+	MaxConcurrency        int      `mapstructure:"max_concurrency" yaml:"max_concurrency"`                 // Max concurrent in-flight requests (0 = provider default)
+	MaxRetries            int      `mapstructure:"max_retries" yaml:"max_retries"`                         // Max provider retries (0 = provider default)
 }
 
 // LLMProviderCfg configures an LLM provider.

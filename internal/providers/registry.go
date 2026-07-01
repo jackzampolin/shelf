@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 )
 
 // Sentinel errors for the providers package.
@@ -265,13 +266,19 @@ type RegistryConfig struct {
 
 // OCRProviderConfig matches config.OCRProviderCfg with resolved API key.
 type OCRProviderConfig struct {
-	Type           string  // "mistral-ocr"
-	APIKey         string  // Resolved API key
-	RateLimit      float64 // Requests per second
-	Enabled        bool
-	IncludeImages  bool     // Whether to include base64 image data (Mistral only)
-	BaseURLs       []string // Optional self-hosted endpoints
-	MaxConcurrency int      // Max concurrent in-flight requests (0 = provider default)
+	Type                  string  // "mistral-ocr" or "chandra"
+	APIKey                string  // Resolved API key
+	RateLimit             float64 // Requests per second
+	Enabled               bool
+	IncludeImages         bool     // Whether to include extracted image data when supported
+	IncludeHeadersFooters bool     // Whether to keep page furniture in OCR markdown when supported
+	MaxOutputTokens       int      // Max OCR output tokens per page (0 = provider default)
+	TimeoutSeconds        int      // OCR HTTP timeout in seconds (0 = provider default)
+	Temperature           float64  // OCR generation temperature
+	TopP                  float64  // OCR nucleus sampling value
+	BaseURLs              []string // Optional self-hosted endpoints
+	MaxConcurrency        int      // Max concurrent in-flight requests (0 = provider default)
+	MaxRetries            int      // Max provider retries (0 = provider default)
 }
 
 // LLMProviderConfig matches config.LLMProviderCfg with resolved API key.
@@ -500,12 +507,20 @@ func createOCRProvider(cfg OCRProviderConfig) OCRProvider {
 		}
 		return NewMistralOCRClient(moc)
 	case "chandra":
+		timeout := time.Duration(cfg.TimeoutSeconds) * time.Second
 		return NewChandraOCRClient(ChandraOCRConfig{
-			Name:           cfg.Type,
-			BaseURLs:       cfg.BaseURLs,
-			APIKey:         cfg.APIKey,
-			RateLimit:      cfg.RateLimit,
-			MaxConcurrency: cfg.MaxConcurrency,
+			Name:                  cfg.Type,
+			BaseURLs:              cfg.BaseURLs,
+			APIKey:                cfg.APIKey,
+			RateLimit:             cfg.RateLimit,
+			IncludeImages:         cfg.IncludeImages,
+			IncludeHeadersFooters: cfg.IncludeHeadersFooters,
+			MaxOutputTokens:       cfg.MaxOutputTokens,
+			Temperature:           cfg.Temperature,
+			TopP:                  cfg.TopP,
+			MaxConcurrency:        cfg.MaxConcurrency,
+			MaxRetries:            cfg.MaxRetries,
+			Timeout:               timeout,
 		})
 	default:
 		return nil
@@ -531,7 +546,8 @@ func needsLLMUpdate(client LLMClient, cfg LLMProviderConfig) bool {
 
 // needsOCRUpdate checks if an OCR provider needs to be recreated.
 func needsOCRUpdate(provider OCRProvider, cfg OCRProviderConfig) bool {
-	if p, ok := provider.(*MistralOCRClient); ok {
+	switch p := provider.(type) {
+	case *MistralOCRClient:
 		baseURL := MistralOCRBaseURL
 		if len(cfg.BaseURLs) > 0 {
 			baseURL = cfg.BaseURLs[0]
@@ -539,6 +555,9 @@ func needsOCRUpdate(provider OCRProvider, cfg OCRProviderConfig) bool {
 		return p.apiKey != cfg.APIKey ||
 			p.baseURL != baseURL ||
 			p.rateLimit != cfg.RateLimit
+	case *ChandraOCRClient:
+		_ = p
+		return true
 	}
 	return true
 }

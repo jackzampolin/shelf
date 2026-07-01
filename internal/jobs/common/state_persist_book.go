@@ -49,7 +49,37 @@ func (b *BookState) PersistBookStatus(ctx context.Context, status string) (strin
 		Collection: "Book",
 		DocID:      b.BookID,
 		Document: map[string]any{
-			"status": status,
+			"status":        status,
+			"status_reason": "",
+		},
+		Op: defra.OpUpdate,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	b.mu.Lock()
+	b.trackCIDLocked("Book", b.BookID, result.CID)
+	b.bookCID = result.CID
+	b.mu.Unlock()
+
+	return result.CID, nil
+}
+
+// PersistBookStatusWithReason updates book status plus a human-readable reason
+// in DB and memory. Used for terminal failure so the scoreboard can explain why.
+func (b *BookState) PersistBookStatusWithReason(ctx context.Context, status, reason string) (string, error) {
+	store := b.getStore(ctx)
+	if store == nil {
+		return "", fmt.Errorf("no store available")
+	}
+
+	result, err := store.SendSync(ctx, defra.WriteOp{
+		Collection: "Book",
+		DocID:      b.BookID,
+		Document: map[string]any{
+			"status":        status,
+			"status_reason": reason,
 		},
 		Op: defra.OpUpdate,
 	})
@@ -79,7 +109,8 @@ func (b *BookState) PersistBookStatusAsync(ctx context.Context, status string) {
 		Collection: "Book",
 		DocID:      b.BookID,
 		Document: map[string]any{
-			"status": status,
+			"status":        status,
+			"status_reason": "",
 		},
 		Op:     defra.OpUpdate,
 		Source: "PersistBookStatusAsync",

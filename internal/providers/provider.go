@@ -114,12 +114,18 @@ type ChatRequest struct {
 	Model string `json:"model,omitempty"`
 
 	// Generation parameters
-	Temperature float64 `json:"temperature,omitempty"`
-	MaxTokens   int     `json:"max_tokens,omitempty"`
-	Timeout     time.Duration
+	Temperature    float64 `json:"temperature,omitempty"`
+	TemperatureSet bool    `json:"-"`
+	TopP           float64 `json:"top_p,omitempty"`
+	MaxTokens      int     `json:"max_tokens,omitempty"`
+	Timeout        time.Duration
 
 	// Structured output
 	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
+
+	// Tool selection. OpenAI-compatible providers accept "auto", "required",
+	// "none", or a provider-specific function choice object.
+	ToolChoice any `json:"tool_choice,omitempty"`
 
 	// Request tracking
 	RequestID string `json:"-"`

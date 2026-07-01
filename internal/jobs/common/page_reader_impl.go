@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	stdhtml "html"
+	"strings"
 
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
@@ -59,6 +61,51 @@ func (b *BookState) GetOcrMarkdown(ctx context.Context, pageNum int) (string, er
 	return state.GetOcrMarkdown(), nil
 }
 
+// GetOcrMarkdownWithPageFurniture returns OCR markdown plus synthetic labeled
+// page-header/footer blocks when the OCR provider stored those separately.
+// This keeps content extraction clean while preserving running-header evidence
+// for ToC/chapter linking agents.
+func (b *BookState) GetOcrMarkdownWithPageFurniture(ctx context.Context, pageNum int) (string, error) {
+	text, err := b.GetOcrMarkdown(ctx, pageNum)
+	if err != nil {
+		return "", err
+	}
+	if text == "" || strings.Contains(text, "data-label=") {
+		return text, nil
+	}
+
+	state := b.GetPage(pageNum)
+	if state == nil {
+		return text, nil
+	}
+	header := state.GetHeader()
+	footer := state.GetFooter()
+	if strings.TrimSpace(header) == "" && strings.TrimSpace(footer) == "" {
+		return text, nil
+	}
+
+	var parts []string
+	for _, line := range splitPageFurnitureLines(header) {
+		parts = append(parts, fmt.Sprintf(`<div data-label="Page-Header">%s</div>`, stdhtml.EscapeString(line)))
+	}
+	parts = append(parts, text)
+	for _, line := range splitPageFurnitureLines(footer) {
+		parts = append(parts, fmt.Sprintf(`<div data-label="Page-Footer">%s</div>`, stdhtml.EscapeString(line)))
+	}
+	return strings.Join(parts, "\n"), nil
+}
+
+func splitPageFurnitureLines(text string) []string {
+	var lines []string
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
 // PreloadPages batch-loads data for a range of pages in one DB query.
 func (b *BookState) PreloadPages(ctx context.Context, startPage, endPage int) error {
 	defraClient := svcctx.DefraClientFrom(ctx)
@@ -107,6 +154,8 @@ func (b *BookState) PreloadPages(ctx context.Context, startPage, endPage int) er
 			page_num
 			ocr_markdown
 			headings
+			header
+			footer
 		}
 	}`, b.BookID)
 
@@ -229,6 +278,8 @@ func (b *BookState) loadPageDataFromDB(ctx context.Context, pageNum int, state *
 		Page(filter: {_bookID: {_eq: "%s"}, page_num: {_eq: %d}}) {
 			ocr_markdown
 			headings
+			header
+			footer
 		}
 	}`, b.BookID, pageNum)
 
@@ -280,6 +331,8 @@ func (b *BookState) GetPagesWithHeadingsFiltered(ctx context.Context, startPage,
 			page_num
 			ocr_markdown
 			headings
+			header
+			footer
 		}
 	}`, b.BookID)
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
@@ -358,16 +359,49 @@ func resetTocLinkHook(ctx context.Context, book *BookState, tocDocID string) err
 	if tocDocID == "" {
 		return nil
 	}
+	var err error
 	if book.Store != nil {
-		return updateCollectionDocsViaStore(ctx, book.Store, "TocEntry", "_tocID", tocDocID, map[string]any{"_actual_pageID": nil})
+		err = updateCollectionDocsViaStore(ctx, book.Store, "TocEntry", "_tocID", tocDocID, map[string]any{"_actual_pageID": nil})
+	} else {
+		err = clearTocEntryLinks(ctx, tocDocID)
 	}
-	return clearTocEntryLinks(ctx, tocDocID)
+	if err != nil {
+		return err
+	}
+
+	entries, err := reloadTocEntriesAfterLinkReset(ctx, book, tocDocID)
+	if err != nil {
+		return err
+	}
+	book.SetTocEntries(entries)
+
+	if logger := svcctx.LoggerFrom(ctx); logger != nil {
+		logger.Debug("reloaded ToC entries after link reset", "toc_id", tocDocID, "count", len(entries))
+	}
+	return nil
 }
 
-// resetStructureHook deletes all Chapter records for the book.
-func resetStructureHook(ctx context.Context, book *BookState, tocDocID string) error {
-	if book.Store != nil {
-		return deleteCollectionDocsViaStore(ctx, book.Store, "Chapter", "_bookID", book.BookID)
+func reloadTocEntriesAfterLinkReset(ctx context.Context, book *BookState, tocDocID string) ([]*toc_entry_finder.TocEntry, error) {
+	if svcctx.DefraClientFrom(ctx) != nil {
+		entries, err := LoadTocEntries(ctx, tocDocID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to reload ToC entries after link reset: %w", err)
+		}
+		return entries, nil
 	}
-	return deleteChapters(ctx, book.BookID)
+	if book.Store != nil {
+		entries, err := loadTocEntriesViaStore(ctx, book.Store, tocDocID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to reload ToC entries after link reset: %w", err)
+		}
+		return entries, nil
+	}
+	return nil, fmt.Errorf("cannot reload ToC entries after link reset: no Defra client or state store")
+}
+
+// resetStructureHook preserves Chapter records so a rerun can update them by
+// stable identity. The structure build prunes stale rows after the new skeleton
+// has been persisted successfully.
+func resetStructureHook(ctx context.Context, book *BookState, tocDocID string) error {
+	return nil
 }

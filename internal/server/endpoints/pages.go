@@ -2,8 +2,10 @@ package endpoints
 
 import (
 	"fmt"
+	"mime"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/spf13/cobra"
@@ -81,6 +83,72 @@ func (e *PageImageEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (e *PageImageEndpoint) Command(_ func() string) *cobra.Command {
+	return nil
+}
+
+// ExtractedImageEndpoint handles GET /api/books/{book_id}/pages/{page_num}/extracted-images/{image_id}.
+type ExtractedImageEndpoint struct{}
+
+var _ api.Endpoint = (*ExtractedImageEndpoint)(nil)
+
+func (e *ExtractedImageEndpoint) Route() (string, string, http.HandlerFunc) {
+	return "GET", "/api/books/{book_id}/pages/{page_num}/extracted-images/{image_id}", e.handler
+}
+
+func (e *ExtractedImageEndpoint) RequiresInit() bool { return true }
+
+func (e *ExtractedImageEndpoint) handler(w http.ResponseWriter, r *http.Request) {
+	bookID := r.PathValue("book_id")
+	if bookID == "" {
+		writeError(w, http.StatusBadRequest, "book_id is required")
+		return
+	}
+
+	pageNumStr := r.PathValue("page_num")
+	pageNum, err := strconv.Atoi(pageNumStr)
+	if err != nil || pageNum < 1 {
+		writeError(w, http.StatusBadRequest, "page_num must be a positive integer")
+		return
+	}
+
+	imageID := r.PathValue("image_id")
+	if imageID == "" || filepath.Base(imageID) != imageID {
+		writeError(w, http.StatusBadRequest, "image_id must be a filename")
+		return
+	}
+
+	homeDir := svcctx.HomeFrom(r.Context())
+	if homeDir == nil {
+		writeError(w, http.StatusServiceUnavailable, "home directory not initialized")
+		return
+	}
+
+	imagePath := homeDir.ExtractedImagePath(bookID, pageNum, imageID)
+	file, err := os.Open(imagePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			writeError(w, http.StatusNotFound, fmt.Sprintf("extracted image %s not found", imageID))
+		} else {
+			writeError(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	defer file.Close()
+
+	fileInfo, err := file.Stat()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if contentType := mime.TypeByExtension(filepath.Ext(imageID)); contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
+	w.Header().Set("Cache-Control", "public, max-age=31536000")
+	http.ServeContent(w, r, imageID, fileInfo.ModTime(), file)
+}
+
+func (e *ExtractedImageEndpoint) Command(_ func() string) *cobra.Command {
 	return nil
 }
 

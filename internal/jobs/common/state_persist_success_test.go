@@ -159,11 +159,12 @@ func TestPersistChapterPolish_Success(t *testing.T) {
 	book.Store = store
 	book.SetStructureChapters([]*ChapterState{
 		{
-			EntryID:      "e1",
-			DocID:        "ch1",
-			PolishDone:   true,
-			PolishedText: "Polished content here",
-			WordCount:    100,
+			EntryID:          "e1",
+			DocID:            "ch1",
+			PolishDone:       true,
+			PolishedText:     "Polished content here",
+			WordCount:        100,
+			EditsAppliedJSON: `[{"old_text":"Pol1shed","new_text":"Polished","reason":"OCR correction"}]`,
 		},
 	})
 
@@ -179,6 +180,15 @@ func TestPersistChapterPolish_Success(t *testing.T) {
 	}
 	if doc["word_count"] != 100 {
 		t.Errorf("word_count = %v, want 100", doc["word_count"])
+	}
+	if doc["edits_applied_json"] != `[{"old_text":"Pol1shed","new_text":"Polished","reason":"OCR correction"}]` {
+		t.Errorf("edits_applied_json = %v", doc["edits_applied_json"])
+	}
+	if doc["polish_complete"] != true {
+		t.Errorf("polish_complete = %v, want true", doc["polish_complete"])
+	}
+	if _, ok := doc["polish_done"]; ok {
+		t.Errorf("polish_done should not be persisted; doc = %#v", doc)
 	}
 }
 

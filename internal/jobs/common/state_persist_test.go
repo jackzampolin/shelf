@@ -154,6 +154,59 @@ func TestBookState_PersistNewAgentState(t *testing.T) {
 	}
 }
 
+func TestBookState_DeleteAgentStateByKeysDeletesAllMatchingRows(t *testing.T) {
+	store := NewMemoryStateStore()
+	store.SetDoc("AgentState", "as1", map[string]any{
+		"_bookID":      "book1",
+		"agent_type":   AgentTypeTocEntryFinder,
+		"entry_doc_id": "entry1",
+	})
+	store.SetDoc("AgentState", "as2", map[string]any{
+		"_bookID":      "book1",
+		"agent_type":   AgentTypeTocEntryFinder,
+		"entry_doc_id": "entry1",
+	})
+	store.SetDoc("AgentState", "as3", map[string]any{
+		"_bookID":      "book1",
+		"agent_type":   AgentTypeTocEntryFinder,
+		"entry_doc_id": "entry2",
+	})
+	store.SetDoc("AgentState", "as4", map[string]any{
+		"_bookID":      "book2",
+		"agent_type":   AgentTypeTocEntryFinder,
+		"entry_doc_id": "entry1",
+	})
+
+	book := NewBookState("book1")
+	book.Store = store
+	book.SetAgentState(&AgentState{
+		AgentID:    "agent2",
+		AgentType:  AgentTypeTocEntryFinder,
+		EntryDocID: "entry1",
+		DocID:      "as2",
+	})
+
+	if err := book.DeleteAgentStateByKeys(context.Background(), AgentTypeTocEntryFinder, "entry1"); err != nil {
+		t.Fatalf("DeleteAgentStateByKeys error: %v", err)
+	}
+
+	if got := store.GetDoc("AgentState", "as1"); got != nil {
+		t.Fatalf("matching duplicate as1 was not deleted: %#v", got)
+	}
+	if got := store.GetDoc("AgentState", "as2"); got != nil {
+		t.Fatalf("matching duplicate as2 was not deleted: %#v", got)
+	}
+	if got := store.GetDoc("AgentState", "as3"); got == nil {
+		t.Fatal("other entry state was deleted")
+	}
+	if got := store.GetDoc("AgentState", "as4"); got == nil {
+		t.Fatal("other book state was deleted")
+	}
+	if got := book.GetAgentState(AgentTypeTocEntryFinder, "entry1"); got != nil {
+		t.Fatalf("agent state still in memory: %#v", got)
+	}
+}
+
 // TestBookState_DeleteAgentStatesForType tests the DeleteAgentStatesForType method.
 func TestBookState_DeleteAgentStatesForType(t *testing.T) {
 	store := NewMemoryStateStore()

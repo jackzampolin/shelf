@@ -134,6 +134,47 @@ func TestOpenAICompatClient_RoundRobinsAcrossEndpoints(t *testing.T) {
 	}
 }
 
+func TestOpenAICompatClient_CoolsDownFailingEndpoint(t *testing.T) {
+	var hitsA, hitsB atomic.Int64
+	srvA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/chat/completions" {
+			hitsA.Add(1)
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error":"warming"}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srvA.Close()
+	srvB := chatCompletionStub(t, func(path string, _ http.Header, _ []byte) {
+		if path == "/chat/completions" {
+			hitsB.Add(1)
+		}
+	})
+	defer srvB.Close()
+
+	c := NewOpenAICompatClient(OpenAICompatConfig{
+		BaseURLs:     []string{srvA.URL, srvB.URL},
+		DefaultModel: "m",
+		MaxRetries:   2,
+	})
+	for i := 0; i < 2; i++ {
+		res, err := c.Chat(context.Background(), &ChatRequest{Messages: []Message{{Role: "user", Content: "x"}}})
+		if err != nil {
+			t.Fatalf("Chat() error = %v", err)
+		}
+		if !res.Success {
+			t.Fatalf("Chat() Success = false, err=%s", res.ErrorMessage)
+		}
+	}
+	if hitsA.Load() != 1 {
+		t.Fatalf("failing endpoint hits = %d, want 1", hitsA.Load())
+	}
+	if hitsB.Load() != 2 {
+		t.Fatalf("healthy endpoint hits = %d, want 2", hitsB.Load())
+	}
+}
+
 func TestOpenAICompat_MaxConcurrencyConfigurable(t *testing.T) {
 	def := NewOpenAICompatClient(OpenAICompatConfig{BaseURLs: []string{"http://x:8000/v1"}})
 	if def.MaxConcurrency() != 0 {

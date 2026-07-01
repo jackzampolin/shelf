@@ -2,12 +2,19 @@ package jobs
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"sync"
 	"time"
 
 	"github.com/jackzampolin/shelf/internal/defra"
 )
+
+// cpuRequeueBackoff is the delay between resubmit attempts for a unit bounced
+// by a full pool queue.
+const cpuRequeueBackoff = 250 * time.Millisecond
 
 // JobFactory creates a Job instance from stored metadata.
 // Used for resuming jobs after restart.
@@ -31,6 +38,9 @@ type Scheduler struct {
 
 	// Results channel - all pools send results here
 	results chan workerResult
+
+	// Requeue buffer for units bounced by a full pool queue (backpressure).
+	requeue chan *WorkUnit
 
 	// Track pending work per job
 	pending map[string]int // jobID -> count of pending work units
@@ -64,6 +74,153 @@ func (s *Scheduler) schedulerContext() context.Context {
 	return ctx
 }
 
+// requeueLoop drains the requeue buffer, retrying each parked unit until the
+// pool accepts it or the context is cancelled. A single drainer is sufficient:
+// only CPU-pool units ever hit ErrWorkerQueueFull (provider pools use an
+// unbounded queue), and they all share one CPU queue — so if the head unit is
+// blocked on a full queue, every other parked unit would be too. Head-of-line
+// waiting is therefore bounded to one backoff interval, not a starvation risk.
+func (s *Scheduler) requeueLoop(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case unit := <-s.requeue:
+			s.resubmitWithBackoff(ctx, unit)
+		}
+	}
+}
+
+func (s *Scheduler) resubmitWithBackoff(ctx context.Context, unit *WorkUnit) {
+	pool := s.findPool(unit)
+	if pool == nil {
+		s.emitFailure(unit, fmt.Errorf("no pool available for type %s provider %s", unit.Type, unit.Provider))
+		return
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		err := pool.Submit(unit)
+		if err == nil {
+			return
+		}
+		if !errors.Is(err, ErrWorkerQueueFull) {
+			s.emitFailure(unit, err)
+			return
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(cpuRequeueBackoff):
+		}
+	}
+}
+
+// emitFailure sends a failed WorkResult for a unit that could not be routed.
+// The send is non-blocking: emitFailure is reachable from the results-consumer
+// goroutine (handleResult -> OnComplete -> enqueueUnits), so a blocking send on
+// a full s.results buffer would deadlock the only drainer. On overflow the send
+// is offloaded to a short-lived goroutine, keeping s.pending accounting correct
+// (the result still lands and is handled) without stalling the consumer.
+func (s *Scheduler) emitFailure(unit *WorkUnit, err error) {
+	wr := workerResult{
+		JobID: unit.JobID,
+		Unit:  unit,
+		Result: WorkResult{
+			WorkUnitID: unit.ID,
+			Success:    false,
+			Error:      err,
+		},
+	}
+	select {
+	case s.results <- wr:
+	default:
+		go func() { s.results <- wr }()
+	}
+}
+
+// safeJobStart runs job.Start with panic recovery, converting a panic into an
+// error so one bad job fails only its own book instead of crashing the server.
+func (s *Scheduler) safeJobStart(ctx context.Context, job Job) (units []WorkUnit, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic in job.Start: %v", r)
+			s.logger.Error("recovered panic in job.Start",
+				"job_id", job.ID(), "panic", r, "stack", string(debug.Stack()))
+		}
+	}()
+	return job.Start(ctx)
+}
+
+// safeJobOnComplete runs job.OnComplete with panic recovery, converting a panic
+// into an error so the failure path marks the book failed instead of crashing.
+func (s *Scheduler) safeJobOnComplete(ctx context.Context, job Job, result WorkResult) (units []WorkUnit, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic in job.OnComplete: %v", r)
+			s.logger.Error("recovered panic in job.OnComplete",
+				"job_id", job.ID(), "panic", r, "stack", string(debug.Stack()))
+		}
+	}()
+	return job.OnComplete(ctx, result)
+}
+
+// failBookForJob marks a job's book terminally failed if the job supports it.
+func (s *Scheduler) failBookForJob(ctx context.Context, job Job, reason string) {
+	if bf, ok := job.(BookFailer); ok {
+		bf.FailBook(ctx, reason)
+	}
+}
+
+// failBookByRecord marks a book failed when no live Job exists (e.g. a Resume
+// factory failure). It also marks the job record failed so the stale "running"
+// record does not defeat the reconciler. The "failed" status string must match
+// process_book/job.BookStatusFailed.
+func (s *Scheduler) failBookByRecord(ctx context.Context, record *Record, reason string) {
+	if record == nil {
+		return
+	}
+	if s.manager != nil && record.ID != "" {
+		if err := s.manager.UpdateStatus(ctx, record.ID, StatusFailed, reason); err != nil {
+			s.logger.Warn("failed to mark job record failed", "job_id", record.ID, "error", err)
+		}
+	}
+	if record.BookID == "" || s.manager == nil || s.manager.defra == nil {
+		return
+	}
+	// Don't stomp the book status if another job is actively processing it: a
+	// live in-memory job, or a different queued/running record for the same book.
+	if s.GetJobByBookID(record.BookID) != nil {
+		s.logger.Debug("skipping book-fail write; an active job owns the book",
+			"book_id", record.BookID, "record_id", record.ID)
+		return
+	}
+	if recs, err := s.manager.List(ctx, ListFilter{BookID: record.BookID}); err == nil {
+		for _, r := range recs {
+			if r.ID == record.ID {
+				continue
+			}
+			if r.Status == StatusRunning || r.Status == StatusQueued {
+				s.logger.Debug("skipping book-fail write; another live job record for the book",
+					"book_id", record.BookID, "other_record_id", r.ID)
+				return
+			}
+		}
+	}
+	if err := s.manager.defra.Update(ctx, "Book", record.BookID, map[string]any{
+		"status":        "failed",
+		"status_reason": reason,
+	}); err != nil {
+		s.logger.Warn("failed to mark book failed by record", "book_id", record.BookID, "error", err)
+	}
+}
+
 // SchedulerConfig configures a new scheduler.
 type SchedulerConfig struct {
 	Manager *Manager // Required for persistence
@@ -89,6 +246,7 @@ func NewScheduler(cfg SchedulerConfig) *Scheduler {
 		factories: make(map[string]JobFactory),
 		pending:   make(map[string]int),
 		results:   results,
+		requeue:   make(chan *WorkUnit, 100000),
 		logger:    logger,
 		sink:      cfg.Sink,
 	}
@@ -129,6 +287,62 @@ func (s *Scheduler) GetJobByBookID(bookID string) Job {
 	return nil
 }
 
+// GetJobByBookIDAndType returns an active job of the given type for a book, if any.
+// Returns nil if no active matching job is found.
+func (s *Scheduler) GetJobByBookIDAndType(bookID, jobType string) Job {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, job := range s.jobs {
+		if job.Type() != jobType {
+			continue
+		}
+		if provider, ok := job.(BookIDProvider); ok && provider.BookID() == bookID {
+			return job
+		}
+	}
+	return nil
+}
+
+// CancelActiveJobsByBookIDAndType removes active matching jobs from scheduler
+// state and marks their persistent records cancelled.
+func (s *Scheduler) CancelActiveJobsByBookIDAndType(ctx context.Context, bookID, jobType, reason string) int {
+	var jobIDs []string
+
+	s.mu.Lock()
+	for jobID, job := range s.jobs {
+		if job.Type() != jobType {
+			continue
+		}
+		if provider, ok := job.(BookIDProvider); ok && provider.BookID() == bookID {
+			delete(s.jobs, jobID)
+			delete(s.jobSeq, jobID)
+			delete(s.pending, jobID)
+			jobIDs = append(jobIDs, jobID)
+		}
+	}
+	s.mu.Unlock()
+
+	for _, jobID := range jobIDs {
+		s.logger.Warn("cancelled active job",
+			"job_id", jobID,
+			"type", jobType,
+			"book_id", bookID,
+			"reason", reason)
+		if s.manager != nil {
+			if err := s.manager.UpdateStatus(ctx, jobID, StatusCancelled, reason); err != nil {
+				s.logger.Warn("failed to mark active job cancelled",
+					"job_id", jobID,
+					"type", jobType,
+					"book_id", bookID,
+					"error", err)
+			}
+		}
+	}
+
+	return len(jobIDs)
+}
+
 // Start begins the scheduler and all registered pools.
 // Blocks until context is cancelled.
 func (s *Scheduler) Start(ctx context.Context) {
@@ -149,6 +363,10 @@ func (s *Scheduler) Start(ctx context.Context) {
 		go p.Start(ctx)
 	}
 	s.mu.Unlock()
+
+	// Periodically catch books stranded in "processing" (flag-only).
+	go s.reconcileLoop(ctx)
+	go s.requeueLoop(ctx)
 
 	s.logger.Info("scheduler started", "pools", len(s.pools))
 
@@ -226,10 +444,12 @@ func (s *Scheduler) handleResult(ctx context.Context, wr workerResult) {
 	// Inject services into context for job handlers
 	enrichedCtx := s.injectServices(ctx)
 
-	// Notify job of completion
-	newUnits, err := job.OnComplete(enrichedCtx, wr.Result)
+	// Notify job of completion (panic-safe: a panic becomes an error that marks
+	// the book failed rather than crashing the scheduler).
+	newUnits, err := s.safeJobOnComplete(enrichedCtx, job, wr.Result)
 	if err != nil {
 		s.logger.Error("job OnComplete failed", "job_id", wr.JobID, "error", err)
+		s.failBookForJob(enrichedCtx, job, err.Error())
 		s.removeJob(wr.JobID)
 		if s.manager != nil {
 			if updateErr := s.manager.UpdateStatus(ctx, wr.JobID, StatusFailed, err.Error()); updateErr != nil {

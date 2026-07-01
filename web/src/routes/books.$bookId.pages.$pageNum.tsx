@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { client, unwrap } from '@/api/client'
+import { OcrText } from '@/components/OcrText'
 
 export const Route = createFileRoute('/books/$bookId/pages/$pageNum')({
   component: PageViewerPage,
@@ -259,9 +260,7 @@ function PageViewerPage() {
 
           {/* Text content */}
           <div className="flex-1 overflow-auto p-4">
-            <pre className="whitespace-pre-wrap font-mono text-sm text-gray-800 leading-relaxed">
-              {getDisplayText()}
-            </pre>
+            <OcrText text={getDisplayText()} emptyText="No OCR text available" />
           </div>
 
           {/* Copy button */}

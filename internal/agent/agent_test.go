@@ -138,10 +138,10 @@ func TestAgentIntegration_MultipleAgents(t *testing.T) {
 
 	// Create 3 agents with different tasks
 	type agentTask struct {
-		name    string
-		task    string
-		setup   func(dir string)
-		verify  func(t *testing.T, dir string)
+		name   string
+		task   string
+		setup  func(dir string)
+		verify func(t *testing.T, dir string)
 	}
 
 	tasks := []agentTask{
@@ -319,7 +319,7 @@ func TestAgentIntegration_MaxIterations(t *testing.T) {
 		Tools: tools,
 		InitialMessages: []providers.Message{
 			{
-				Role: "system",
+				Role:    "system",
 				Content: `You are a file assistant. Use tools to complete tasks.`,
 			},
 			{
@@ -521,6 +521,116 @@ func (m *mockTools) GetResult() any {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.result
+}
+
+func TestAgent_NextWorkUnits_RequireToolUse(t *testing.T) {
+	tools := &mockTools{
+		tools: []providers.Tool{
+			{Type: "function", Function: providers.ToolFunction{Name: "grep_text"}},
+		},
+	}
+	agent := New(context.Background(), Config{
+		ID:             "tool-required-agent",
+		Tools:          tools,
+		RequireToolUse: true,
+		InitialMessages: []providers.Message{
+			{Role: "system", Content: "Use tools."},
+			{Role: "user", Content: "Find the page."},
+		},
+		MaxIterations: 10,
+	})
+
+	units := agent.NextWorkUnits()
+	if len(units) != 1 {
+		t.Fatalf("NextWorkUnits() len = %d, want 1", len(units))
+	}
+	if units[0].ChatRequest == nil {
+		t.Fatal("ChatRequest is nil")
+	}
+	if units[0].ChatRequest.ToolChoice != "required" {
+		t.Fatalf("ToolChoice = %#v, want required", units[0].ChatRequest.ToolChoice)
+	}
+}
+
+func TestAgent_HandleLLMResult_MaxToolCallsPerTurn(t *testing.T) {
+	tools := &mockTools{
+		tools: []providers.Tool{
+			{Type: "function", Function: providers.ToolFunction{Name: "get_page_ocr"}},
+		},
+	}
+	agent := New(context.Background(), Config{
+		ID:                  "tool-cap-agent",
+		Tools:               tools,
+		MaxToolCallsPerTurn: 2,
+		MaxIterations:       10,
+	})
+
+	result := &providers.ChatResult{
+		ToolCalls: []providers.ToolCall{
+			{ID: "call_1", Type: "function"},
+			{ID: "call_2", Type: "function"},
+			{ID: "call_3", Type: "function"},
+		},
+	}
+	result.ToolCalls[0].Function.Name = "get_page_ocr"
+	result.ToolCalls[0].Function.Arguments = `{"page_num":1}`
+	result.ToolCalls[1].Function.Name = "get_page_ocr"
+	result.ToolCalls[1].Function.Arguments = `{"page_num":2}`
+	result.ToolCalls[2].Function.Name = "get_page_ocr"
+	result.ToolCalls[2].Function.Arguments = `{"page_num":3}`
+
+	agent.HandleLLMResult(result)
+
+	units := agent.NextWorkUnits()
+	if len(units) != 2 {
+		t.Fatalf("NextWorkUnits() len = %d, want 2", len(units))
+	}
+	if units[0].ToolCall.ID != "call_1" || units[1].ToolCall.ID != "call_2" {
+		t.Fatalf("tool calls = %s, %s; want call_1, call_2", units[0].ToolCall.ID, units[1].ToolCall.ID)
+	}
+}
+
+func TestAgent_NextWorkUnits_CompactsOldToolResultsForRequestOnly(t *testing.T) {
+	longToolResult := strings.Repeat("large tool payload ", 80)
+	tools := &mockTools{
+		tools: []providers.Tool{
+			{Type: "function", Function: providers.ToolFunction{Name: "get_page_ocr"}},
+		},
+	}
+	agent := New(context.Background(), Config{
+		ID:    "compact-history-agent",
+		Tools: tools,
+		InitialMessages: []providers.Message{
+			{Role: "system", Content: "Use tools."},
+			{Role: "user", Content: "Find the page."},
+		},
+		MaxIterations: 10,
+	})
+
+	agent.mu.Lock()
+	for i := 0; i < 12; i++ {
+		agent.messages = append(agent.messages,
+			providers.Message{Role: "assistant", Content: "calling tool"},
+			providers.Message{Role: "tool", ToolCallID: "call", Content: longToolResult},
+		)
+	}
+	originalStoredContent := agent.messages[3].Content
+	agent.mu.Unlock()
+
+	units := agent.NextWorkUnits()
+	if len(units) != 1 || units[0].ChatRequest == nil {
+		t.Fatalf("NextWorkUnits returned %#v, want one LLM request", units)
+	}
+	requestMessages := units[0].ChatRequest.Messages
+	if got := requestMessages[3].Content; !strings.Contains(got, "older tool result compacted") {
+		t.Fatalf("old tool result was not compacted: %q", got)
+	}
+	if len([]rune(requestMessages[len(requestMessages)-1].Content)) != len([]rune(longToolResult)) {
+		t.Fatal("most recent tool result should remain full in the outbound request")
+	}
+	if agent.messages[3].Content != originalStoredContent {
+		t.Fatal("agent stored history was mutated by request compaction")
+	}
 }
 
 // TestAgent_ExportState_RestoreState_RoundTrip tests that agent state can be

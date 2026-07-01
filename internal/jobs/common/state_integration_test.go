@@ -540,19 +540,20 @@ func TestStateIntegration_StructureReset(t *testing.T) {
 	book.Store = store
 	book.SetOpState(OpStructure, false, true, false, 0)
 
-	// Reset structure - should delete Chapters
+	// Reset structure - should preserve Chapters so reruns can update stable
+	// identity records instead of recreating them after Defra tombstones.
 	if err := ResetFrom(ctx, book, "", ResetStructure); err != nil {
 		t.Fatalf("ResetFrom(structure) failed: %v", err)
 	}
 
-	// Verify Chapters were deleted
+	// Verify Chapters were preserved
 	chaptersResp, err = store.Execute(ctx, chaptersQuery, nil)
 	if err != nil {
 		t.Fatalf("failed to query Chapters after reset: %v", err)
 	}
 	chapters, ok := chaptersResp.Data["Chapter"].([]any)
-	if ok && len(chapters) != 0 {
-		t.Errorf("expected Chapters to be deleted, got %d", len(chapters))
+	if !ok || len(chapters) != 5 {
+		t.Errorf("expected 5 Chapters to be preserved, got %d", len(chapters))
 	}
 
 	// Verify structure was reset

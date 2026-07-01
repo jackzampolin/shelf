@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strconv"
 
 	"github.com/spf13/cobra"
 
@@ -200,6 +201,8 @@ type AgentLogSummary struct {
 // DetailedJobStatusEndpoint handles GET /api/jobs/status/{book_id}/detailed.
 type DetailedJobStatusEndpoint struct{}
 
+const defaultDetailedStatusAgentLogLimit = 100
+
 func (e *DetailedJobStatusEndpoint) Route() (string, string, http.HandlerFunc) {
 	return "GET", "/api/jobs/status/{book_id}/detailed", e.handler
 }
@@ -231,7 +234,17 @@ func (e *DetailedJobStatusEndpoint) handler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	resp, err := getDetailedStatus(r.Context(), defraClient, bookID)
+	agentLogLimit := defaultDetailedStatusAgentLogLimit
+	if raw := r.URL.Query().Get("agent_log_limit"); raw != "" {
+		parsed, parseErr := strconv.Atoi(raw)
+		if parseErr != nil || parsed < 0 {
+			writeError(w, http.StatusBadRequest, "agent_log_limit must be a non-negative integer")
+			return
+		}
+		agentLogLimit = parsed
+	}
+
+	resp, err := getDetailedStatus(r.Context(), defraClient, bookID, agentLogLimit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -292,7 +305,8 @@ func (e *DetailedJobStatusEndpoint) handler(w http.ResponseWriter, r *http.Reque
 }
 
 func (e *DetailedJobStatusEndpoint) Command(getServerURL func() string) *cobra.Command {
-	return &cobra.Command{
+	var agentLogLimit int
+	cmd := &cobra.Command{
 		Use:   "status-detailed <book_id>",
 		Short: "Get detailed job status for a book",
 		Long: `Get comprehensive processing status including:
@@ -307,17 +321,19 @@ func (e *DetailedJobStatusEndpoint) Command(getServerURL func() string) *cobra.C
 
 			client := api.NewClient(getServerURL())
 			var resp DetailedJobStatusResponse
-			if err := client.Get(ctx, fmt.Sprintf("/api/jobs/status/%s/detailed", bookID), &resp); err != nil {
+			if err := client.Get(ctx, fmt.Sprintf("/api/jobs/status/%s/detailed?agent_log_limit=%d", bookID, agentLogLimit), &resp); err != nil {
 				return err
 			}
 
 			return api.Output(resp)
 		},
 	}
+	cmd.Flags().IntVar(&agentLogLimit, "agent-log-limit", defaultDetailedStatusAgentLogLimit, "Maximum recent agent logs to include (0 disables logs)")
+	return cmd
 }
 
 // getDetailedStatus fetches comprehensive status from DefraDB
-func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string) (*DetailedJobStatusResponse, error) {
+func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string, agentLogLimit int) (*DetailedJobStatusResponse, error) {
 	resp := &DetailedJobStatusResponse{
 		BookID:      bookID,
 		OcrProgress: make(map[string]ProviderProgress),
@@ -822,47 +838,50 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 		}
 	}
 
-	// Query agent logs
-	agentQuery := fmt.Sprintf(`{
-		AgentRun(filter: {book_id: {_eq: "%s"}}) {
-			_docID
-			agent_type
-			started_at
-			completed_at
-			iterations
-			success
-			error
-		}
-	}`, bookID)
+	// Query recent agent logs. Use a default limit because books with repeated
+	// agent retries can otherwise return thousands of records in one status call.
+	if agentLogLimit > 0 {
+		agentQuery := fmt.Sprintf(`{
+			AgentRun(filter: {book_id: {_eq: "%s"}}, order: {started_at: DESC}, limit: %d) {
+				_docID
+				agent_type
+				started_at
+				completed_at
+				iterations
+				success
+				error
+			}
+		}`, bookID, agentLogLimit)
 
-	agentResp, err := client.Execute(ctx, agentQuery, nil)
-	if err == nil {
-		if runs, ok := agentResp.Data["AgentRun"].([]any); ok {
-			for _, r := range runs {
-				if run, ok := r.(map[string]any); ok {
-					log := AgentLogSummary{}
-					if v, ok := run["_docID"].(string); ok {
-						log.ID = v
+		agentResp, err := client.Execute(ctx, agentQuery, nil)
+		if err == nil {
+			if runs, ok := agentResp.Data["AgentRun"].([]any); ok {
+				for _, r := range runs {
+					if run, ok := r.(map[string]any); ok {
+						log := AgentLogSummary{}
+						if v, ok := run["_docID"].(string); ok {
+							log.ID = v
+						}
+						if v, ok := run["agent_type"].(string); ok {
+							log.AgentType = v
+						}
+						if v, ok := run["started_at"].(string); ok {
+							log.StartedAt = v
+						}
+						if v, ok := run["completed_at"].(string); ok {
+							log.CompletedAt = v
+						}
+						if v, ok := run["iterations"].(float64); ok {
+							log.Iterations = int(v)
+						}
+						if v, ok := run["success"].(bool); ok {
+							log.Success = v
+						}
+						if v, ok := run["error"].(string); ok {
+							log.Error = v
+						}
+						resp.AgentLogs = append(resp.AgentLogs, log)
 					}
-					if v, ok := run["agent_type"].(string); ok {
-						log.AgentType = v
-					}
-					if v, ok := run["started_at"].(string); ok {
-						log.StartedAt = v
-					}
-					if v, ok := run["completed_at"].(string); ok {
-						log.CompletedAt = v
-					}
-					if v, ok := run["iterations"].(float64); ok {
-						log.Iterations = int(v)
-					}
-					if v, ok := run["success"].(bool); ok {
-						log.Success = v
-					}
-					if v, ok := run["error"].(string); ok {
-						log.Error = v
-					}
-					resp.AgentLogs = append(resp.AgentLogs, log)
 				}
 			}
 		}

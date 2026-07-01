@@ -159,7 +159,17 @@ func (s *Sink) Send(op WriteOp) {
 
 // SendSync queues a write operation and waits for the result.
 // Returns the document ID on success.
-func (s *Sink) SendSync(ctx context.Context, op WriteOp) (WriteResult, error) {
+func (s *Sink) SendSync(ctx context.Context, op WriteOp) (res WriteResult, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.logger.Warn("sink closed, dropping sync write op",
+				"collection", op.Collection,
+				"op", op.Op)
+			res = WriteResult{}
+			err = ErrSinkClosed
+		}
+	}()
+
 	resultCh := make(chan WriteResult, 1)
 	op.result = resultCh
 	op.flushNow = true

@@ -4,12 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackzampolin/shelf/internal/agent/observability"
 	"github.com/jackzampolin/shelf/internal/providers"
+)
+
+const (
+	fullRecentMessagesForRequest = 12
+	maxOldToolResultRunes        = 360
 )
 
 // Config configures an agent instance.
@@ -19,6 +25,14 @@ type Config struct {
 
 	// Tools provides the agent's capabilities
 	Tools Tools
+
+	// RequireToolUse asks the provider to return a tool call on each LLM turn.
+	// Use this for agents whose only valid completion path is via tool output.
+	RequireToolUse bool
+
+	// MaxToolCallsPerTurn limits how many tool calls from a single assistant
+	// response will be executed. Zero means no cap.
+	MaxToolCallsPerTurn int
 
 	// InitialMessages sets up the conversation (system prompt + user prompt)
 	InitialMessages []providers.Message
@@ -40,9 +54,11 @@ type Agent struct {
 	mu sync.Mutex
 
 	// Configuration
-	id            string
-	tools         Tools
-	maxIterations int
+	id                  string
+	tools               Tools
+	maxIterations       int
+	requireToolUse      bool
+	maxToolCallsPerTurn int
 
 	// Conversation state
 	messages []providers.Message
@@ -84,13 +100,15 @@ func New(ctx context.Context, cfg Config) *Agent {
 	logger := observability.NewLogger(ctx, id, cfg.AgentType, cfg.BookID, cfg.JobID)
 
 	return &Agent{
-		id:            id,
-		tools:         cfg.Tools,
-		maxIterations: maxIterations,
-		messages:      messages,
-		toolResults:   make(map[string]string),
-		startTime:     time.Now(),
-		logger:        logger,
+		id:                  id,
+		tools:               cfg.Tools,
+		maxIterations:       maxIterations,
+		requireToolUse:      cfg.RequireToolUse,
+		maxToolCallsPerTurn: cfg.MaxToolCallsPerTurn,
+		messages:            messages,
+		toolResults:         make(map[string]string),
+		startTime:           time.Now(),
+		logger:              logger,
 	}
 }
 
@@ -149,9 +167,13 @@ func (a *Agent) NextWorkUnits() []WorkUnit {
 		// Clear any images from history to ensure only current image is sent
 		requestMessages[i].Images = nil
 	}
+	compactOldToolResultsForRequest(requestMessages)
 
 	req := &providers.ChatRequest{
 		Messages: requestMessages,
+	}
+	if a.requireToolUse {
+		req.ToolChoice = "required"
 	}
 
 	// Add current images to the last message only
@@ -172,6 +194,27 @@ func (a *Agent) NextWorkUnits() []WorkUnit {
 	}}
 }
 
+func compactOldToolResultsForRequest(messages []providers.Message) {
+	cutoff := len(messages) - fullRecentMessagesForRequest
+	if cutoff <= 0 {
+		return
+	}
+	for i := 0; i < cutoff; i++ {
+		if messages[i].Role != "tool" {
+			continue
+		}
+		messages[i].Content = compactToolResultContent(messages[i].Content)
+	}
+}
+
+func compactToolResultContent(content string) string {
+	runes := []rune(content)
+	if len(runes) <= maxOldToolResultRunes {
+		return content
+	}
+	return fmt.Sprintf("[older tool result compacted from %d chars]\n%s...", len(runes), string(runes[:maxOldToolResultRunes]))
+}
+
 // HandleLLMResult processes the result of an LLM work unit.
 func (a *Agent) HandleLLMResult(result *providers.ChatResult) {
 	a.mu.Lock()
@@ -183,9 +226,14 @@ func (a *Agent) HandleLLMResult(result *providers.ChatResult) {
 		Content: result.Content,
 	}
 
+	toolCalls := result.ToolCalls
+	if a.maxToolCallsPerTurn > 0 && len(toolCalls) > a.maxToolCallsPerTurn {
+		toolCalls = toolCalls[:a.maxToolCallsPerTurn]
+	}
+
 	// Include tool_calls in assistant message (required by API for multi-turn)
-	if len(result.ToolCalls) > 0 {
-		assistantMsg.ToolCalls = result.ToolCalls
+	if len(toolCalls) > 0 {
+		assistantMsg.ToolCalls = toolCalls
 	}
 
 	// Include reasoning_details for reasoning models (encrypted thinking)
@@ -194,8 +242,8 @@ func (a *Agent) HandleLLMResult(result *providers.ChatResult) {
 	}
 
 	// Check for tool calls
-	if len(result.ToolCalls) > 0 {
-		a.pendingToolCalls = result.ToolCalls
+	if len(toolCalls) > 0 {
+		a.pendingToolCalls = toolCalls
 		a.toolResults = make(map[string]string) // Reset for new batch
 		a.messages = append(a.messages, assistantMsg)
 		return
@@ -220,8 +268,24 @@ func (a *Agent) HandleLLMResult(result *providers.ChatResult) {
 	// Not complete but no tool calls - prompt to continue
 	a.messages = append(a.messages, providers.Message{
 		Role:    "user",
-		Content: "Please continue using the available tools to complete your task.",
+		Content: a.noToolCallPrompt(),
 	})
+}
+
+func (a *Agent) noToolCallPrompt() string {
+	toolNames := make([]string, 0)
+	for _, tool := range a.tools.GetTools() {
+		if tool.Function.Name != "" {
+			toolNames = append(toolNames, tool.Function.Name)
+		}
+	}
+	if len(toolNames) == 0 {
+		return "You must continue the task using a tool call. Do not answer in prose."
+	}
+	return fmt.Sprintf(
+		"You must call one of the available tools now: %s. Do not answer in prose.",
+		strings.Join(toolNames, ", "),
+	)
 }
 
 // HandleToolResult processes the result of a tool execution work unit.

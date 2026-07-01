@@ -159,6 +159,57 @@ func TestSeedDefaults(t *testing.T) {
 	})
 }
 
+func TestSeedDefaultsFromConfig(t *testing.T) {
+	store := newMockStore()
+	ctx := context.Background()
+	cfg := DefaultConfig()
+	cfg.OCRProviders["chandra-local"] = OCRProviderCfg{
+		Type:                  "chandra",
+		BaseURLs:              []string{"http://spark-1:8001/v1", "http://spark-2:8001/v1"},
+		RateLimit:             100,
+		MaxConcurrency:        64,
+		IncludeImages:         true,
+		IncludeHeadersFooters: false,
+		TimeoutSeconds:        180,
+		MaxRetries:            1,
+		TopP:                  0.1,
+		Enabled:               true,
+	}
+	cfg.LLMProviders["qwen-local"] = LLMProviderCfg{
+		Type:           "openai-compat",
+		Model:          "qwen",
+		BaseURLs:       []string{"http://spark-1:8000/v1", "http://spark-2:8000/v1"},
+		RateLimit:      200,
+		MaxConcurrency: 32,
+		Enabled:        true,
+	}
+	cfg.Defaults.OCRProviders = []string{"chandra-local"}
+	cfg.Defaults.LLMProvider = "qwen-local"
+
+	if err := SeedDefaultsFromConfig(ctx, store, nil, cfg); err != nil {
+		t.Fatalf("SeedDefaultsFromConfig() error = %v", err)
+	}
+
+	if got := store.data["defaults.ocr_providers"].Value; !stringSlicesEqual(got, []string{"chandra-local"}) {
+		t.Fatalf("defaults.ocr_providers = %#v, want chandra-local", got)
+	}
+	if got := store.data["defaults.llm_provider"].Value; got != "qwen-local" {
+		t.Fatalf("defaults.llm_provider = %#v, want qwen-local", got)
+	}
+	if got := store.data["providers.ocr.chandra-local.base_urls"].Value; !stringSlicesEqual(got, []string{"http://spark-1:8001/v1", "http://spark-2:8001/v1"}) {
+		t.Fatalf("chandra base_urls = %#v", got)
+	}
+	if got := store.data["providers.ocr.chandra-local.max_concurrency"].Value; got != 64 {
+		t.Fatalf("chandra max_concurrency = %#v, want 64", got)
+	}
+	if got := store.data["providers.ocr.chandra-local.timeout_seconds"].Value; got != 180 {
+		t.Fatalf("chandra timeout_seconds = %#v, want 180", got)
+	}
+	if got := store.data["providers.ocr.chandra-local.max_retries"].Value; got != 1 {
+		t.Fatalf("chandra max_retries = %#v, want 1", got)
+	}
+}
+
 func TestResetToDefault(t *testing.T) {
 	t.Run("resets_to_default", func(t *testing.T) {
 		store := newMockStore()
@@ -191,4 +242,17 @@ func TestResetToDefault(t *testing.T) {
 			t.Errorf("ResetToDefault() error should wrap ErrNoDefault, got %v", err)
 		}
 	})
+}
+
+func stringSlicesEqual(got any, want []string) bool {
+	values, ok := got.([]string)
+	if !ok || len(values) != len(want) {
+		return false
+	}
+	for i := range values {
+		if values[i] != want[i] {
+			return false
+		}
+	}
+	return true
 }

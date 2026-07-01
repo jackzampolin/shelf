@@ -3,6 +3,7 @@ package toc_entry_finder
 import (
 	_ "embed"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/jackzampolin/shelf/internal/prompts"
@@ -41,9 +42,11 @@ func RegisterPrompts(r *prompts.Resolver) {
 
 // BookStructure provides context about the book's layout.
 type BookStructure struct {
-	TotalPages       int    `json:"total_pages"`
-	BackMatterStart  int    `json:"back_matter_start"`   // Estimated start of back matter
-	BackMatterTypes  string `json:"back_matter_types"`   // e.g., "footnotes, bibliography, index"
+	TotalPages         int    `json:"total_pages"`
+	BackMatterStart    int    `json:"back_matter_start"` // Estimated start of back matter
+	BackMatterTypes    string `json:"back_matter_types"` // e.g., "footnotes, bibliography, index"
+	TargetIsBackMatter bool   `json:"target_is_back_matter"`
+	RetryHint          string `json:"retry_hint,omitempty"`
 }
 
 // BuildUserPrompt builds the user prompt for finding a specific ToC entry.
@@ -63,19 +66,59 @@ func BuildUserPrompt(entry *TocEntry, totalPages int, bookStructure *BookStructu
 	}
 	searchTerm := strings.Join(searchParts, " ")
 
-	prompt := fmt.Sprintf(`Find: "%s"`, searchTerm)
+	var prompt strings.Builder
+	fmt.Fprintf(&prompt, "TARGET ENTRY\nFind only this ToC entry: %q", searchTerm)
 
 	if entry.PrintedPageNumber != "" {
-		prompt += fmt.Sprintf(" (printed page %s, but use scan pages)", entry.PrintedPageNumber)
+		fmt.Fprintf(&prompt, "\nPrinted page: %s (use scan pages for the final answer)", entry.PrintedPageNumber)
+		if printedPage, err := strconv.Atoi(entry.PrintedPageNumber); err == nil && printedPage > 0 && totalPages > 0 {
+			start := clampPage(printedPage+10, totalPages)
+			end := clampPage(printedPage+35, totalPages)
+			if end < start {
+				end = start
+			}
+			fmt.Fprintf(&prompt, "\nStart near scan pages %d-%d, then expand only if needed.", start, end)
+			fmt.Fprintf(&prompt, "\nUse get_heading_pages in that range first. Prioritize target_title_match, target_title_prefix_match, or entry_number_match candidates, verify the best candidate with get_page_ocr, then write_result. Do not inspect the range one page at a time unless candidate tools fail.")
+		}
 	}
 
-	prompt += fmt.Sprintf(" [%d pages in book]", totalPages)
+	if totalPages > 0 {
+		fmt.Fprintf(&prompt, "\nTotal scan pages: %d", totalPages)
+	}
+
+	if bookStructure != nil && strings.TrimSpace(bookStructure.RetryHint) != "" {
+		fmt.Fprintf(&prompt, "\n\nPREVIOUS REJECTION FEEDBACK\n%s", strings.TrimSpace(bookStructure.RetryHint))
+		fmt.Fprintf(&prompt, "\nDo not repeat a rejected scan_page unless get_page_ocr now shows opener-quality evidence: a matching section/chapter header, title_prefix_in_section_header for an appendix/diagram title, matching entry-number section header, the first page of a title page-header cluster, or expected_printed_page_missing at that cluster boundary. Use the tools to inspect another candidate before calling write_result again.")
+	}
+
+	fmt.Fprintf(&prompt, "\n\nDECISION RULE\nIf grep_text shows a dense title cluster near the expected scan range, verify the first cluster page with get_page_ocr. Prefer a formal section/chapter header. For appendix/diagram entries, evidence.title_prefix_in_section_header is valid when the remaining title continues on an adjacent page. If get_page_ocr returns write_result_ready=true, call write_result with write_result_args; do not continue scanning. A page-header title is valid only on the first page of the cluster; later repeated running headers are not entry starts. If get_page_ocr reports expected_printed_page_missing at the start of a title-header cluster, use that first available scanned page.")
 
 	// Add book structure context
 	if bookStructure != nil && bookStructure.BackMatterStart > 0 {
-		prompt += fmt.Sprintf("\n\nBOOK STRUCTURE: Back matter (including %s) starts around page %d. Results from pages %d+ are likely footnote references, not chapter starts.",
-			bookStructure.BackMatterTypes, bookStructure.BackMatterStart, bookStructure.BackMatterStart)
+		labels := strings.TrimSpace(bookStructure.BackMatterTypes)
+		if labels == "" {
+			labels = "late notes, appendices, glossary, index"
+		}
+		fmt.Fprintf(&prompt, "\n\nPAGE CONTEXT\nLate-section labels in this book: %s.\n", labels)
+		if bookStructure.TargetIsBackMatter {
+			fmt.Fprintf(&prompt, "This target is a late/back-matter ToC entry, so pages around or after scan page %d may be valid.\n", bookStructure.BackMatterStart)
+			fmt.Fprintf(&prompt, "Do not return a generic late-section label; the only target is %q.", searchTerm)
+		} else {
+			fmt.Fprintf(&prompt, "Pages %d+ are likely late notes, appendices, glossary, or index material.\n", bookStructure.BackMatterStart)
+			fmt.Fprintf(&prompt, "For this non-back-matter target, treat matches there as references unless OCR clearly shows this exact entry starts there.\n")
+			fmt.Fprintf(&prompt, "Do not search for or return the late-section labels; the only target is %q.", searchTerm)
+		}
 	}
 
-	return prompt
+	return prompt.String()
+}
+
+func clampPage(page, totalPages int) int {
+	if page < 1 {
+		return 1
+	}
+	if totalPages > 0 && page > totalPages {
+		return totalPages
+	}
+	return page
 }

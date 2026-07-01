@@ -164,13 +164,19 @@ func (c *Config) ToProviderRegistryConfig() providers.RegistryConfig {
 
 	for name, ocr := range c.OCRProviders {
 		cfg.OCRProviders[name] = providers.OCRProviderConfig{
-			Type:           ocr.Type,
-			APIKey:         ResolveEnvVars(ocr.APIKey),
-			RateLimit:      ocr.RateLimit,
-			Enabled:        ocr.Enabled,
-			IncludeImages:  ocr.IncludeImages,
-			BaseURLs:       resolveEnvVarsSlice(ocr.BaseURLs),
-			MaxConcurrency: ocr.MaxConcurrency,
+			Type:                  ocr.Type,
+			APIKey:                ResolveEnvVars(ocr.APIKey),
+			RateLimit:             ocr.RateLimit,
+			Enabled:               ocr.Enabled,
+			IncludeImages:         ocr.IncludeImages,
+			IncludeHeadersFooters: ocr.IncludeHeadersFooters,
+			MaxOutputTokens:       ocr.MaxOutputTokens,
+			TimeoutSeconds:        ocr.TimeoutSeconds,
+			Temperature:           ocr.Temperature,
+			TopP:                  ocr.TopP,
+			BaseURLs:              resolveEnvVarsSlice(ocr.BaseURLs),
+			MaxConcurrency:        ocr.MaxConcurrency,
+			MaxRetries:            ocr.MaxRetries,
 		}
 	}
 

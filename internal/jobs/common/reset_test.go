@@ -123,6 +123,56 @@ func TestResetFrom_CascadeDependencies(t *testing.T) {
 	})
 }
 
+func TestResetFrom_TocLinkReloadsClearedEntries(t *testing.T) {
+	book := NewBookState("book-1")
+	store := NewMemoryStateStore()
+	book.Store = store
+	book.SetTocDocID("toc-1")
+	book.SetTocEntries(nil)
+
+	store.SetTocDoc("toc-1", map[string]any{})
+	store.SetDoc("TocEntry", "entry-2", map[string]any{
+		"_tocID":              "toc-1",
+		"_actual_pageID":      "page-12",
+		"entry_number":        "2",
+		"title":               "Second",
+		"level":               float64(1),
+		"level_name":          "chapter",
+		"printed_page_number": "12",
+		"sort_order":          float64(2),
+	})
+	store.SetDoc("TocEntry", "entry-1", map[string]any{
+		"_tocID":              "toc-1",
+		"_actual_pageID":      "page-3",
+		"entry_number":        "1",
+		"title":               "First",
+		"level":               float64(1),
+		"level_name":          "chapter",
+		"printed_page_number": "3",
+		"sort_order":          float64(1),
+	})
+
+	ctx := context.Background()
+	if err := ResetFrom(ctx, book, "toc-1", ResetTocLink); err != nil {
+		t.Fatalf("ResetFrom(toc_link) failed: %v", err)
+	}
+
+	for _, docID := range []string{"entry-1", "entry-2"} {
+		doc := store.GetDoc("TocEntry", docID)
+		if _, ok := doc["_actual_pageID"]; ok {
+			t.Fatalf("expected %s _actual_pageID to be cleared, got %v", docID, doc["_actual_pageID"])
+		}
+	}
+
+	entries := book.GetUnlinkedTocEntries()
+	if len(entries) != 2 {
+		t.Fatalf("expected reset to reload 2 pending ToC entries, got %d", len(entries))
+	}
+	if entries[0].DocID != "entry-1" || entries[1].DocID != "entry-2" {
+		t.Fatalf("expected entries sorted by sort_order, got %s then %s", entries[0].DocID, entries[1].DocID)
+	}
+}
+
 // TestValidResetOperations verifies the ValidResetOperations list is complete.
 func TestValidResetOperations(t *testing.T) {
 	expected := []ResetOperation{

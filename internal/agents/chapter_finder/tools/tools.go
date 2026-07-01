@@ -114,7 +114,7 @@ func (t *ChapterFinderTools) GetResult() any {
 
 // getPageOcrMarkdown retrieves OCR markdown text from BookState.
 func (t *ChapterFinderTools) getPageOcrMarkdown(ctx context.Context, pageNum int) (string, error) {
-	text, err := t.book.GetOcrMarkdown(ctx, pageNum)
+	text, err := t.book.GetOcrMarkdownWithPageFurniture(ctx, pageNum)
 	if err != nil {
 		return "", err
 	}

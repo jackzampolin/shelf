@@ -146,7 +146,8 @@ func PersistBookStatus(ctx context.Context, book *BookState, status string) (str
 		Collection: "Book",
 		DocID:      book.BookID,
 		Document: map[string]any{
-			"status": status,
+			"status":        status,
+			"status_reason": "",
 		},
 		Op: defra.OpUpdate,
 	})

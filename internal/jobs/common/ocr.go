@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 
@@ -68,16 +69,20 @@ func PersistOCRResult(ctx context.Context, book *BookState, state *PageState, oc
 	}
 
 	if result != nil {
+		doc := map[string]any{
+			"_pageID":  pageDocID,
+			"provider": provider,
+			"text":     result.Text,
+		}
+		if result.Metadata != nil {
+			doc["provider_metadata"] = result.Metadata
+		}
 		// Fire-and-forget write - sink batches and logs errors internally
 		sink.Send(defra.WriteOp{
 			Collection: "OcrResult",
-			Document: map[string]any{
-				"_pageID":  pageDocID,
-				"provider": provider,
-				"text":     result.Text,
-			},
-			Op:     defra.OpCreate,
-			Source: fmt.Sprintf("PersistOCRResult:create:%s", provider),
+			Document:   doc,
+			Op:         defra.OpCreate,
+			Source:     fmt.Sprintf("PersistOCRResult:create:%s", provider),
 		})
 
 		// Persist header/footer extracted by OCR provider (Mistral) - async
@@ -128,7 +133,7 @@ func PersistOCRResult(ctx context.Context, book *BookState, state *PageState, oc
 }
 
 // SaveExtractedImages saves images from OCR metadata to disk and updates the text.
-// Returns the updated text with image references pointing to saved files.
+// Returns the updated text with image references pointing to served image URLs.
 // If no images are present or saving fails, returns the original text unchanged.
 func SaveExtractedImages(ctx context.Context, homeDir *home.Dir, bookID string, pageNum int, result *providers.OCRResult) string {
 	if result == nil || result.Metadata == nil {
@@ -154,6 +159,7 @@ func SaveExtractedImages(ctx context.Context, homeDir *home.Dir, bookID string, 
 
 	// Ensure directory exists
 	if err := homeDir.EnsurePageExtractedImagesDir(bookID, pageNum); err != nil {
+		stripExtractedImagePayloads(images)
 		if logger != nil {
 			logger.Warn("failed to create extracted images directory",
 				"book_id", bookID,
@@ -170,19 +176,22 @@ func SaveExtractedImages(ctx context.Context, homeDir *home.Dir, bookID string, 
 		// Get image ID (e.g., "img-0.jpeg")
 		imageID, ok := img["id"].(string)
 		if !ok || imageID == "" {
+			delete(img, "image_base64")
+			img["has_base64"] = false
 			continue
 		}
 
 		// Check if base64 data is present
 		hasBase64, _ := img["has_base64"].(bool)
 		if !hasBase64 {
+			delete(img, "image_base64")
 			continue
 		}
 
 		// Get the base64 data from the original response
-		// Note: The metadata stores "has_base64" flag, but actual data may be in raw response
-		// For now, we'll need to ensure Mistral provider stores the actual base64 data
 		base64Data, ok := img["image_base64"].(string)
+		delete(img, "image_base64")
+		img["has_base64"] = false
 		if !ok || base64Data == "" {
 			continue
 		}
@@ -219,10 +228,19 @@ func SaveExtractedImages(ctx context.Context, homeDir *home.Dir, bookID string, 
 			continue
 		}
 
-		// Update markdown to reference the saved file path
-		// Mistral markdown: ![img-0.jpeg](img-0.jpeg) -> ![img-0.jpeg](/path/to/img-0.jpeg)
+		imageURL := fmt.Sprintf(
+			"/api/books/%s/pages/%d/extracted-images/%s",
+			url.PathEscape(bookID),
+			pageNum,
+			url.PathEscape(imageID),
+		)
+		img["url"] = imageURL
+		img["path"] = imagePath
+
+		// Update markdown to reference the served image URL.
+		// Mistral/Chandra markdown: ![...](img-0.jpeg) -> ![...](.../extracted-images/img-0.jpeg)
 		oldRef := fmt.Sprintf("(%s)", imageID)
-		newRef := fmt.Sprintf("(%s)", imagePath)
+		newRef := fmt.Sprintf("(%s)", imageURL)
 		text = strings.Replace(text, oldRef, newRef, 1)
 
 		savedCount++
@@ -243,4 +261,11 @@ func SaveExtractedImages(ctx context.Context, homeDir *home.Dir, bookID string, 
 	}
 
 	return text
+}
+
+func stripExtractedImagePayloads(images []map[string]any) {
+	for _, img := range images {
+		delete(img, "image_base64")
+		img["has_base64"] = false
+	}
 }

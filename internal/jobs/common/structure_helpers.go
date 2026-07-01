@@ -10,6 +10,13 @@ import (
 const (
 	PromptKeyClassifySystem = "stages.common_structure.classify.system"
 	PromptKeyPolishSystem   = "stages.common_structure.polish.system"
+
+	// MaxPolishPromptChars bounds a single polish request while allowing the
+	// model to inspect full chapters from normal long-form books. The previous
+	// 15k cap hid most OCR errors in long chapters.
+	MaxPolishPromptChars = 120000
+
+	maxClassifySnippetChars = 1000
 )
 
 // ClassifySystemPrompt is the system prompt for content classification.
@@ -28,8 +35,10 @@ Given a list of table of contents entries, for each entry:
    - INCLUDE: body content, preface, foreword, introduction, prologue, epilogue,
      afterword, author's note, dedication, acknowledgments, about the author
    - EXCLUDE: index, bibliography, references, glossary, notes/endnotes,
-     copyright, illustrations lists, table of contents
-   - JUDGMENT: appendix (include if narrative/short, exclude if tabular/reference),
+     copyright, illustrations lists, table of contents, tabular/list reference appendices,
+     orders of battle, rosters, chronology tables, abbreviations, and similar lookup material
+   - JUDGMENT: appendix (include only if it is narrative prose that belongs in the listening
+     experience; exclude if it is mostly tables, lists, names, citations, abbreviations, or reference data),
      other (use your best judgment based on title and position)
 
 Consider:
@@ -37,6 +46,8 @@ Consider:
 - Title keywords and conventions
 - Level/hierarchy (Part vs Chapter vs Section)
 - Surrounding context
+- Content evidence in the sample text and content_signals field; repeated short lines,
+  table/list density, and reference keywords are strong evidence to set audio_include=false
 
 Return a JSON object with:
 - "classifications": entry_id -> matter_type
@@ -60,6 +71,7 @@ Common issues to fix:
 Rules:
 - ONLY return edits for actual problems
 - Keep edits minimal and precise
+- Return at most 50 edits; prefer the highest-confidence OCR fixes
 - NEVER change the meaning or content
 - NEVER rewrite sentences for style
 - Preserve all substantive text
@@ -115,15 +127,8 @@ func BuildClassifyPrompt(chapters []*ChapterState, totalPages int) string {
 		if wordCount == 0 && ch.MechanicalText != "" {
 			wordCount = CountWords(ch.MechanicalText)
 		}
-		snippet := strings.TrimSpace(ch.MechanicalText)
-		if snippet == "" {
-			snippet = "[no text]"
-		} else {
-			snippet = strings.ReplaceAll(snippet, "\n", " ")
-			if len(snippet) > 200 {
-				snippet = snippet[:200] + "..."
-			}
-		}
+		snippet := buildClassifySnippet(ch.MechanicalText)
+		signals := classifyContentSignals(ch.MechanicalText, ch.Title)
 
 		pageRange := fmt.Sprintf("pages %d-%d", ch.StartPage, ch.EndPage)
 		if ch.EndPage == 0 || ch.EndPage == ch.StartPage {
@@ -131,8 +136,8 @@ func BuildClassifyPrompt(chapters []*ChapterState, totalPages int) string {
 		}
 
 		line := fmt.Sprintf(
-			"%d. \"%s\" (%s, level %d %s, word_count %d) [id: %s]\n   text: %s",
-			i+1, ch.Title, pageRange, ch.Level, ch.LevelName, wordCount, ch.EntryID, snippet,
+			"%d. \"%s\" (%s, level %d %s, word_count %d) [id: %s]\n   content_signals: %s\n   text: %s",
+			i+1, ch.Title, pageRange, ch.Level, ch.LevelName, wordCount, ch.EntryID, signals, snippet,
 		)
 		lines = append(lines, line)
 	}
@@ -141,13 +146,113 @@ func BuildClassifyPrompt(chapters []*ChapterState, totalPages int) string {
 	return strings.Join(lines, "\n")
 }
 
+func buildClassifySnippet(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return "[no text]"
+	}
+
+	var parts []string
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts = append(parts, line)
+		if len(strings.Join(parts, " | ")) >= maxClassifySnippetChars {
+			break
+		}
+	}
+	if len(parts) == 0 {
+		return "[no text]"
+	}
+
+	snippet := strings.Join(parts, " | ")
+	if len(snippet) > maxClassifySnippetChars {
+		snippet = snippet[:maxClassifySnippetChars] + "..."
+	}
+	return snippet
+}
+
+func classifyContentSignals(text, title string) string {
+	var signals []string
+	lower := strings.ToLower(title + "\n" + text)
+	for _, keyword := range []string{
+		"order of battle",
+		"roster",
+		"bibliography",
+		"glossary",
+		"index",
+		"abbreviations",
+		"chronology",
+		"table",
+	} {
+		if strings.Contains(lower, keyword) {
+			signals = append(signals, "keyword:"+keyword)
+		}
+	}
+
+	var nonEmpty, shortLines, listLike, tableLike int
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		nonEmpty++
+		if len(line) <= 48 {
+			shortLines++
+		}
+		if strings.HasPrefix(line, "-") || strings.HasPrefix(line, "*") || looksNumberedListLine(line) {
+			listLike++
+		}
+		if strings.Count(line, "|") >= 2 || strings.Count(line, "\t") >= 2 {
+			tableLike++
+		}
+	}
+
+	if nonEmpty > 0 {
+		if shortLines*2 >= nonEmpty {
+			signals = append(signals, fmt.Sprintf("many_short_lines:%d/%d", shortLines, nonEmpty))
+		}
+		if listLike*4 >= nonEmpty {
+			signals = append(signals, fmt.Sprintf("list_like_lines:%d/%d", listLike, nonEmpty))
+		}
+		if tableLike > 0 {
+			signals = append(signals, fmt.Sprintf("table_like_lines:%d/%d", tableLike, nonEmpty))
+		}
+	}
+
+	if len(signals) == 0 {
+		return "none"
+	}
+	return strings.Join(signals, ", ")
+}
+
+func looksNumberedListLine(line string) bool {
+	if line == "" || !unicode.IsDigit(rune(line[0])) {
+		return false
+	}
+	for _, r := range line[1:] {
+		switch {
+		case unicode.IsDigit(r):
+			continue
+		case r == '.' || r == ')' || r == ':':
+			return true
+		case unicode.IsSpace(r):
+			continue
+		default:
+			return false
+		}
+	}
+	return false
+}
+
 // BuildPolishPrompt builds the user prompt for text polishing.
 func BuildPolishPrompt(chapter *ChapterState) string {
 	text := chapter.MechanicalText
 	// Truncate if very long to avoid token limits
-	maxChars := 15000
-	if len(text) > maxChars {
-		text = text[:maxChars] + "\n\n[... text truncated for length ...]"
+	if len(text) > MaxPolishPromptChars {
+		text = text[:MaxPolishPromptChars] + "\n\n[... text truncated for length ...]"
 	}
 
 	return fmt.Sprintf(`Section: "%s"
@@ -267,13 +372,14 @@ func PolishJSONSchema() map[string]any {
 			"type": "object",
 			"properties": map[string]any{
 				"edits": map[string]any{
-					"type": "array",
+					"type":     "array",
+					"maxItems": 50,
 					"items": map[string]any{
 						"type": "object",
 						"properties": map[string]any{
-							"old_text": map[string]any{"type": "string"},
-							"new_text": map[string]any{"type": "string"},
-							"reason":   map[string]any{"type": "string"},
+							"old_text": map[string]any{"type": "string", "maxLength": 500},
+							"new_text": map[string]any{"type": "string", "maxLength": 500},
+							"reason":   map[string]any{"type": "string", "maxLength": 200},
 						},
 						"required":             []string{"old_text", "new_text", "reason"},
 						"additionalProperties": false,

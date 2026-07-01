@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackzampolin/shelf/internal/defra"
@@ -29,6 +31,16 @@ const (
 
 // maxPersistConcurrency bounds parallel DB writes in persist functions.
 const maxPersistConcurrency = 5
+
+const (
+	maxDefraStructureWriteAttempts = 4
+	defraStructureWriteRetryDelay  = 75 * time.Millisecond
+)
+
+type chapterDocIdentity struct {
+	DocID     string
+	UniqueKey string
+}
 
 // StartStructurePhase initializes and starts the structure phase.
 func (j *Job) StartStructurePhase(ctx context.Context) []jobs.WorkUnit {
@@ -255,11 +267,7 @@ func (j *Job) persistChapterSkeleton(ctx context.Context) error {
 				doc["_toc_entryID"] = ch.TocEntryID
 			}
 
-			filter := map[string]any{
-				"unique_key": map[string]any{"_eq": ch.UniqueKey},
-			}
-
-			result, err := defraClient.UpsertWithVersion(ctx, "Chapter", filter, doc, doc)
+			result, err := j.persistChapterSkeletonDoc(ctx, defraClient, ch, doc)
 			if err != nil {
 				mu.Lock()
 				if firstErr == nil {
@@ -284,7 +292,227 @@ func (j *Job) persistChapterSkeleton(ctx context.Context) error {
 	}
 	wg.Wait()
 
-	return firstErr
+	if firstErr != nil {
+		return firstErr
+	}
+	return j.deleteStaleStructureChapters(ctx, defraClient, chapters)
+}
+
+func (j *Job) persistChapterSkeletonDoc(ctx context.Context, defraClient *defra.Client, ch *common.ChapterState, doc map[string]any) (defra.WriteResult, error) {
+	filter := map[string]any{
+		"unique_key": map[string]any{"_eq": ch.UniqueKey},
+	}
+
+	result, err := defraStructureWriteWithRetry(ctx, func() (defra.WriteResult, error) {
+		return defraClient.UpsertWithVersion(ctx, "Chapter", filter, doc, doc)
+	})
+	if err == nil || !isDefraDocIDExistsError(err) {
+		return result, err
+	}
+
+	existing, findErr := j.findExistingChapterByIdentity(ctx, defraClient, ch)
+	if findErr != nil {
+		return defra.WriteResult{}, findErr
+	}
+	if existing == nil {
+		return defra.WriteResult{}, fmt.Errorf("chapter stable-key upsert collided for %s (%s), but no existing Chapter matched book/ToC identity: %w", ch.EntryID, ch.UniqueKey, err)
+	}
+
+	logger := svcctx.LoggerFrom(ctx)
+	if logger != nil {
+		logger.Warn("chapter upsert collided with existing DocID; updating existing chapter by identity",
+			"entry_id", ch.EntryID,
+			"unique_key", ch.UniqueKey,
+			"existing_doc_id", existing.DocID,
+			"existing_unique_key", existing.UniqueKey,
+			"error", err)
+	}
+
+	return defraStructureWriteWithRetry(ctx, func() (defra.WriteResult, error) {
+		return defraClient.UpdateWithVersion(ctx, "Chapter", existing.DocID, doc)
+	})
+}
+
+func (j *Job) findExistingChapterByIdentity(ctx context.Context, defraClient *defra.Client, ch *common.ChapterState) (*chapterDocIdentity, error) {
+	query := fmt.Sprintf(`{
+		Chapter(filter: {_bookID: {_eq: %s}}, order: {sort_order: ASC}, limit: 5000) {
+			_docID
+			unique_key
+			entry_id
+			sort_order
+			_toc_entryID
+		}
+	}`, gqlString(j.Book.BookID))
+
+	resp, err := defraClient.Execute(ctx, query, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query existing chapters for identity match: %w", err)
+	}
+	if errMsg := resp.Error(); errMsg != "" {
+		return nil, fmt.Errorf("failed to query existing chapters for identity match: %s", errMsg)
+	}
+
+	raw, ok := resp.Data["Chapter"].([]any)
+	if !ok {
+		return nil, fmt.Errorf("unexpected Chapter identity query response: %+v", resp.Data)
+	}
+
+	var matches []chapterDocIdentity
+	for _, item := range raw {
+		data, ok := item.(map[string]any)
+		if !ok || !chapterIdentityMatches(data, ch) {
+			continue
+		}
+		docID, _ := data["_docID"].(string)
+		if docID == "" {
+			continue
+		}
+		uniqueKey, _ := data["unique_key"].(string)
+		matches = append(matches, chapterDocIdentity{
+			DocID:     docID,
+			UniqueKey: uniqueKey,
+		})
+	}
+
+	if len(matches) == 0 {
+		return nil, nil
+	}
+	if len(matches) > 1 {
+		return nil, fmt.Errorf("multiple existing Chapter records matched identity for %s (%s)", ch.EntryID, ch.UniqueKey)
+	}
+	return &matches[0], nil
+}
+
+func (j *Job) deleteStaleStructureChapters(ctx context.Context, defraClient *defra.Client, current []*common.ChapterState) error {
+	currentDocIDs := make(map[string]bool, len(current))
+	for _, chapter := range current {
+		if chapter != nil && chapter.DocID != "" {
+			currentDocIDs[chapter.DocID] = true
+		}
+	}
+
+	query := fmt.Sprintf(`{
+		Chapter(filter: {_bookID: {_eq: %s}}, order: {sort_order: ASC}, limit: 5000) {
+			_docID
+			entry_id
+			sort_order
+			_toc_entryID
+		}
+	}`, gqlString(j.Book.BookID))
+
+	resp, err := defraClient.Execute(ctx, query, nil)
+	if err != nil {
+		return fmt.Errorf("failed to query stale chapters: %w", err)
+	}
+	if errMsg := resp.Error(); errMsg != "" {
+		return fmt.Errorf("failed to query stale chapters: %s", errMsg)
+	}
+
+	raw, ok := resp.Data["Chapter"].([]any)
+	if !ok {
+		return fmt.Errorf("unexpected stale Chapter query response: %+v", resp.Data)
+	}
+
+	logger := svcctx.LoggerFrom(ctx)
+	deleted := 0
+	for _, item := range raw {
+		data, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		docID, _ := data["_docID"].(string)
+		if docID == "" || currentDocIDs[docID] {
+			continue
+		}
+		_, err := defraStructureWriteWithRetry(ctx, func() (defra.WriteResult, error) {
+			return defra.WriteResult{}, defraClient.Delete(ctx, "Chapter", docID)
+		})
+		if err != nil {
+			return fmt.Errorf("failed to delete stale chapter %s: %w", docID, err)
+		}
+		deleted++
+	}
+	if deleted > 0 && logger != nil {
+		logger.Debug("deleted stale structure chapters", "book_id", j.Book.BookID, "count", deleted)
+	}
+	return nil
+}
+
+func chapterIdentityMatches(data map[string]any, ch *common.ChapterState) bool {
+	if ch.TocEntryID != "" {
+		tocEntryID, _ := data["_toc_entryID"].(string)
+		return tocEntryID == ch.TocEntryID
+	}
+
+	entryID, _ := data["entry_id"].(string)
+	sortOrder, ok := graphQLInt(data["sort_order"])
+	return entryID == ch.EntryID && ok && sortOrder == ch.SortOrder
+}
+
+func graphQLInt(v any) (int, bool) {
+	switch n := v.(type) {
+	case int:
+		return n, true
+	case int64:
+		return int(n), true
+	case float64:
+		return int(n), true
+	case json.Number:
+		i, err := n.Int64()
+		if err != nil {
+			return 0, false
+		}
+		return int(i), true
+	default:
+		return 0, false
+	}
+}
+
+func gqlString(s string) string {
+	b, err := json.Marshal(s)
+	if err != nil {
+		return `""`
+	}
+	return string(b)
+}
+
+func isDefraDocIDExistsError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "document with the given id already exists") ||
+		strings.Contains(msg, "document with given id already exists")
+}
+
+func isDefraTransactionConflictError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "transaction conflict")
+}
+
+func defraStructureWriteWithRetry(ctx context.Context, write func() (defra.WriteResult, error)) (defra.WriteResult, error) {
+	var result defra.WriteResult
+	var err error
+	for attempt := 0; attempt < maxDefraStructureWriteAttempts; attempt++ {
+		result, err = write()
+		if err == nil || !isDefraTransactionConflictError(err) {
+			return result, err
+		}
+		if attempt == maxDefraStructureWriteAttempts-1 {
+			return result, err
+		}
+		delay := defraStructureWriteRetryDelay * time.Duration(attempt+1)
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return defra.WriteResult{}, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return result, err
 }
 
 // generateChapterUniqueKey creates a stable unique_key for upsert.
@@ -383,10 +611,12 @@ func (j *Job) persistExtractResults(ctx context.Context) error {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			result, err := defraClient.UpdateWithVersion(ctx, "Chapter", ch.DocID, map[string]any{
-				"mechanical_text":  ch.MechanicalText,
-				"word_count":       ch.WordCount,
-				"extract_complete": true,
+			result, err := defraStructureWriteWithRetry(ctx, func() (defra.WriteResult, error) {
+				return defraClient.UpdateWithVersion(ctx, "Chapter", ch.DocID, map[string]any{
+					"mechanical_text":  ch.MechanicalText,
+					"word_count":       ch.WordCount,
+					"extract_complete": true,
+				})
 			})
 			if err != nil {
 				mu.Lock()
@@ -450,7 +680,7 @@ func (j *Job) createStructureClassifyWorkUnit(ctx context.Context) (*jobs.WorkUn
 	userPrompt := common.BuildClassifyPrompt(chapters, j.Book.TotalPages)
 
 	// Inner json_schema object only; vLLM requires response_format.json_schema.name.
-	schemaBytes, err := json.Marshal(common.ClassifyJSONSchema()["json_schema"])
+	schemaBytes, err := json.Marshal(common.ClassifyJSONSchema())
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal JSON schema: %w", err)
 	}
@@ -528,6 +758,7 @@ func (j *Job) HandleStructureClassifyComplete(ctx context.Context, result jobs.W
 		if logger != nil {
 			logger.Warn("failed to process classification result", "error", err)
 		}
+		return nil, err
 	}
 
 	// Persist classification results
@@ -535,6 +766,7 @@ func (j *Job) HandleStructureClassifyComplete(ctx context.Context, result jobs.W
 		if logger != nil {
 			logger.Warn("failed to persist classification results", "error", err)
 		}
+		return nil, fmt.Errorf("failed to persist classification results: %w", err)
 	}
 
 	return j.transitionToStructurePolish(ctx), nil
@@ -645,7 +877,9 @@ func (j *Job) persistClassifyResults(ctx context.Context) error {
 				doc["audio_include_reasoning"] = ch.AudioIncludeReasoning
 			}
 
-			result, err := defraClient.UpdateWithVersion(ctx, "Chapter", ch.DocID, doc)
+			result, err := defraStructureWriteWithRetry(ctx, func() (defra.WriteResult, error) {
+				return defraClient.UpdateWithVersion(ctx, "Chapter", ch.DocID, doc)
+			})
 			if err != nil {
 				mu.Lock()
 				if firstErr == nil {
@@ -702,9 +936,18 @@ func (j *Job) createStructurePolishWorkUnits(ctx context.Context) []jobs.WorkUni
 		}
 		if !chapter.AudioInclude {
 			chapter.PolishedText = chapter.MechanicalText
+			chapter.EditsAppliedJSON = "[]"
 			chapter.PolishDone = true
 			j.Book.UpdateChapter(chapter) // Save changes back
 			j.Book.IncrementStructurePolished()
+			if err := j.persistChapterPolishResult(ctx, chapter); err != nil {
+				if logger := svcctx.LoggerFrom(ctx); logger != nil {
+					logger.Warn("failed to persist skipped chapter polish result",
+						"chapter_id", chapter.EntryID,
+						"doc_id", chapter.DocID,
+						"error", err)
+				}
+			}
 			continue
 		}
 
@@ -727,7 +970,7 @@ func (j *Job) createChapterPolishWorkUnit(ctx context.Context, chapter *common.C
 	userPrompt := common.BuildPolishPrompt(chapter)
 
 	// Inner json_schema object only; vLLM requires response_format.json_schema.name.
-	schemaBytes, err := json.Marshal(common.PolishJSONSchema()["json_schema"])
+	schemaBytes, err := json.Marshal(common.PolishJSONSchema())
 	if err != nil {
 		return nil
 	}
@@ -743,6 +986,7 @@ func (j *Job) createChapterPolishWorkUnit(ctx context.Context, chapter *common.C
 			{Role: "system", Content: systemPrompt},
 			{Role: "user", Content: userPrompt},
 		},
+		MaxTokens:      4096,
 		ResponseFormat: responseFormat,
 	}
 
@@ -782,6 +1026,7 @@ func (j *Job) HandleStructurePolishComplete(ctx context.Context, result jobs.Wor
 				"chapter", info.ChapterID,
 				"error", err)
 		}
+		return nil, err
 	}
 
 	j.RemoveWorkUnit(result.WorkUnitID)
@@ -792,6 +1037,7 @@ func (j *Job) HandleStructurePolishComplete(ctx context.Context, result jobs.Wor
 			if logger != nil {
 				logger.Warn("failed to persist polish results", "error", err)
 			}
+			return nil, fmt.Errorf("failed to persist polish results: %w", err)
 		}
 		return j.completeStructurePhase(ctx)
 	}
@@ -815,7 +1061,17 @@ func (j *Job) processStructurePolishResult(ctx context.Context, result jobs.Work
 		chapter.PolishDone = true
 		chapter.PolishFailed = true
 		chapter.PolishedText = chapter.MechanicalText // Fallback to mechanical text
-		j.Book.UpdateChapter(chapter)                 // Save changes back
+		chapter.EditsAppliedJSON = "[]"
+		j.Book.UpdateChapter(chapter) // Save changes back
+		if persistErr := j.persistChapterPolishResult(ctx, chapter); persistErr != nil {
+			if logger != nil {
+				logger.Warn("failed to persist failed chapter polish result",
+					"chapter_id", chapter.EntryID,
+					"doc_id", chapter.DocID,
+					"error", persistErr)
+			}
+			return fmt.Errorf("failed to persist failed chapter polish result for %s: %w", chapter.EntryID, persistErr)
+		}
 		if logger != nil {
 			logger.Error("chapter polish failed, degraded quality - using mechanical text",
 				"chapter_id", chapter.EntryID,
@@ -824,10 +1080,7 @@ func (j *Job) processStructurePolishResult(ctx context.Context, result jobs.Work
 				"reason", reason,
 				"error", err)
 		}
-		if err != nil {
-			return fmt.Errorf("polish failed for chapter %s, %s: %v", chapter.EntryID, reason, err)
-		}
-		return fmt.Errorf("polish failed for chapter %s, %s", chapter.EntryID, reason)
+		return nil
 	}
 
 	if !result.Success {
@@ -853,12 +1106,26 @@ func (j *Job) processStructurePolishResult(ctx context.Context, result jobs.Work
 	}
 
 	// Apply edits
+	editsJSON, err := json.Marshal(polishResult.Edits)
+	if err != nil {
+		return markFailed("marshal edits", err)
+	}
 	chapter.PolishedText = common.ApplyEdits(chapter.MechanicalText, polishResult.Edits)
 	chapter.WordCount = common.CountWords(chapter.PolishedText)
+	chapter.EditsAppliedJSON = string(editsJSON)
 	chapter.PolishDone = true
 	j.Book.UpdateChapter(chapter) // Save changes back
 
 	j.Book.IncrementStructurePolished()
+	if err := j.persistChapterPolishResult(ctx, chapter); err != nil {
+		if logger != nil {
+			logger.Warn("failed to persist chapter polish result",
+				"chapter_id", chapter.EntryID,
+				"doc_id", chapter.DocID,
+				"error", err)
+		}
+		return fmt.Errorf("failed to persist chapter polish result for %s: %w", chapter.EntryID, err)
+	}
 
 	return nil
 }
@@ -901,13 +1168,7 @@ func (j *Job) persistPolishResults(ctx context.Context) error {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			result, err := defraClient.UpdateWithVersion(ctx, "Chapter", ch.DocID, map[string]any{
-				"polished_text":   ch.PolishedText,
-				"word_count":      ch.WordCount,
-				"polish_complete": true,
-				"polish_failed":   ch.PolishFailed,
-			})
-			if err != nil {
+			if err := j.persistChapterPolishResult(ctx, ch); err != nil {
 				mu.Lock()
 				if firstErr == nil {
 					firstErr = err
@@ -921,7 +1182,6 @@ func (j *Job) persistPolishResults(ctx context.Context) error {
 				}
 				return
 			}
-			j.Book.TrackWrite("Chapter", ch.DocID, result.CID)
 			mu.Lock()
 			count++
 			mu.Unlock()
@@ -935,9 +1195,46 @@ func (j *Job) persistPolishResults(ctx context.Context) error {
 	return firstErr
 }
 
+func (j *Job) persistChapterPolishResult(ctx context.Context, ch *common.ChapterState) error {
+	if ch == nil || ch.DocID == "" || !ch.PolishDone {
+		return nil
+	}
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return fmt.Errorf("defra client not in context")
+	}
+	editsJSON := ch.EditsAppliedJSON
+	if editsJSON == "" {
+		editsJSON = "[]"
+	}
+
+	result, err := defraStructureWriteWithRetry(ctx, func() (defra.WriteResult, error) {
+		return defraClient.UpdateWithVersion(ctx, "Chapter", ch.DocID, map[string]any{
+			"polished_text":      ch.PolishedText,
+			"word_count":         ch.WordCount,
+			"edits_applied_json": editsJSON,
+			"polish_complete":    true,
+			"polish_failed":      ch.PolishFailed,
+		})
+	})
+	if err != nil {
+		return err
+	}
+	ch.CID = result.CID
+	j.Book.TrackWrite("Chapter", ch.DocID, result.CID)
+	return nil
+}
+
 // completeStructurePhase finalizes the structure job.
 func (j *Job) completeStructurePhase(ctx context.Context) ([]jobs.WorkUnit, error) {
 	logger := svcctx.LoggerFrom(ctx)
+
+	if err := j.validatePersistedStructureChapters(ctx); err != nil {
+		if logger != nil {
+			logger.Error("persisted structure chapter validation failed", "error", err)
+		}
+		return nil, err
+	}
 
 	j.Book.SetStructurePhase(StructPhaseFinalize)
 	// Persist phase (async - memory is authoritative, continue even if persist fails)
@@ -977,10 +1274,104 @@ func (j *Job) completeStructurePhase(ctx context.Context) ([]jobs.WorkUnit, erro
 	return nil, nil
 }
 
+func (j *Job) validatePersistedStructureChapters(ctx context.Context) error {
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return fmt.Errorf("defra client not in context")
+	}
+
+	chapters := j.Book.GetStructureChapters()
+	if len(chapters) == 0 {
+		return fmt.Errorf("no structure chapters to validate")
+	}
+
+	query := fmt.Sprintf(`{
+		Chapter(filter: {_bookID: {_eq: %s}}, order: {sort_order: ASC}, limit: 5000) {
+			_docID
+			entry_id
+			sort_order
+			_toc_entryID
+			extract_complete
+			polish_complete
+			matter_type
+			content_type
+			audio_include
+		}
+	}`, gqlString(j.Book.BookID))
+
+	resp, err := defraClient.Execute(ctx, query, nil)
+	if err != nil {
+		return fmt.Errorf("failed to query persisted structure chapters: %w", err)
+	}
+	if errMsg := resp.Error(); errMsg != "" {
+		return fmt.Errorf("failed to query persisted structure chapters: %s", errMsg)
+	}
+
+	raw, ok := resp.Data["Chapter"].([]any)
+	if !ok {
+		return fmt.Errorf("unexpected Chapter validation response: %+v", resp.Data)
+	}
+
+	byDocID := make(map[string]map[string]any, len(raw))
+	var rows []map[string]any
+	for _, item := range raw {
+		data, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		rows = append(rows, data)
+		if docID, _ := data["_docID"].(string); docID != "" {
+			byDocID[docID] = data
+		}
+	}
+
+	var problems []string
+	for _, chapter := range chapters {
+		data := byDocID[chapter.DocID]
+		if data == nil {
+			for _, row := range rows {
+				if chapterIdentityMatches(row, chapter) {
+					data = row
+					break
+				}
+			}
+		}
+		if data == nil {
+			problems = append(problems, fmt.Sprintf("%s missing persisted Chapter row", chapter.EntryID))
+			continue
+		}
+
+		if extractComplete, _ := data["extract_complete"].(bool); !extractComplete {
+			problems = append(problems, fmt.Sprintf("%s missing extract_complete", chapter.EntryID))
+		}
+		if chapter.PolishDone {
+			if polishComplete, _ := data["polish_complete"].(bool); !polishComplete {
+				problems = append(problems, fmt.Sprintf("%s missing polish_complete", chapter.EntryID))
+			}
+		}
+		if matterType, _ := data["matter_type"].(string); strings.TrimSpace(matterType) == "" {
+			problems = append(problems, fmt.Sprintf("%s missing matter_type", chapter.EntryID))
+		}
+		if contentType, _ := data["content_type"].(string); strings.TrimSpace(contentType) == "" {
+			problems = append(problems, fmt.Sprintf("%s missing content_type", chapter.EntryID))
+		}
+		if _, ok := data["audio_include"].(bool); !ok {
+			problems = append(problems, fmt.Sprintf("%s missing audio_include", chapter.EntryID))
+		}
+	}
+
+	if len(problems) > 0 {
+		return fmt.Errorf("persisted structure chapters incomplete: %s", strings.Join(problems, "; "))
+	}
+	return nil
+}
+
 // finalizeStructure marks structure as complete.
 // Polish results were already persisted via sync writes in persistPolishResults.
 // The sync write here ensures completion is durable before returning.
 func (j *Job) finalizeStructure(ctx context.Context) error {
+	totalChapters, totalWords := computeStructureStats(j.Book.GetStructureChapters())
+
 	// Mark book structure as complete using sync write.
 	// This ensures completion is durable before returning.
 	_, err := common.SendTracked(ctx, j.Book, defra.WriteOp{
@@ -988,6 +1379,8 @@ func (j *Job) finalizeStructure(ctx context.Context) error {
 		DocID:      j.Book.BookID,
 		Document: map[string]any{
 			"structure_complete": true,
+			"total_chapters":     totalChapters,
+			"total_words":        totalWords,
 		},
 		Op: defra.OpUpdate,
 	})
@@ -996,4 +1389,23 @@ func (j *Job) finalizeStructure(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func computeStructureStats(chapters []*common.ChapterState) (totalChapters, totalWords int) {
+	for _, ch := range chapters {
+		if ch == nil {
+			continue
+		}
+		totalChapters++
+		if ch.WordCount > 0 {
+			totalWords += ch.WordCount
+			continue
+		}
+		text := ch.PolishedText
+		if text == "" {
+			text = ch.MechanicalText
+		}
+		totalWords += common.CountWords(text)
+	}
+	return totalChapters, totalWords
 }

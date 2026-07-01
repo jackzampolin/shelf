@@ -1418,8 +1418,9 @@ type ChapterState struct {
 	PageBreaks     []int  `json:"page_breaks,omitempty"`
 
 	// Polished text (set in polish phase)
-	PolishedText string `json:"polished_text,omitempty"`
-	WordCount    int    `json:"word_count"`
+	PolishedText     string `json:"polished_text,omitempty"`
+	WordCount        int    `json:"word_count"`
+	EditsAppliedJSON string `json:"edits_applied_json,omitempty"`
 
 	// Processing state
 	ExtractDone  bool `json:"extract_done"`

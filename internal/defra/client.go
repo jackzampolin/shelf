@@ -517,6 +517,16 @@ func valueToGraphQL(v any) (string, error) {
 	case map[string]any:
 		// Recursively convert nested maps
 		return mapToGraphQLInput(val)
+	case []map[string]any:
+		var items []string
+		for _, item := range val {
+			itemStr, err := mapToGraphQLInput(item)
+			if err != nil {
+				return "", err
+			}
+			items = append(items, itemStr)
+		}
+		return "[" + strings.Join(items, ", ") + "]", nil
 	case []any:
 		// Handle arrays
 		var items []string

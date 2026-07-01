@@ -197,6 +197,13 @@ type BookIDProvider interface {
 	BookID() string
 }
 
+// BookFailer is an optional interface for jobs that can mark their book
+// terminally failed with a reason. The scheduler calls this when a job dies so
+// the book does not remain stuck in "processing".
+type BookFailer interface {
+	FailBook(ctx context.Context, reason string)
+}
+
 // LiveStatusProvider is implemented by jobs that can provide real-time
 // status from in-memory state, avoiding database queries during execution.
 type LiveStatusProvider interface {

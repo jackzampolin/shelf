@@ -250,8 +250,15 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 
 	j.IsDone = true
 
-	// Persist the complete status to DefraDB
-	j.PersistBookStatus(ctx, BookStatusComplete)
+	// Persist the terminal complete status synchronously. A dropped async write
+	// here would leave the book stuck in "processing" with only a completed job
+	// record, which the reconciler cannot rescue (it flags failed records only).
+	// The sync write also clears any stale status_reason from a prior failure.
+	if _, err := j.Book.PersistBookStatusWithReason(ctx, string(BookStatusComplete), ""); err != nil {
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Warn("failed to persist complete status", "book_id", j.Book.BookID, "error", err)
+		}
+	}
 }
 
 // PersistBookStatus persists book status to DefraDB (async - memory is authoritative).

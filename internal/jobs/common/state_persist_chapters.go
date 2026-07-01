@@ -401,11 +401,17 @@ func (b *BookState) PersistChapterPolish(ctx context.Context) error {
 				return
 			}
 
+			editsJSON := chapter.EditsAppliedJSON
+			if editsJSON == "" {
+				editsJSON = "[]"
+			}
+
 			result, err := store.UpdateWithVersion(ctx, "Chapter", chapter.DocID, map[string]any{
-				"polished_text": chapter.PolishedText,
-				"word_count":    chapter.WordCount,
-				"polish_done":   chapter.PolishDone,
-				"polish_failed": chapter.PolishFailed,
+				"polished_text":      chapter.PolishedText,
+				"word_count":         chapter.WordCount,
+				"edits_applied_json": editsJSON,
+				"polish_complete":    chapter.PolishDone,
+				"polish_failed":      chapter.PolishFailed,
 			})
 			if err != nil {
 				results <- chapterResult{entryID: chapter.EntryID, err: fmt.Errorf("chapter %s: %w", chapter.EntryID, err)}

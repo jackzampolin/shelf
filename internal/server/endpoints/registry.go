@@ -19,12 +19,14 @@ func All(cfg Config) []api.Endpoint {
 		&HealthEndpoint{},
 		&ReadyEndpoint{},
 		&StatusEndpoint{DefraManager: cfg.DefraManager},
+		&RunSummaryEndpoint{},
 
 		// Job endpoints
 		&CreateJobEndpoint{},
 		&ListJobsEndpoint{},
 		&GetJobEndpoint{},
 		&UpdateJobEndpoint{},
+		&RetryJobEndpoint{},
 		&DeleteJobEndpoint{},
 
 		// Book endpoints
@@ -58,6 +60,7 @@ func All(cfg Config) []api.Endpoint {
 
 		// Page endpoints
 		&PageImageEndpoint{},
+		&ExtractedImageEndpoint{},
 		&ListPagesEndpoint{},
 		&GetPageEndpoint{},
 
@@ -114,6 +117,7 @@ func JobCommands(serverURL string) []api.Endpoint {
 		&ListJobsEndpoint{},
 		&GetJobEndpoint{},
 		&UpdateJobEndpoint{},
+		&RetryJobEndpoint{},
 		&DeleteJobEndpoint{},
 	}
 }

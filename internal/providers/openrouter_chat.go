@@ -36,10 +36,14 @@ func (c *OpenRouterClient) doChat(ctx context.Context, req *ChatRequest, tools [
 
 	// Build OpenAI-compatible chat request.
 	orReq := openRouterRequest{
-		Model:       model,
-		Messages:    make([]openRouterMessage, 0, len(req.Messages)),
-		Temperature: req.Temperature,
-		MaxTokens:   req.MaxTokens,
+		Model:     model,
+		Messages:  make([]openRouterMessage, 0, len(req.Messages)),
+		TopP:      req.TopP,
+		MaxTokens: req.MaxTokens,
+	}
+	if req.Temperature != 0 || req.TemperatureSet {
+		temperature := req.Temperature
+		orReq.Temperature = &temperature
 	}
 	// OpenRouter-specific cost-tracking flag; self-hosted servers don't support it.
 	if c.sendUsageInclude {
@@ -108,6 +112,9 @@ func (c *OpenRouterClient) doChat(ctx context.Context, req *ChatRequest, tools [
 	// Add tools if specified
 	if len(tools) > 0 {
 		orReq.Tools = tools
+		if req.ToolChoice != nil {
+			orReq.ToolChoice = req.ToolChoice
+		}
 	}
 
 	result := &ChatResult{

@@ -1,8 +1,12 @@
 package providers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -67,6 +71,96 @@ func TestChandraOCRClient_ProcessImage(t *testing.T) {
 	if !strings.Contains(string(body), "image_url") || !strings.Contains(string(body), "data:image") {
 		t.Fatalf("chat request did not include the page image; body=%s", body)
 	}
+	for _, want := range []string{
+		`"max_tokens":12384`,
+		`"temperature":0`,
+		`"top_p":0.1`,
+		`OCR this image to HTML, arranged as layout blocks`,
+	} {
+		if !strings.Contains(string(body), want) {
+			t.Fatalf("chat request missing %q; body=%s", want, body)
+		}
+	}
+}
+
+func TestChandraOCRClient_ProcessImageParsesLayoutHTML(t *testing.T) {
+	raw := `<div data-bbox="100 20 800 60" data-label="Page-Header"><i>Running Header</i></div>
+<div data-bbox="100 80 800 160" data-label="Section-Header"><h2>CHAPTER ONE</h2></div>
+<div data-bbox="100 170 800 300" data-label="Text"><p>Body text<sup>1</sup> continues.</p></div>
+<div data-bbox="100 320 300 520" data-label="Image"><img alt="Operational map"/></div>
+<div data-bbox="100 900 800 940" data-label="Page-Footer">12</div>
+<div data-bbox="0 0 1000 1000" data-label="Blank-Page"></div>`
+
+	srv := chandraStub(t, raw, nil)
+	defer srv.Close()
+
+	c := NewChandraOCRClient(ChandraOCRConfig{
+		BaseURLs:      []string{srv.URL},
+		IncludeImages: true,
+	})
+	res, err := c.ProcessImage(context.Background(), testPNG(t), 3)
+	if err != nil {
+		t.Fatalf("ProcessImage() error = %v", err)
+	}
+	if strings.Contains(res.Text, "data-bbox") || strings.Contains(res.Text, "data-label") || strings.Contains(res.Text, "<div") {
+		t.Fatalf("layout artifacts remained in markdown: %s", res.Text)
+	}
+	if strings.Contains(res.Text, "Running Header") || strings.Contains(res.Text, "\n12\n") {
+		t.Fatalf("page header/footer leaked into markdown: %s", res.Text)
+	}
+	for _, want := range []string{"## CHAPTER ONE", "Body text<sup>1</sup> continues.", "![Operational map](chandra-page-0003-image-01.jpg)"} {
+		if !strings.Contains(res.Text, want) {
+			t.Fatalf("markdown missing %q: %s", want, res.Text)
+		}
+	}
+	if res.Header != "Running Header" {
+		t.Fatalf("Header = %q, want running header", res.Header)
+	}
+	if res.Footer != "12" {
+		t.Fatalf("Footer = %q, want 12", res.Footer)
+	}
+	images, ok := res.Metadata["images"].([]map[string]any)
+	if !ok || len(images) != 1 {
+		t.Fatalf("metadata images = %#v, want one extracted image", res.Metadata["images"])
+	}
+	if images[0]["id"] != "chandra-page-0003-image-01.jpg" || images[0]["image_base64"] == "" {
+		t.Fatalf("unexpected image metadata: %#v", images[0])
+	}
+}
+
+func TestChandraOCRClient_ProcessImageCleansArtifacts(t *testing.T) {
+	raw := `<div data-bbox="100 100 800 300" data-label="Table"><table><tbody><tr><td>PLANNING &#34;TORCH&#34;</td><td>83</td></tr><tr><td>GERMANY&#39;S FRONTIER</td><td>351</td></tr></tbody></table></div>
+<div data-bbox="0 0 1000 1000" data-label="Image"><img alt="Blank white page"/></div>
+<div data-bbox="100 320 400 360" data-label="Text"><p>Picture at<br/>page 18</p></div>`
+
+	srv := chandraStub(t, raw, nil)
+	defer srv.Close()
+
+	c := NewChandraOCRClient(ChandraOCRConfig{
+		BaseURLs:      []string{srv.URL},
+		IncludeImages: true,
+	})
+	res, err := c.ProcessImage(context.Background(), testPNG(t), 7)
+	if err != nil {
+		t.Fatalf("ProcessImage() error = %v", err)
+	}
+	for _, bad := range []string{"&#34;", "&#39;", "Blank white page", "Picture at"} {
+		if strings.Contains(res.Text, bad) {
+			t.Fatalf("markdown contains artifact %q: %s", bad, res.Text)
+		}
+	}
+	for _, want := range []string{`PLANNING "TORCH"`, "GERMANY'S FRONTIER"} {
+		if !strings.Contains(res.Text, want) {
+			t.Fatalf("markdown missing %q: %s", want, res.Text)
+		}
+	}
+	images, ok := res.Metadata["images"].([]map[string]any)
+	if !ok {
+		t.Fatalf("metadata images = %#v, want image metadata slice", res.Metadata["images"])
+	}
+	if len(images) != 0 {
+		t.Fatalf("blank image should not be extracted: %#v", images)
+	}
 }
 
 func TestChandraOCRClient_HealthCheck(t *testing.T) {
@@ -91,3 +185,18 @@ func TestCreateOCRProvider_Chandra(t *testing.T) {
 }
 
 var _ OCRProvider = (*ChandraOCRClient)(nil)
+
+func testPNG(t *testing.T) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 100, 100))
+	for y := 0; y < 100; y++ {
+		for x := 0; x < 100; x++ {
+			img.Set(x, y, color.RGBA{R: uint8(x), G: uint8(y), B: 100, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("failed to encode test image: %v", err)
+	}
+	return buf.Bytes()
+}

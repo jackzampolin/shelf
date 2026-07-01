@@ -12,6 +12,8 @@ import (
 	"github.com/google/uuid"
 )
 
+const endpointFailureCooldown = 90 * time.Second
+
 // doRequest makes an HTTP request to OpenRouter with retry logic.
 func (c *OpenRouterClient) doRequest(ctx context.Context, path string, body any) (*openRouterResponse, error) {
 	// Cast to openRouterRequest for nonce injection
@@ -37,7 +39,8 @@ func (c *OpenRouterClient) doRequest(ctx context.Context, path string, body any)
 			return nil, fmt.Errorf("failed to marshal request: %w", err)
 		}
 
-		req, err := http.NewRequestWithContext(ctx, "POST", c.baseURLForRequest()+path, bytes.NewReader(bodyBytes))
+		baseURL := c.baseURLForRequest()
+		req, err := http.NewRequestWithContext(ctx, "POST", baseURL+path, bytes.NewReader(bodyBytes))
 		if err != nil {
 			return nil, fmt.Errorf("failed to create request: %w", err)
 		}
@@ -54,6 +57,7 @@ func (c *OpenRouterClient) doRequest(ctx context.Context, path string, body any)
 		resp, err := c.client.Do(req)
 		if err != nil {
 			// Network error - retry
+			c.markEndpointFailure(baseURL)
 			lastErr = fmt.Errorf("request failed: %w", err)
 			c.sleepWithJitter(ctx, attempt)
 			continue
@@ -69,6 +73,9 @@ func (c *OpenRouterClient) doRequest(ctx context.Context, path string, body any)
 
 		// Check if we should retry based on status code
 		if c.shouldRetry(resp.StatusCode) {
+			if c.shouldCooldownEndpoint(resp.StatusCode) {
+				c.markEndpointFailure(baseURL)
+			}
 			lastErr = fmt.Errorf("OpenRouter error (status %d): %s", resp.StatusCode, string(respBody))
 			c.sleepWithJitter(ctx, attempt)
 			continue
@@ -78,6 +85,7 @@ func (c *OpenRouterClient) doRequest(ctx context.Context, path string, body any)
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("OpenRouter error (status %d): %s", resp.StatusCode, string(respBody))
 		}
+		c.markEndpointSuccess(baseURL)
 
 		var orResp openRouterResponse
 		if err := json.Unmarshal(respBody, &orResp); err != nil {
@@ -95,6 +103,24 @@ func (c *OpenRouterClient) doRequest(ctx context.Context, path string, body any)
 	}
 
 	return nil, fmt.Errorf("max retries (%d) exceeded: %w", c.maxRetries, lastErr)
+}
+
+func (c *OpenRouterClient) markEndpointFailure(baseURL string) {
+	if c.endpoints == nil {
+		return
+	}
+	c.endpoints.MarkFailure(baseURL, endpointFailureCooldown)
+}
+
+func (c *OpenRouterClient) markEndpointSuccess(baseURL string) {
+	if c.endpoints == nil {
+		return
+	}
+	c.endpoints.MarkSuccess(baseURL)
+}
+
+func (c *OpenRouterClient) shouldCooldownEndpoint(statusCode int) bool {
+	return statusCode >= 500
 }
 
 // shouldRetry returns true for status codes that should be retried.

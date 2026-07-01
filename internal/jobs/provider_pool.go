@@ -489,35 +489,21 @@ func (p *ProviderWorkerPool) isRetriableError(err error) bool {
 		return false
 	}
 
-	// Check for structured RateLimitError
+	// Structured rate-limit error carries a precise RetryAfter.
 	if rle, ok := providers.IsRateLimitError(err); ok {
 		p.rateLimiter.Record429(rle.RetryAfter)
 		p.logger.Debug("rate limit hit, backing off", "retry_after", rle.RetryAfter)
 		return true
 	}
 
-	errStr := err.Error()
-	if strings.Contains(errStr, "status 500") ||
-		strings.Contains(errStr, "status 502") ||
-		strings.Contains(errStr, "status 503") ||
-		strings.Contains(errStr, "status 504") {
-		return true
-	}
+	// Record a coarse 429 backoff before delegating classification.
+	errStr := strings.ToLower(err.Error())
 	if strings.Contains(errStr, "status 429") ||
 		strings.Contains(errStr, "rate limit") {
 		p.rateLimiter.Record429(5 * time.Second)
-		return true
 	}
-	if strings.Contains(errStr, "timeout") ||
-		strings.Contains(errStr, "deadline exceeded") {
-		return true
-	}
-	if strings.Contains(errStr, "connection refused") ||
-		strings.Contains(errStr, "connection reset") ||
-		strings.Contains(errStr, "EOF") {
-		return true
-	}
-	return false
+
+	return IsRetriableError(err)
 }
 
 func (p *ProviderWorkerPool) isRetriableResultError(result *providers.ChatResult) bool {

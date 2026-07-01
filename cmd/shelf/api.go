@@ -32,7 +32,6 @@ var booksCmd = &cobra.Command{
 	Short: "Book management commands",
 }
 
-
 var metricsCmd = &cobra.Command{
 	Use:   "metrics",
 	Short: "Metrics and cost tracking commands",
@@ -68,12 +67,14 @@ func init() {
 	apiCmd.AddCommand((&endpoints.HealthEndpoint{}).Command(getServerURL))
 	apiCmd.AddCommand((&endpoints.ReadyEndpoint{}).Command(getServerURL))
 	apiCmd.AddCommand((&endpoints.StatusEndpoint{}).Command(getServerURL))
+	apiCmd.AddCommand((&endpoints.RunSummaryEndpoint{}).Command(getServerURL))
 
 	// Jobs as subcommand group
 	jobsCmd.AddCommand((&endpoints.CreateJobEndpoint{}).Command(getServerURL))
 	jobsCmd.AddCommand((&endpoints.ListJobsEndpoint{}).Command(getServerURL))
 	jobsCmd.AddCommand((&endpoints.GetJobEndpoint{}).Command(getServerURL))
 	jobsCmd.AddCommand((&endpoints.UpdateJobEndpoint{}).Command(getServerURL))
+	jobsCmd.AddCommand((&endpoints.RetryJobEndpoint{}).Command(getServerURL))
 	jobsCmd.AddCommand((&endpoints.DeleteJobEndpoint{}).Command(getServerURL))
 	jobsCmd.AddCommand((&endpoints.StartJobEndpoint{}).Command(getServerURL))
 	jobsCmd.AddCommand((&endpoints.JobStatusEndpoint{}).Command(getServerURL))

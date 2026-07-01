@@ -1,6 +1,9 @@
 package jobs
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 // enqueueUnits routes work units to the appropriate pool queues.
 func (s *Scheduler) enqueueUnits(jobID string, units []WorkUnit) {
@@ -9,6 +12,11 @@ func (s *Scheduler) enqueueUnits(jobID string, units []WorkUnit) {
 	}
 
 	s.mu.Lock()
+	if _, ok := s.jobs[jobID]; !ok {
+		s.mu.Unlock()
+		s.logger.Warn("dropping work units for inactive job", "job_id", jobID, "count", len(units))
+		return
+	}
 	s.pending[jobID] += len(units)
 	bookSeq := s.jobSeq[jobID]
 	s.mu.Unlock()
@@ -27,31 +35,23 @@ func (s *Scheduler) enqueueUnits(jobID string, units []WorkUnit) {
 				"type", unit.Type,
 				"provider", unit.Provider,
 			)
-			// Send failure result
-			s.results <- workerResult{
-				JobID: jobID,
-				Unit:  unit,
-				Result: WorkResult{
-					WorkUnitID: unit.ID,
-					Success:    false,
-					Error:      fmt.Errorf("no pool available for type %s provider %s", unit.Type, unit.Provider),
-				},
-			}
+			s.emitFailure(unit, fmt.Errorf("no pool available for type %s provider %s", unit.Type, unit.Provider))
 			continue
 		}
 
 		if err := pool.Submit(unit); err != nil {
-			s.logger.Warn("failed to submit to pool", "pool", pool.Name(), "error", err)
-			// Send failure result
-			s.results <- workerResult{
-				JobID: jobID,
-				Unit:  unit,
-				Result: WorkResult{
-					WorkUnitID: unit.ID,
-					Success:    false,
-					Error:      err,
-				},
+			if errors.Is(err, ErrWorkerQueueFull) {
+				// Backpressure: park for retry instead of failing. The unit stays
+				// counted in s.pending, so completion accounting is unchanged.
+				select {
+				case s.requeue <- unit:
+					continue
+				default:
+					// Requeue buffer itself is full: fall back to a failure result.
+				}
 			}
+			s.logger.Warn("failed to submit to pool", "pool", pool.Name(), "error", err)
+			s.emitFailure(unit, err)
 		}
 	}
 

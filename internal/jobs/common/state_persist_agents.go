@@ -88,31 +88,81 @@ func (b *BookState) PersistNewAgentStates(ctx context.Context, states []*AgentSt
 	return nil
 }
 
-// DeleteAgentStateByKeys deletes an agent state record and removes from b.agentStates.
+// DeleteAgentStateByKeys deletes all matching agent state records and removes
+// the logical state from b.agentStates.
 func (b *BookState) DeleteAgentStateByKeys(ctx context.Context, agentType, entryDocID string) error {
 	store := b.getStore(ctx)
 	if store == nil {
 		return fmt.Errorf("no store available")
 	}
 
-	// Get from memory first
-	state := b.GetAgentState(agentType, entryDocID)
-	if state == nil {
-		return nil // Not found, nothing to delete
+	if err := defra.ValidateID(b.BookID); err != nil {
+		return fmt.Errorf("invalid book ID: %w", err)
 	}
-
-	if state.DocID != "" {
-		_, err := store.SendSync(ctx, defra.WriteOp{
-			Collection: "AgentState",
-			DocID:      state.DocID,
-			Op:         defra.OpDelete,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to delete agent state: %w", err)
+	if err := defra.ValidateID(agentType); err != nil {
+		return fmt.Errorf("invalid agent type: %w", err)
+	}
+	if entryDocID != "" {
+		if err := defra.ValidateID(entryDocID); err != nil {
+			return fmt.Errorf("invalid entry doc ID: %w", err)
 		}
 	}
 
-	// Remove from memory
+	query := fmt.Sprintf(`{
+		AgentState(filter: {_bookID: {_eq: "%s"}, agent_type: {_eq: "%s"}, entry_doc_id: {_eq: "%s"}}) {
+			_docID
+		}
+	}`, b.BookID, agentType, entryDocID)
+
+	resp, err := store.Execute(ctx, query, nil)
+	if err != nil {
+		return fmt.Errorf("failed to query agent states: %w", err)
+	}
+
+	states, ok := resp.Data["AgentState"].([]any)
+	if ok && len(states) > 0 {
+		ops := make([]defra.WriteOp, 0, len(states))
+		for _, s := range states {
+			state, ok := s.(map[string]any)
+			if !ok {
+				continue
+			}
+			docID, ok := state["_docID"].(string)
+			if !ok || docID == "" {
+				continue
+			}
+			ops = append(ops, defra.WriteOp{
+				Collection: "AgentState",
+				DocID:      docID,
+				Op:         defra.OpDelete,
+			})
+		}
+
+		results, err := store.SendManySync(ctx, ops)
+		if err != nil {
+			return fmt.Errorf("failed to delete agent states: %w", err)
+		}
+		for _, result := range results {
+			if result.Err != nil {
+				return fmt.Errorf("failed to delete agent state %s: %w", result.DocID, result.Err)
+			}
+		}
+	} else {
+		// Older in-memory-only test paths may have a state without a matching
+		// store row. Fall back to its doc ID if present.
+		state := b.GetAgentState(agentType, entryDocID)
+		if state != nil && state.DocID != "" {
+			if _, err := store.SendSync(ctx, defra.WriteOp{
+				Collection: "AgentState",
+				DocID:      state.DocID,
+				Op:         defra.OpDelete,
+			}); err != nil {
+				return fmt.Errorf("failed to delete agent state: %w", err)
+			}
+		}
+	}
+
+	// Remove from memory even when no persisted state exists.
 	b.RemoveAgentState(agentType, entryDocID)
 
 	return nil

@@ -5,6 +5,7 @@ type Book {
     authors: [String]
     page_count: Int
     status: String
+    status_reason: String
     created_at: DateTime
 
     # Metadata from agent

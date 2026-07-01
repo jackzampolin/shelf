@@ -261,6 +261,19 @@ func TestMapToGraphQLInput(t *testing.T) {
 			input: map[string]any{},
 			want:  []string{`{}`},
 		},
+		{
+			name: "nested map array",
+			input: map[string]any{
+				"provider_metadata": map[string]any{
+					"images": []map[string]any{{
+						"id": "img-1.jpg",
+					}},
+				},
+			},
+			want: []string{
+				`{provider_metadata: {images: [{id: "img-1.jpg"}]}}`,
+			},
+		},
 	}
 
 	for _, tt := range tests {

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"testing"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -25,21 +26,43 @@ type TestingT interface {
 	Helper()
 }
 
+// skipOrPanic skips the test when the concrete TestingT supports skipping
+// (e.g. *testing.T), otherwise panics. Docker integration tests should skip
+// cleanly under `-short` or when the daemon is unavailable rather than
+// panicking, which would abort the whole package's test binary.
+func skipOrPanic(t TestingT, msg string) {
+	if s, ok := t.(interface{ Skip(args ...any) }); ok {
+		s.Skip(msg)
+		return
+	}
+	panic(msg)
+}
+
 // DockerClient creates a Docker client and registers cleanup for test containers.
 // It cleans up any orphaned containers from previous interrupted runs with the same test name.
+//
+// The test is skipped (not failed) under `-short` or when the Docker daemon is
+// unreachable, so `make test` stays green on machines without Docker.
 func DockerClient(t TestingT) *client.Client {
 	t.Helper()
 
+	if testing.Short() {
+		skipOrPanic(t, "skipping Docker integration test in -short mode")
+		return nil
+	}
+
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
-		panic(fmt.Sprintf("failed to create docker client: %v", err))
+		skipOrPanic(t, fmt.Sprintf("skipping Docker integration test: failed to create docker client: %v", err))
+		return nil
 	}
 
 	// Verify Docker is running
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if _, err := cli.Ping(ctx); err != nil {
-		panic(fmt.Sprintf("docker is not running: %v", err))
+		skipOrPanic(t, fmt.Sprintf("skipping Docker integration test: Docker daemon not available: %v", err))
+		return nil
 	}
 
 	// Register cleanup for this test's containers

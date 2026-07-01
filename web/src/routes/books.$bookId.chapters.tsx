@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Disclosure, DisclosureButton, DisclosurePanel } from '@headlessui/react'
+import { OcrText } from '@/components/OcrText'
 
 export const Route = createFileRoute('/books/$bookId/chapters')({
   component: ChaptersPage,
@@ -317,9 +318,10 @@ function ChaptersPage() {
                                   View page
                                 </Link>
                               </div>
-                              <pre className="whitespace-pre-wrap font-mono text-xs text-gray-600 leading-relaxed max-h-96 overflow-y-auto">
-                                {page.ocr_markdown || 'No text available'}
-                              </pre>
+                              <OcrText
+                                text={page.ocr_markdown}
+                                className="max-h-96 overflow-y-auto text-xs text-gray-600"
+                              />
                             </div>
                           ))}
                         </div>

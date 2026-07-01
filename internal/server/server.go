@@ -239,9 +239,15 @@ func (s *Server) Start(ctx context.Context) (retErr error) {
 	// Create config store and seed defaults
 	s.configStore = config.NewStore(s.defraClient)
 	s.logger.Info("seeding config defaults")
-	if err := config.SeedDefaults(ctx, s.configStore, s.logger); err != nil {
+	var seedErr error
+	if s.configMgr != nil {
+		seedErr = config.SeedDefaultsFromConfig(ctx, s.configStore, s.logger, s.configMgr.Get())
+	} else {
+		seedErr = config.SeedDefaults(ctx, s.configStore, s.logger)
+	}
+	if seedErr != nil {
 		_ = s.shutdown()
-		return fmt.Errorf("config seeding failed: %w", err)
+		return fmt.Errorf("config seeding failed: %w", seedErr)
 	}
 
 	// Create prompt resolver and register all embedded prompts
@@ -352,13 +358,6 @@ func (s *Server) Start(ctx context.Context) (retErr error) {
 		return svcctx.WithServices(ctx, s.services)
 	})
 
-	// Resume any interrupted jobs from previous run
-	if resumed, err := s.scheduler.Resume(ctx); err != nil {
-		s.logger.Warn("failed to resume jobs", "error", err)
-	} else if resumed > 0 {
-		s.logger.Info("resumed interrupted jobs", "count", resumed)
-	}
-
 	// Start HTTP server in goroutine
 	errCh := make(chan error, 1)
 	go func() {
@@ -367,6 +366,16 @@ func (s *Server) Start(ctx context.Context) (retErr error) {
 			errCh <- err
 		}
 		close(errCh)
+	}()
+
+	// Resume any interrupted jobs from previous run after binding HTTP so
+	// health checks and operator controls stay available during large resumes.
+	go func() {
+		if resumed, err := s.scheduler.Resume(ctx); err != nil {
+			s.logger.Warn("failed to resume jobs", "error", err)
+		} else if resumed > 0 {
+			s.logger.Info("resumed interrupted jobs", "count", resumed)
+		}
 	}()
 
 	// Wait for context cancellation or error

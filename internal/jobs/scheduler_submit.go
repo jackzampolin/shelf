@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -69,10 +70,11 @@ func (s *Scheduler) startJobAsync(job Job) {
 	// Inject services into context for the job
 	ctx = s.injectServices(ctx)
 
-	units, err := job.Start(ctx)
+	units, err := s.safeJobStart(ctx, job)
 	if err != nil {
 		jobID := job.ID()
 		s.logger.Error("job start failed", "job_id", jobID, "error", err)
+		s.failBookForJob(ctx, job, err.Error())
 		s.removeJob(jobID)
 
 		// Mark as failed in DefraDB
@@ -94,6 +96,19 @@ func (s *Scheduler) startJobAsync(job Job) {
 		if s.manager != nil {
 			if err := s.manager.UpdateStatus(ctx, jobID, StatusCompleted, ""); err != nil {
 				s.logger.Warn("failed to update job status in DefraDB", "error", err)
+			}
+		}
+		return
+	}
+	if len(units) == 0 {
+		jobID := job.ID()
+		err := fmt.Errorf("job started with no work units and is not done")
+		s.logger.Error("job start produced no work", "job_id", jobID, "type", job.Type())
+		s.failBookForJob(ctx, job, err.Error())
+		s.removeJob(jobID)
+		if s.manager != nil && jobID != "" {
+			if updateErr := s.manager.UpdateStatus(ctx, jobID, StatusFailed, err.Error()); updateErr != nil {
+				s.logger.Warn("failed to update job status in DefraDB", "error", updateErr)
 			}
 		}
 		return
@@ -146,6 +161,7 @@ func (s *Scheduler) Resume(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("failed to list running jobs: %w", err)
 	}
+	records = s.dedupeRunningRecords(ctx, records)
 
 	resumed := 0
 	for _, record := range records {
@@ -156,6 +172,7 @@ func (s *Scheduler) Resume(ctx context.Context) (int, error) {
 		if !ok {
 			s.logger.Warn("no factory for job type, cannot resume",
 				"job_id", record.ID, "type", record.JobType)
+			s.failBookByRecord(ctx, record, "resume failed: no factory registered for job type "+record.JobType)
 			continue
 		}
 
@@ -167,6 +184,7 @@ func (s *Scheduler) Resume(ctx context.Context) (int, error) {
 		if err != nil {
 			s.logger.Error("failed to recreate job",
 				"job_id", record.ID, "error", err)
+			s.failBookByRecord(enrichedCtx, record, "resume failed to recreate job: "+err.Error())
 			continue
 		}
 
@@ -184,10 +202,12 @@ func (s *Scheduler) Resume(ctx context.Context) (int, error) {
 		s.mu.Unlock()
 
 		// Start job (should be idempotent - checks what's already done)
-		units, err := job.Start(enrichedCtx)
+		units, err := s.safeJobStart(enrichedCtx, job)
 		if err != nil {
 			s.logger.Error("failed to resume job",
 				"job_id", record.ID, "error", err)
+			s.failBookForJob(enrichedCtx, job, err.Error())
+			s.removeJob(job.ID())
 			s.manager.UpdateStatus(enrichedCtx, record.ID, StatusFailed, err.Error())
 			continue
 		}
@@ -203,6 +223,19 @@ func (s *Scheduler) Resume(ctx context.Context) (int, error) {
 			resumed++
 			continue
 		}
+		if len(units) == 0 {
+			err := fmt.Errorf("resumed job produced no work units and is not done")
+			s.logger.Error("failed to resume job",
+				"job_id", record.ID,
+				"type", record.JobType,
+				"error", err)
+			s.failBookForJob(enrichedCtx, job, err.Error())
+			s.removeJob(job.ID())
+			if updateErr := s.manager.UpdateStatus(enrichedCtx, record.ID, StatusFailed, err.Error()); updateErr != nil {
+				s.logger.Warn("failed to update job status in DefraDB", "error", updateErr)
+			}
+			continue
+		}
 
 		s.enqueueUnits(job.ID(), units)
 		resumed++
@@ -210,6 +243,59 @@ func (s *Scheduler) Resume(ctx context.Context) (int, error) {
 	}
 
 	return resumed, nil
+}
+
+func (s *Scheduler) dedupeRunningRecords(ctx context.Context, records []*Record) []*Record {
+	sort.SliceStable(records, func(i, j int) bool {
+		left, right := records[i].CreatedAt, records[j].CreatedAt
+		if left.IsZero() && right.IsZero() {
+			return records[i].ID > records[j].ID
+		}
+		if left.IsZero() {
+			return false
+		}
+		if right.IsZero() {
+			return true
+		}
+		if left.Equal(right) {
+			return records[i].ID > records[j].ID
+		}
+		return left.After(right)
+	})
+
+	seen := make(map[string]*Record)
+	kept := make([]*Record, 0, len(records))
+	for _, record := range records {
+		if record == nil {
+			continue
+		}
+		if record.BookID == "" {
+			kept = append(kept, record)
+			continue
+		}
+		key := record.JobType + "\x00" + record.BookID
+		if first := seen[key]; first != nil {
+			msg := fmt.Sprintf("duplicate running %s job for book %s cancelled during resume; keeping %s", record.JobType, record.BookID, first.ID)
+			if err := s.manager.UpdateStatus(ctx, record.ID, StatusCancelled, msg); err != nil {
+				s.logger.Warn("failed to cancel duplicate running job",
+					"job_id", record.ID,
+					"kept_job_id", first.ID,
+					"type", record.JobType,
+					"book_id", record.BookID,
+					"error", err)
+			} else {
+				s.logger.Warn("cancelled duplicate running job during resume",
+					"job_id", record.ID,
+					"kept_job_id", first.ID,
+					"type", record.JobType,
+					"book_id", record.BookID)
+			}
+			continue
+		}
+		seen[key] = record
+		kept = append(kept, record)
+	}
+	return kept
 }
 
 // injectServices adds services to the context using the registered enricher.
