@@ -16,7 +16,7 @@
 - **Splits are pure moves** within the same package: no renames, no signature changes, no exported-symbol changes. Verified by `go build ./...`, full test suite, and reviewing the diff for anything that isn't a move.
 - **Follow each package's existing naming scheme** (`state_*.go`, `load_*.go`, `scheduler_*.go`, one file per endpoint family, one file per provider).
 
-## Tier 1 — Multi-concept splits (13 files)
+## Tier 1 — Multi-concept splits (14 files)
 
 ### internal/jobs/common/
 
@@ -29,7 +29,6 @@
 | `structure_helpers.go` (525) | `structure_prompts.go` (prompts + JSON schemas), `structure_classify.go` (classify prompt building + signals), `structure_text.go` (strip/merge/clean/edit text utilities; includes the small shared types) |
 | `reset.go` (504) | `reset.go` (ResetOperation types, validation, ResetFrom orchestrator + cascade), `reset_ops.go` (resetOp, resetAllOcr), `reset_cleanup.go` (agent-state/ToC-entry/link cleanup) |
 | `page_reader_impl.go` (405) | `page_reader_impl.go` (core accessors + DB load), `page_reader_preload.go` (batch preloading), `page_reader_headings.go` (heading-aware access) |
-
 | `persist.go` (530) | `persist.go` (sink send helpers, op-state, book status, structure/finalize/toc-link async wrappers) + `persist_agent_state.go` (agent-state persist/delete, ~300 lines) |
 
 Left alone in this package: `state_persist_book.go` (669) and `state_persist_chapters.go` (534) are already organized as one persistence concern per section with no better seam; revisit only if they grow.
@@ -94,14 +93,14 @@ internal/jobs/tts_generate/
 **Compatibility invariants:**
 - Both job-type strings `"tts-generate"` and `"tts-generate-openai"` remain registered (they are persisted in DefraDB job records). `jobcfg.TTSJobFactory` and `jobcfg.OpenAITTSJobFactory` both remain, constructing the unified Job with the matching strategy.
 - **The unified Job carries its persisted job-type string and reports it everywhere the packages hard-code it today**: `Type()` (`types.go:347` / `types.go:298`), `MetricsFor().Stage` (`types.go:363` / `types.go:314`), per-segment and concatenate work-unit metrics, and the CPU concat task name (`concatenate_chapter` vs `concatenate_chapter_openai`). A merged job must never report `tts-generate` for an OpenAI job or vice versa — that would corrupt resume routing and cost attribution.
-- **Strategy selection is pinned to the persisted job-type string, not to current config defaults.** Today `TTSJobFactory` reads `defaults.tts_provider` (`jobcfg/builder.go:213`); after the merge, a resumed `tts-generate` job always gets the sequential/stitching strategy and `tts-generate-openai` always gets the parallel/offset strategy, regardless of what `defaults.tts_provider` currently says. Provider *client* lookup may still come from config; orchestration strategy may not.
+- **Provider and strategy are paired, and both are pinned to the persisted job-type string — never to current config defaults.** `tts-generate` ⇒ ElevenLabs provider + sequential/stitching strategy; `tts-generate-openai` ⇒ OpenAI provider + parallel/offset strategy. `NewJob` validates the pairing and rejects a mismatched provider instead of proceeding. On resume, the persisted `BookAudio.provider` field (`schemas/audio.graphql:90`, read in `loadBookAudio`) is cross-checked against the pairing; a mismatch fails the job with a clear error rather than running the wrong orchestration. This closes today's hazard where `TTSJobFactory` reads `defaults.tts_provider` (`jobcfg/builder.go:213`, default `"openai"` per `config/defaults.go:216`) and could resume a `tts-generate` job with the ElevenLabs strategy driving the OpenAI provider.
 - State documents (AudioState et al.) keep their field names; unified struct is the union (`Instructions`, `RequestIDSequence` used only by their provider).
 - Existing tests move with the code; add strategy-level tests asserting, per strategy: `Type()`, `MetricsFor().Stage`, segment work-unit metrics stage, concat work-unit metrics stage, and CPU task name all match the persisted job type; ElevenLabs queues exactly one segment per chapter initially, OpenAI queues all; OpenAI recalculates offsets; ElevenLabs threads request IDs and handles stale-ID fallback.
 
 ## Execution order & verification
 
 1. `jobs/common` splits (one commit) → 2. `process_book/job` splits → 3. endpoints/agents/Tier 2 → 4. TTS merge → 5. doc sync (CLAUDE.md tree, audit-checklist key files, note Tier 3 rationale in ADR 003).
-- After each step: `go build ./...`, `go vet ./...`, `make test`; diff review confirming moves-only (steps 1–3).
+- After each step: `go build ./...`, `go vet ./...`, `make test`; diff review confirming moves-only (steps 1–3, except the `getDetailedStatus` extraction commit, which is a real refactor reviewed against its golden response-shape test).
 - The live server is unaffected until redeploy; the TTS merge lands last and is the only step needing real review.
 
 ## Out of scope
