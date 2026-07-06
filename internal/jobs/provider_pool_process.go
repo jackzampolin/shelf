@@ -13,8 +13,10 @@ import (
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
-// process executes a work unit with retry logic.
-func (p *ProviderWorkerPool) process(ctx context.Context, unit *WorkUnit) WorkResult {
+// process executes a work unit with retry logic. The second return value
+// reports that the unit was parked by the health circuit for later replay:
+// no result may be delivered for it yet.
+func (p *ProviderWorkerPool) process(ctx context.Context, unit *WorkUnit) (WorkResult, bool) {
 	result := WorkResult{
 		WorkUnitID: unit.ID,
 	}
@@ -25,7 +27,7 @@ func (p *ProviderWorkerPool) process(ctx context.Context, unit *WorkUnit) WorkRe
 		(unit.Type == WorkUnitTypeTTS && p.poolType != PoolTypeTTS) {
 		result.Success = false
 		result.Error = fmt.Errorf("work unit type %s does not match pool type %s", unit.Type, p.poolType)
-		return result
+		return result, false
 	}
 
 	maxRetries := p.getMaxRetries()
@@ -40,7 +42,7 @@ func (p *ProviderWorkerPool) process(ctx context.Context, unit *WorkUnit) WorkRe
 			if unit.ChatRequest == nil {
 				result.Success = false
 				result.Error = fmt.Errorf("LLM work unit missing ChatRequest")
-				return result
+				return result, false
 			}
 
 			var chatResult *providers.ChatResult
@@ -53,9 +55,13 @@ func (p *ProviderWorkerPool) process(ctx context.Context, unit *WorkUnit) WorkRe
 			}
 
 			result.ChatResult = chatResult
+			if err == nil {
+				p.noteCallSuccess()
+			}
 			if err != nil {
 				lastErr = err
 				if p.isRetriableError(err) && attempt < maxRetries {
+					p.noteInfraFailure(ctx)
 					p.logger.Debug("LLM request failed, retrying",
 						"unit_id", unit.ID,
 						"attempt", attempt+1,
@@ -88,14 +94,18 @@ func (p *ProviderWorkerPool) process(ctx context.Context, unit *WorkUnit) WorkRe
 			if unit.OCRRequest == nil {
 				result.Success = false
 				result.Error = fmt.Errorf("OCR work unit missing OCRRequest")
-				return result
+				return result, false
 			}
 
 			ocrResult, err := p.ocrProvider.ProcessImage(ctx, unit.OCRRequest.Image, unit.OCRRequest.PageNum)
 			result.OCRResult = ocrResult
+			if err == nil {
+				p.noteCallSuccess()
+			}
 			if err != nil {
 				lastErr = err
 				if p.isRetriableError(err) && attempt < maxRetries {
+					p.noteInfraFailure(ctx)
 					p.logger.Debug("OCR request failed, retrying",
 						"unit_id", unit.ID,
 						"attempt", attempt+1,
@@ -117,7 +127,7 @@ func (p *ProviderWorkerPool) process(ctx context.Context, unit *WorkUnit) WorkRe
 			if unit.TTSRequest == nil {
 				result.Success = false
 				result.Error = fmt.Errorf("TTS work unit missing TTSRequest")
-				return result
+				return result, false
 			}
 
 			ttsReq := &providers.TTSRequest{
@@ -129,9 +139,13 @@ func (p *ProviderWorkerPool) process(ctx context.Context, unit *WorkUnit) WorkRe
 			}
 			ttsResult, err := p.ttsProvider.Generate(ctx, ttsReq)
 			result.TTSResult = ttsResult
+			if err == nil {
+				p.noteCallSuccess()
+			}
 			if err != nil {
 				lastErr = err
 				if p.isRetriableError(err) && attempt < maxRetries {
+					p.noteInfraFailure(ctx)
 					p.logger.Debug("TTS request failed, retrying",
 						"unit_id", unit.ID,
 						"attempt", attempt+1,
@@ -159,6 +173,22 @@ func (p *ProviderWorkerPool) process(ctx context.Context, unit *WorkUnit) WorkRe
 		result.Error = fmt.Errorf("failed after %d attempts: %w", maxRetries+1, lastErr)
 	}
 
+	// Park-and-replay: a unit whose final failure is infra-class while the
+	// circuit is open — including the failure that trips it (atomic check) —
+	// waits for backend recovery instead of failing through to its job. Its
+	// metric is recorded at the final outcome (replay or park expiry).
+	if !result.Success {
+		parked, justTripped := p.circuit.noteFinalFailure(unit, result.Error)
+		if justTripped {
+			p.onCircuitOpen(ctx)
+		}
+		if parked {
+			p.logger.Warn("work unit parked pending provider recovery",
+				"unit_id", unit.ID, "error", result.Error)
+			return result, true
+		}
+	}
+
 	// Record metrics
 	p.recordMetrics(ctx, unit, &result)
 
@@ -168,7 +198,7 @@ func (p *ProviderWorkerPool) process(ctx context.Context, unit *WorkUnit) WorkRe
 		p.logger.Warn("work unit failed", "unit_id", unit.ID, "error", result.Error)
 	}
 
-	return result
+	return result, false
 }
 
 func (p *ProviderWorkerPool) getMaxRetries() int {

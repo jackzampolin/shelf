@@ -53,6 +53,10 @@ type PoolStatus struct {
 
 	// Only for provider pools (nil for CPU)
 	RateLimiter *RateLimiterStatus `json:"rate_limiter,omitempty"`
+
+	// Provider health circuit (provider pools only)
+	Health      string `json:"health,omitempty"`
+	ParkedUnits int    `json:"parked_units,omitempty"`
 }
 
 // RateLimiterStatus mirrors providers.RateLimiterStatus for API responses.

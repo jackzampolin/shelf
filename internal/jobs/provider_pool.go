@@ -44,6 +44,9 @@ type ProviderWorkerPool struct {
 	// In-flight tracking
 	inFlight atomic.Int32
 
+	// Health circuit breaker (see provider_pool_health.go)
+	circuit *circuit
+
 	// Metrics sink (optional)
 	sink *defra.Sink
 }
@@ -156,6 +159,12 @@ func NewProviderWorkerPool(cfg ProviderWorkerPoolConfig) (*ProviderWorkerPool, e
 
 	p.rateLimiter = providers.NewRateLimiter(rps)
 	p.workerCount = workerCount
+	p.circuit = &circuit{cfg: circuitConfig{
+		TripThreshold: defaultCircuitTripThreshold,
+		ProbeInterval: defaultCircuitProbeInterval,
+		ParkMaxAge:    defaultParkMaxAge,
+		ParkCapacity:  4 * workerCount,
+	}}
 	p.logger = logger.With("pool", p.name, "type", p.poolType, "workers", workerCount, "rps", rps)
 
 	return p, nil
@@ -208,6 +217,25 @@ func (p *ProviderWorkerPool) dispatcher(ctx context.Context) {
 			return
 		}
 
+		// Pause while the provider circuit is open (see provider_pool_health.go).
+		if ch := p.circuit.openWait(); ch != nil {
+			select {
+			case <-ch:
+				// Circuit closed; proceed with this unit.
+			case <-ctx.Done():
+				p.results <- workerResult{
+					JobID: unit.JobID,
+					Unit:  unit,
+					Result: WorkResult{
+						WorkUnitID: unit.ID,
+						Success:    false,
+						Error:      fmt.Errorf("circuit wait cancelled: %w", ctx.Err()),
+					},
+				}
+				return
+			}
+		}
+
 		// Wait for rate limit token (only dispatcher does this)
 		if err := p.rateLimiter.Wait(ctx); err != nil {
 			// Context cancelled, send failure result
@@ -247,8 +275,12 @@ func (p *ProviderWorkerPool) worker(ctx context.Context, id int) {
 			if !ok || unit == nil {
 				return
 			}
-			result := p.process(ctx, unit)
+			result, parked := p.process(ctx, unit)
 			p.inFlight.Add(-1)
+			if parked {
+				// Unit is held by the circuit for replay; no result yet.
+				continue
+			}
 			p.logger.Debug("worker sending result to scheduler",
 				"unit_id", unit.ID,
 				"job_id", unit.JobID,
@@ -280,6 +312,7 @@ func (p *ProviderWorkerPool) Submit(unit *WorkUnit) error {
 func (p *ProviderWorkerPool) Status() PoolStatus {
 	rlStatus := p.rateLimiter.Status()
 	queueStats := p.queue.Stats()
+	health, parkedCount := p.circuit.status()
 	return PoolStatus{
 		Name:            p.name,
 		Type:            string(p.poolType),
@@ -288,6 +321,8 @@ func (p *ProviderWorkerPool) Status() PoolStatus {
 		QueueDepth:      queueStats.Total,
 		QueueByPriority: &queueStats,
 		RateLimiter:     toRateLimiterStatus(rlStatus),
+		Health:          health,
+		ParkedUnits:     parkedCount,
 	}
 }
 

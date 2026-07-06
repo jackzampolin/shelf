@@ -113,9 +113,17 @@ func (e *ReadyEndpoint) Command(getServerURL func() string) *cobra.Command {
 
 // StatusResponse is the detailed status response.
 type StatusResponse struct {
-	Server    string          `json:"server"`
-	Providers ProvidersStatus `json:"providers"`
-	Defra     DefraStatus     `json:"defra"`
+	Server    string                    `json:"server"`
+	Providers ProvidersStatus           `json:"providers"`
+	Pools     map[string]PoolHealthInfo `json:"pools,omitempty"`
+	Defra     DefraStatus               `json:"defra"`
+}
+
+// PoolHealthInfo reports a provider pool's circuit-breaker state.
+type PoolHealthInfo struct {
+	Health      string `json:"health"`
+	ParkedUnits int    `json:"parked_units,omitempty"`
+	QueueDepth  int    `json:"queue_depth,omitempty"`
 }
 
 // ProvidersStatus shows registered OCR and LLM providers.
@@ -158,6 +166,24 @@ func (e *StatusEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	if registry != nil {
 		resp.Providers.OCR = registry.ListOCR()
 		resp.Providers.LLM = registry.ListLLM()
+	}
+
+	// Per-pool circuit health (see provider_pool_health.go)
+	if scheduler := svcctx.SchedulerFrom(r.Context()); scheduler != nil {
+		pools := scheduler.PoolStatuses()
+		if len(pools) > 0 {
+			resp.Pools = make(map[string]PoolHealthInfo, len(pools))
+			for name, ps := range pools {
+				if ps.Health == "" {
+					continue // CPU pools have no circuit
+				}
+				resp.Pools[name] = PoolHealthInfo{
+					Health:      ps.Health,
+					ParkedUnits: ps.ParkedUnits,
+					QueueDepth:  ps.QueueDepth,
+				}
+			}
+		}
 	}
 
 	// Get DefraDB container status
