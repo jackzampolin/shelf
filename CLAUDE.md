@@ -83,8 +83,7 @@ shelf/
 │   │   ├── common/              # Shared job utilities (state, persistence, OCR/extract helpers)
 │   │   ├── process_book/        # Full pipeline orchestration
 │   │   │   └── job/             # Pipeline stages: metadata, extract, ocr, toc find/extract/link, structure, finalize
-│   │   ├── tts_generate/        # TTS audio generation (ElevenLabs)
-│   │   └── tts_generate_openai/ # TTS audio generation (OpenAI)
+│   │   └── tts_generate/        # TTS audio generation (ElevenLabs + OpenAI provider strategies)
 │   ├── agent/           # LLM agent with tool use
 │   ├── agents/          # Specialized agents
 │   │   ├── toc_finder/        # ToC detection
