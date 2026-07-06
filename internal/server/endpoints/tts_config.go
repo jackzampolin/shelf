@@ -11,7 +11,6 @@ import (
 	"github.com/jackzampolin/shelf/internal/api"
 	"github.com/jackzampolin/shelf/internal/jobcfg"
 	"github.com/jackzampolin/shelf/internal/jobs/tts_generate"
-	"github.com/jackzampolin/shelf/internal/jobs/tts_generate_openai"
 	"github.com/jackzampolin/shelf/internal/providers"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 	"github.com/jackzampolin/shelf/internal/voices"
@@ -101,7 +100,7 @@ func (e *GetTTSConfigEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 				Model:        client.Model(),
 				DefaultVoice: client.Voice(),
 				Format:       "mp3",
-				Formats:      tts_generate_openai.SupportedStorytellerFormats(),
+				Formats:      tts_generate.SupportedStorytellerFormatsForProvider("openai"),
 			}, true
 		default:
 			return providerConfig{}, false

@@ -17,7 +17,6 @@ import (
 	"github.com/jackzampolin/shelf/internal/jobcfg"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/tts_generate"
-	"github.com/jackzampolin/shelf/internal/jobs/tts_generate_openai"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 	"github.com/jackzampolin/shelf/internal/voices"
 )
@@ -145,15 +144,15 @@ func (e *GenerateAudioEndpoint) handler(w http.ResponseWriter, r *http.Request) 
 	if ttsCfg.Format != "" {
 		switch provider {
 		case "openai":
-			normalized := tts_generate_openai.NormalizeOutputFormat(ttsCfg.Format)
-			if !tts_generate_openai.IsStorytellerCompatibleFormat(normalized) {
+			normalized := tts_generate.NormalizeOutputFormatForProvider("openai", ttsCfg.Format)
+			if !tts_generate.IsStorytellerCompatibleFormatForProvider("openai", ttsCfg.Format) {
 				writeError(
 					w,
 					http.StatusBadRequest,
 					fmt.Sprintf(
 						"unsupported output format %q for storyteller export (supported: %s)",
 						ttsCfg.Format,
-						strings.Join(tts_generate_openai.SupportedStorytellerFormats(), ", "),
+						strings.Join(tts_generate.SupportedStorytellerFormatsForProvider("openai"), ", "),
 					),
 				)
 				return
@@ -212,17 +211,17 @@ func (e *GenerateAudioEndpoint) handler(w http.ResponseWriter, r *http.Request) 
 		openaiCfg.Voice = ttsCfg.Voice
 		openaiCfg.Format = ttsCfg.Format
 		if req.Format != "" {
-			openaiCfg.Format = tts_generate_openai.NormalizeOutputFormat(req.Format)
+			openaiCfg.Format = tts_generate.NormalizeOutputFormatForProvider("openai", req.Format)
 		}
 		if req.Voice != "" {
 			openaiCfg.Voice = req.Voice
 		}
-		openaiJob, err := tts_generate_openai.NewJob(ctx, openaiCfg, bookID)
+		openaiJob, err := tts_generate.NewJob(ctx, tts_generate.JobTypeOpenAI, openaiCfg, bookID)
 		if err != nil {
 			switch {
-			case errors.Is(err, tts_generate_openai.ErrBookNotFound):
+			case errors.Is(err, tts_generate.ErrBookNotFound):
 				writeError(w, http.StatusNotFound, err.Error())
-			case errors.Is(err, tts_generate_openai.ErrBookNotComplete):
+			case errors.Is(err, tts_generate.ErrBookNotComplete):
 				writeError(w, http.StatusBadRequest, err.Error())
 			default:
 				writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create OpenAI TTS job: %v", err))
@@ -308,7 +307,7 @@ Use 'shelf api books audio <book-id>' to check progress.`,
 // Helper functions
 
 func isTTSJobType(jobType string) bool {
-	return jobType == tts_generate.JobType || jobType == tts_generate_openai.JobType
+	return jobType == tts_generate.JobTypeElevenLabs || jobType == tts_generate.JobTypeOpenAI
 }
 
 func markBookAudioFailedOnSubmit(ctx context.Context, bookID string, submitErr error) {

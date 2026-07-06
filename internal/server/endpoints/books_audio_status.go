@@ -12,7 +12,6 @@ import (
 	"github.com/jackzampolin/shelf/internal/api"
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs/tts_generate"
-	"github.com/jackzampolin/shelf/internal/jobs/tts_generate_openai"
 	"github.com/jackzampolin/shelf/internal/metrics"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
@@ -258,7 +257,7 @@ func audiobookCostsFromMetrics(ctx context.Context, query *metrics.Query, bookID
 		chapterIdxByDocID[chapterDocID] = chapterIdx
 	}
 
-	stageNames := []string{tts_generate.JobType, tts_generate_openai.JobType}
+	stageNames := []string{tts_generate.JobTypeElevenLabs, tts_generate.JobTypeOpenAI}
 	costByChapter := make(map[int]float64, len(chapterDocIDByIdx))
 	total := 0.0
 

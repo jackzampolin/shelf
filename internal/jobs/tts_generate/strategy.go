@@ -47,6 +47,28 @@ func strategyForJobType(jobType string) (providerStrategy, error) {
 	}
 }
 
+// resolvePairing resolves the provider strategy for a persisted job-type
+// string and validates the configured provider against it. Provider and
+// strategy are always paired: an empty cfgProvider resolves to the strategy's
+// pinned provider (config defaults never select the strategy), and a
+// conflicting cfgProvider is rejected rather than silently running the wrong
+// orchestration.
+func resolvePairing(jobType, cfgProvider string) (providerStrategy, string, error) {
+	strat, err := strategyForJobType(jobType)
+	if err != nil {
+		return nil, "", err
+	}
+	if cfgProvider == "" {
+		return strat, strat.Provider(), nil
+	}
+	if cfgProvider != strat.Provider() {
+		return nil, "", fmt.Errorf(
+			"TTS provider %q is not valid for job type %q (pinned provider: %q)",
+			cfgProvider, jobType, strat.Provider())
+	}
+	return strat, cfgProvider, nil
+}
+
 // elevenLabsStrategy implements the sequential-per-chapter orchestration with
 // ElevenLabs request stitching for prosody continuity.
 type elevenLabsStrategy struct{}
