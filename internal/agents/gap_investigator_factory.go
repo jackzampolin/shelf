@@ -2,7 +2,6 @@ package agents
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/jackzampolin/shelf/internal/agent"
 	gap_investigator "github.com/jackzampolin/shelf/internal/agents/gap_investigator"
@@ -33,12 +32,9 @@ func NewGapInvestigatorAgent(ctx context.Context, cfg GapInvestigatorConfig) *ag
 
 	userPrompt := gap_investigator.BuildUserPrompt(cfg.Gap, cfg.Book.GetBodyStart(), cfg.Book.GetBodyEnd(), cfg.Book.TotalPages)
 
-	// Page ranges repeat across books; include the book identity so durable agent
-	// state remains stable without becoming globally ambiguous.
-	agentID := fmt.Sprintf("gap-%s-%d-%d", cfg.Book.BookID, cfg.Gap.StartPage, cfg.Gap.EndPage)
-
+	// Fresh IDs avoid collisions with DefraDB tombstones from completed runs.
+	// Crash recovery remains stable because RestoreState reinstates the saved ID.
 	return agent.New(ctx, agent.Config{
-		ID:    agentID,
 		Tools: gapTools,
 		InitialMessages: []providers.Message{
 			{Role: "system", Content: cfg.SystemPrompt},
