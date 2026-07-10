@@ -26,9 +26,11 @@ type PageState struct {
 	ocrResults map[string]string // provider -> OCR text
 
 	// OCR markdown (stored directly from OCR, no blend step)
-	ocrMarkdown string
-	header      string
-	footer      string
+	ocrMarkdown         string
+	header              string
+	footer              string
+	ocrQuarantined      bool
+	ocrQuarantineReason string
 
 	// Cached data fields (populated on write-through or lazy load from DB)
 	headings   []HeadingItem // Parsed headings from ocr_markdown
@@ -67,6 +69,43 @@ func (p *PageState) AllOcrDone(providers []string) bool {
 		}
 	}
 	return true
+}
+
+// OcrResolved reports whether a page has either successful OCR from every
+// configured provider or an explicit operator quarantine. It is the terminal
+// page predicate used by downstream pipeline gates.
+func (p *PageState) OcrResolved(providers []string) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.ocrQuarantined {
+		return true
+	}
+	for _, provider := range providers {
+		if _, ok := p.ocrResults[provider]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func (p *PageState) QuarantineOCR(reason string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.ocrQuarantined = true
+	p.ocrQuarantineReason = reason
+}
+
+func (p *PageState) ClearOCRQuarantine() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.ocrQuarantined = false
+	p.ocrQuarantineReason = ""
+}
+
+func (p *PageState) OCRQuarantine() (bool, string) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ocrQuarantined, p.ocrQuarantineReason
 }
 
 // SetExtractDone marks extraction as complete (thread-safe).

@@ -631,11 +631,15 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 	j.Mu.Lock()
 	defer j.Mu.Unlock()
 
-	extractDone, ocrDone := 0, 0
+	extractDone, ocrDone, ocrQuarantined := 0, 0, 0
 	j.Book.ForEachPage(func(pageNum int, state *PageState) {
 		// Use thread-safe accessors for all field reads
 		if state.IsExtractDone() {
 			extractDone++
+		}
+		if quarantined, _ := state.OCRQuarantine(); quarantined {
+			ocrQuarantined++
+			return
 		}
 		allOcr := true
 		for _, provider := range j.Book.OcrProviders {
@@ -657,6 +661,7 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 		"total_pages":         fmt.Sprintf("%d", j.Book.TotalPages),
 		"extract_complete":    fmt.Sprintf("%d", extractDone),
 		"ocr_complete":        fmt.Sprintf("%d", ocrDone),
+		"ocr_quarantined":     fmt.Sprintf("%d", ocrQuarantined),
 		"metadata_started":    fmt.Sprintf("%v", j.Book.MetadataIsStarted()),
 		"metadata_complete":   fmt.Sprintf("%v", j.Book.MetadataIsComplete()),
 		"toc_finder_started":  fmt.Sprintf("%v", j.Book.TocFinderIsStarted()),

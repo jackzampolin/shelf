@@ -49,6 +49,7 @@ type ProviderProgress struct {
 type StageProgress struct {
 	OCR struct {
 		Complete       int                `json:"complete"`
+		Quarantined    int                `json:"quarantined,omitempty"`
 		Total          int                `json:"total"`
 		CostByProvider map[string]float64 `json:"cost_by_provider"`
 		TotalCostUSD   float64            `json:"total_cost_usd"`

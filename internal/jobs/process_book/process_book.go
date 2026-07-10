@@ -144,6 +144,7 @@ func (c Config) Validate() error {
 type Status struct {
 	TotalPages       int  `json:"total_pages"`
 	OcrComplete      int  `json:"ocr_complete"`
+	OcrQuarantined   int  `json:"ocr_quarantined"`
 	MetadataComplete bool `json:"metadata_complete"`
 	TocFound         bool `json:"toc_found"`
 	TocExtracted     bool `json:"toc_extracted"`
@@ -151,7 +152,7 @@ type Status struct {
 
 // IsComplete returns whether processing is complete for this book.
 func (st *Status) IsComplete() bool {
-	allPagesComplete := st.OcrComplete >= st.TotalPages
+	allPagesComplete := st.OcrComplete+st.OcrQuarantined >= st.TotalPages
 	return allPagesComplete && st.MetadataComplete && st.TocExtracted
 }
 
@@ -197,6 +198,7 @@ func GetStatusWithClient(ctx context.Context, client *defra.Client, bookID strin
 	pageQuery := fmt.Sprintf(`{
 		Page(filter: {_bookID: {_eq: "%s"}}) {
 			ocr_complete
+			ocr_quarantined
 		}
 	}`, bookID)
 
@@ -213,6 +215,8 @@ func GetStatusWithClient(ctx context.Context, client *defra.Client, bookID strin
 			}
 			if ocrComplete, ok := page["ocr_complete"].(bool); ok && ocrComplete {
 				status.OcrComplete++
+			} else if quarantined, ok := page["ocr_quarantined"].(bool); ok && quarantined {
+				status.OcrQuarantined++
 			}
 		}
 	}

@@ -225,6 +225,7 @@ type LiveStatusProvider interface {
 type LiveStatus struct {
 	TotalPages        int
 	OcrComplete       int
+	OcrQuarantined    int
 	MetadataComplete  bool
 	TocFound          bool
 	TocExtracted      bool

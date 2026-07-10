@@ -18,6 +18,7 @@ type JobStatusResponse struct {
 	JobType          string `json:"job_type"`
 	TotalPages       int    `json:"total_pages"`
 	OcrComplete      int    `json:"ocr_complete"`
+	OcrQuarantined   int    `json:"ocr_quarantined"`
 	MetadataComplete bool   `json:"metadata_complete"`
 	TocFound         bool   `json:"toc_found"`
 	TocExtracted     bool   `json:"toc_extracted"`
@@ -72,11 +73,12 @@ func (e *JobStatusEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 					if live := provider.LiveStatus(); live != nil {
 						resp.TotalPages = live.TotalPages
 						resp.OcrComplete = live.OcrComplete
+						resp.OcrQuarantined = live.OcrQuarantined
 						resp.MetadataComplete = live.MetadataComplete
 						resp.TocFound = live.TocFound
 						resp.TocExtracted = live.TocExtracted
 						// Job is complete when all phases are done (OCR, metadata, ToC finalized, structure)
-						resp.IsComplete = live.OcrComplete >= live.TotalPages &&
+						resp.IsComplete = live.OcrComplete+live.OcrQuarantined >= live.TotalPages &&
 							live.MetadataComplete &&
 							live.TocFinalized &&
 							live.StructureComplete
@@ -95,6 +97,7 @@ func (e *JobStatusEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		}
 		resp.TotalPages = status.TotalPages
 		resp.OcrComplete = status.OcrComplete
+		resp.OcrQuarantined = status.OcrQuarantined
 		resp.MetadataComplete = status.MetadataComplete
 		resp.TocFound = status.TocFound
 		resp.TocExtracted = status.TocExtracted

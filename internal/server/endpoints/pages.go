@@ -160,8 +160,10 @@ type ListPagesResponse struct {
 
 // PageSummary is a brief summary of a page.
 type PageSummary struct {
-	PageNum     int  `json:"page_num"`
-	OcrComplete bool `json:"ocr_complete"`
+	PageNum             int    `json:"page_num"`
+	OcrComplete         bool   `json:"ocr_complete"`
+	OcrQuarantined      bool   `json:"ocr_quarantined"`
+	OcrQuarantineReason string `json:"ocr_quarantine_reason,omitempty"`
 }
 
 // ListPagesEndpoint handles GET /api/books/{book_id}/pages.
@@ -205,6 +207,8 @@ func (e *ListPagesEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		Page(filter: {_bookID: {_eq: "%s"}}, order: {page_num: ASC}) {
 			page_num
 			ocr_complete
+			ocr_quarantined
+			ocr_quarantine_reason
 		}
 	}`, bookID)
 
@@ -230,6 +234,10 @@ func (e *ListPagesEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 				if oc, ok := m["ocr_complete"].(bool); ok {
 					page.OcrComplete = oc
 				}
+				if q, ok := m["ocr_quarantined"].(bool); ok {
+					page.OcrQuarantined = q
+				}
+				page.OcrQuarantineReason, _ = m["ocr_quarantine_reason"].(string)
 				pages = append(pages, page)
 			}
 		}
@@ -247,8 +255,10 @@ func (e *ListPagesEndpoint) Command(_ func() string) *cobra.Command {
 
 // PageStatus contains processing status flags.
 type PageStatus struct {
-	ExtractComplete bool `json:"extract_complete"`
-	OcrComplete     bool `json:"ocr_complete"`
+	ExtractComplete     bool   `json:"extract_complete"`
+	OcrComplete         bool   `json:"ocr_complete"`
+	OcrQuarantined      bool   `json:"ocr_quarantined"`
+	OcrQuarantineReason string `json:"ocr_quarantine_reason,omitempty"`
 }
 
 // OcrResult represents a single OCR provider's output.
@@ -318,6 +328,8 @@ func (e *GetPageEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 			ocr_markdown
 			extract_complete
 			ocr_complete
+			ocr_quarantined
+			ocr_quarantine_reason
 			ocr_results {
 				provider
 				text
@@ -367,6 +379,10 @@ func (e *GetPageEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	if oc, ok := m["ocr_complete"].(bool); ok {
 		response.Status.OcrComplete = oc
 	}
+	if q, ok := m["ocr_quarantined"].(bool); ok {
+		response.Status.OcrQuarantined = q
+	}
+	response.Status.OcrQuarantineReason, _ = m["ocr_quarantine_reason"].(string)
 
 	// OCR Results
 	if ocrResults, ok := m["ocr_results"].([]any); ok {

@@ -23,6 +23,8 @@ var requiredAdditiveFields = []additiveField{
 	{Collection: "Job", Name: "status_reason", Kind: 11},
 	{Collection: "Job", Name: "heartbeat_at", Kind: 10},
 	{Collection: "Job", Name: "last_progress_at", Kind: 10},
+	{Collection: "Page", Name: "ocr_quarantined", Kind: 2},
+	{Collection: "Page", Name: "ocr_quarantine_reason", Kind: 11},
 }
 
 // Initialize applies all schemas to DefraDB.

@@ -222,8 +222,12 @@ func (j *Job) LiveStatus() *jobs.LiveStatus {
 	}
 
 	// Count page completion from in-memory state
-	var ocrComplete int
+	var ocrComplete, ocrQuarantined int
 	book.ForEachPage(func(pageNum int, state *common.PageState) {
+		if quarantined, _ := state.OCRQuarantine(); quarantined {
+			ocrQuarantined++
+			return
+		}
 		// OCR is complete when all providers are done
 		allOcr := true
 		for _, provider := range book.OcrProviders {
@@ -247,6 +251,7 @@ func (j *Job) LiveStatus() *jobs.LiveStatus {
 	return &jobs.LiveStatus{
 		TotalPages:        book.TotalPages,
 		OcrComplete:       ocrComplete,
+		OcrQuarantined:    ocrQuarantined,
 		MetadataComplete:  metadataState.IsComplete(),
 		TocFound:          book.GetTocFound(),
 		TocExtracted:      tocExtractState.IsComplete(),

@@ -40,6 +40,8 @@ func LoadPageStates(ctx context.Context, book *BookState) error {
 			header
 			footer
 			headings
+			ocr_quarantined
+			ocr_quarantine_reason
 		}
 	}`, book.BookID, loadPageStatesBatchSize, offset)
 
@@ -156,6 +158,10 @@ func loadPageState(book *BookState, raw any) {
 	}
 	if footer, ok := page["footer"].(string); ok {
 		state.SetFooter(footer)
+	}
+	if quarantined, ok := page["ocr_quarantined"].(bool); ok && quarantined {
+		reason, _ := page["ocr_quarantine_reason"].(string)
+		state.QuarantineOCR(reason)
 	}
 
 	// Load OCR results from the relationship.

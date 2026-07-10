@@ -107,11 +107,13 @@ func RepairOCRPages(ctx context.Context, book *BookState, pageNums []int, provid
 			Collection: "Page",
 			DocID:      target.docID,
 			Document: map[string]any{
-				"ocr_complete": false,
-				"ocr_markdown": nil,
-				"headings":     nil,
-				"header":       nil,
-				"footer":       nil,
+				"ocr_complete":          false,
+				"ocr_markdown":          nil,
+				"headings":              nil,
+				"header":                nil,
+				"footer":                nil,
+				"ocr_quarantined":       false,
+				"ocr_quarantine_reason": nil,
 			},
 			Op:     defra.OpUpdate,
 			Source: "RepairOCRPages:reset_page",
@@ -130,6 +132,7 @@ func RepairOCRPages(ctx context.Context, book *BookState, pageNums []int, provid
 
 	for _, target := range targets {
 		target.state.ResetOcrProviders(repairProviders)
+		target.state.ClearOCRQuarantine()
 	}
 
 	return &OCRRepairResult{

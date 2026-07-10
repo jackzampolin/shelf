@@ -149,6 +149,8 @@ type Page {
 	ocr_markdown: String
 	headings: String
 	ocr_complete: Boolean
+	ocr_quarantined: Boolean
+	ocr_quarantine_reason: String
 }
 
 type Chapter {

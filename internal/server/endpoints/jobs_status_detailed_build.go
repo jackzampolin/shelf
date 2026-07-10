@@ -261,6 +261,7 @@ func buildOcrProgress(ctx context.Context, client *defra.Client, bookID string, 
 	pageQuery := fmt.Sprintf(`{
 		Page(filter: {_bookID: {_eq: "%s"}}) {
 			ocr_complete
+			ocr_quarantined
 		}
 	}`, bookID)
 
@@ -277,6 +278,8 @@ func buildOcrProgress(ctx context.Context, client *defra.Client, bookID string, 
 			}
 			if ocrComplete, ok := page["ocr_complete"].(bool); ok && ocrComplete {
 				resp.Stages.OCR.Complete++
+			} else if quarantined, ok := page["ocr_quarantined"].(bool); ok && quarantined {
+				resp.Stages.OCR.Quarantined++
 			}
 		}
 	}

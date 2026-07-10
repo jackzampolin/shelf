@@ -90,6 +90,20 @@ func TestOcrProviderRetryBudgetIsNotRepeatedByWorkflow(t *testing.T) {
 	}
 }
 
+func TestGeneratePageWorkUnitsSkipsExplicitQuarantine(t *testing.T) {
+	j, book := newOcrSkipJob()
+	page := book.GetPage(12)
+	page.QuarantineOCR("map repeatedly hit the model token limit")
+
+	units := j.GeneratePageWorkUnits(context.Background(), 12, page)
+	if len(units) != 0 {
+		t.Fatalf("quarantined page emitted %d OCR work units, want 0", len(units))
+	}
+	if page.OcrComplete("chandra-local") {
+		t.Fatal("quarantined page must remain distinct from successful OCR")
+	}
+}
+
 func TestStartAfterOcrInfrastructureFailureReemitsOnlyIncompletePage(t *testing.T) {
 	store := common.NewMemoryStateStore()
 	store.SetDoc("Book", "book-1", map[string]any{})

@@ -72,7 +72,7 @@ func TestInitialize(t *testing.T) {
 			}
 			if r.URL.Path == "/api/v0/collections" && r.Method == http.MethodGet {
 				w.Header().Set("Content-Type", "application/json")
-				w.Write([]byte(`[{"Name":"Job","Fields":[{"Name":"status_reason"},{"Name":"heartbeat_at"},{"Name":"last_progress_at"}]}]`))
+				w.Write([]byte(`[{"Name":"Job","Fields":[{"Name":"status_reason"},{"Name":"heartbeat_at"},{"Name":"last_progress_at"}]},{"Name":"Page","Fields":[{"Name":"ocr_quarantined"},{"Name":"ocr_quarantine_reason"}]}]`))
 				return
 			}
 			t.Errorf("unexpected path: %s", r.URL.Path)
@@ -98,7 +98,7 @@ func TestInitialize(t *testing.T) {
 			}
 			if r.URL.Path == "/api/v0/collections" && r.Method == http.MethodGet {
 				w.Header().Set("Content-Type", "application/json")
-				w.Write([]byte(`[{"Name":"Job","Fields":[{"Name":"status"}]}]`))
+				w.Write([]byte(`[{"Name":"Job","Fields":[{"Name":"status"}]},{"Name":"Page","Fields":[{"Name":"ocr_complete"}]}]`))
 				return
 			}
 			if r.URL.Path == "/api/v0/collections" && r.Method == http.MethodPatch {
@@ -118,7 +118,7 @@ func TestInitialize(t *testing.T) {
 		if err != nil {
 			t.Errorf("Initialize() should handle already exists, got error = %v", err)
 		}
-		for _, field := range []string{"status_reason", "heartbeat_at", "last_progress_at"} {
+		for _, field := range []string{"status_reason", "heartbeat_at", "last_progress_at", "ocr_quarantined", "ocr_quarantine_reason"} {
 			if !strings.Contains(patchBody, field) {
 				t.Errorf("additive patch missing %s: %s", field, patchBody)
 			}

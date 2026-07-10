@@ -84,29 +84,30 @@ func (b *BookState) CountOcrPages() int {
 	return count
 }
 
-// AllPagesComplete returns true if all pages have completed the page-level pipeline (OCR).
+// AllPagesComplete returns true if all pages have successful OCR or an explicit quarantine.
 func (b *BookState) AllPagesComplete() bool {
 	allDone := true
 	b.ForEachPage(func(pageNum int, state *PageState) {
-		if !state.AllOcrDone(b.OcrProviders) {
+		if !state.OcrResolved(b.OcrProviders) {
 			allDone = false
 		}
 	})
 	return allDone && b.CountPages() >= b.TotalPages
 }
 
-// AllPagesOcrComplete returns true if all pages have completed OCR.
+// AllPagesOcrComplete returns true if all pages have successful OCR or an explicit quarantine.
 func (b *BookState) AllPagesOcrComplete() bool {
 	allDone := true
 	b.ForEachPage(func(pageNum int, state *PageState) {
-		if !state.AllOcrDone(b.OcrProviders) {
+		if !state.OcrResolved(b.OcrProviders) {
 			allDone = false
 		}
 	})
 	return allDone && b.CountPages() >= b.TotalPages
 }
 
-// ConsecutivePagesComplete returns true if pages 1 through `required` all have OCR complete.
+// ConsecutivePagesComplete returns true if pages 1 through `required` have OCR
+// or an explicit quarantine.
 // If TotalPages < required, checks up to TotalPages.
 func (b *BookState) ConsecutivePagesComplete(required int) bool {
 	if b.TotalPages < required {
@@ -114,7 +115,7 @@ func (b *BookState) ConsecutivePagesComplete(required int) bool {
 	}
 	for pageNum := 1; pageNum <= required; pageNum++ {
 		state := b.GetPage(pageNum)
-		if state == nil || !state.AllOcrDone(b.OcrProviders) {
+		if state == nil || !state.OcrResolved(b.OcrProviders) {
 			return false
 		}
 	}
