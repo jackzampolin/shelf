@@ -169,6 +169,7 @@ func (c *OpenAIChatClient) doChat(ctx context.Context, req *ChatRequest, tools [
 		}
 
 		choice := orResp.Choices[0]
+		result.FinishReason = choice.FinishReason
 
 		// Include reasoning_details for reasoning models.
 		if len(choice.Message.ReasoningDetails) > 0 {
@@ -208,6 +209,17 @@ func (c *OpenAIChatClient) doChat(ctx context.Context, req *ChatRequest, tools [
 		}
 
 		result.Content = content
+		if choice.FinishReason == "length" {
+			result.Success = false
+			result.ErrorType = "output_truncated"
+			result.ErrorMessage = fmt.Sprintf(
+				"model output reached the %d-token limit before completion",
+				req.MaxTokens,
+			)
+			result.TotalTime = time.Since(start)
+			result.ExecutionTime = result.TotalTime
+			return result, fmt.Errorf("%s", result.ErrorMessage)
+		}
 
 		// Non-structured responses are complete at first successful provider reply.
 		if req.ResponseFormat == nil {

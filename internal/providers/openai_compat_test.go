@@ -108,6 +108,26 @@ func TestOpenAICompatClient_ChatOmitsVendorBitsAndZeroCost(t *testing.T) {
 	}
 }
 
+func TestOpenAICompatClient_RejectsTokenLimitTruncation(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"x","model":"m","choices":[{"message":{"role":"assistant","content":"partial"},"finish_reason":"length"}],"usage":{"prompt_tokens":1,"completion_tokens":4,"total_tokens":5}}`))
+	}))
+	defer srv.Close()
+
+	c := NewOpenAICompatClient(OpenAICompatConfig{BaseURLs: []string{srv.URL}, DefaultModel: "m"})
+	res, err := c.Chat(context.Background(), &ChatRequest{
+		Messages:  []Message{{Role: "user", Content: "hello"}},
+		MaxTokens: 4,
+	})
+	if err == nil {
+		t.Fatal("Chat() accepted finish_reason=length")
+	}
+	if res.Success || res.ErrorType != "output_truncated" || res.FinishReason != "length" {
+		t.Fatalf("truncated result = %#v", res)
+	}
+}
+
 func TestOpenAICompatClient_RoundRobinsAcrossEndpoints(t *testing.T) {
 	var hitsA, hitsB atomic.Int64
 	srvA := chatCompletionStub(t, func(path string, _ http.Header, _ []byte) {

@@ -166,6 +166,10 @@ type ChatResult struct {
 	// Provider info
 	Provider  string `json:"provider"`
 	ModelUsed string `json:"model_used"`
+	// FinishReason is the provider's terminal reason (for example "stop",
+	// "tool_calls", or "length"). Callers must never treat "length" as a
+	// complete response.
+	FinishReason string `json:"finish_reason,omitempty"`
 
 	// Request tracking
 	RequestID string `json:"request_id"`
