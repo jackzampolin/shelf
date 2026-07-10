@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -65,8 +66,13 @@ func TestGet(t *testing.T) {
 func TestInitialize(t *testing.T) {
 	t.Run("successful initialization", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/api/v0/collections" {
+			if r.URL.Path == "/api/v0/collections" && r.Method == http.MethodPost {
 				w.WriteHeader(http.StatusOK)
+				return
+			}
+			if r.URL.Path == "/api/v0/collections" && r.Method == http.MethodGet {
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(`[{"Name":"Job","Fields":[{"Name":"status_reason"},{"Name":"heartbeat_at"},{"Name":"last_progress_at"}]}]`))
 				return
 			}
 			t.Errorf("unexpected path: %s", r.URL.Path)
@@ -83,10 +89,22 @@ func TestInitialize(t *testing.T) {
 	})
 
 	t.Run("handles already exists error", func(t *testing.T) {
+		var patchBody string
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/api/v0/collections" {
+			if r.URL.Path == "/api/v0/collections" && r.Method == http.MethodPost {
 				w.WriteHeader(http.StatusBadRequest)
 				w.Write([]byte("collection already exists. Name: Job"))
+				return
+			}
+			if r.URL.Path == "/api/v0/collections" && r.Method == http.MethodGet {
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(`[{"Name":"Job","Fields":[{"Name":"status"}]}]`))
+				return
+			}
+			if r.URL.Path == "/api/v0/collections" && r.Method == http.MethodPatch {
+				body, _ := io.ReadAll(r.Body)
+				patchBody = string(body)
+				w.WriteHeader(http.StatusOK)
 				return
 			}
 		}))
@@ -99,6 +117,11 @@ func TestInitialize(t *testing.T) {
 		err := Initialize(context.Background(), client, logger)
 		if err != nil {
 			t.Errorf("Initialize() should handle already exists, got error = %v", err)
+		}
+		for _, field := range []string{"status_reason", "heartbeat_at", "last_progress_at"} {
+			if !strings.Contains(patchBody, field) {
+				t.Errorf("additive patch missing %s: %s", field, patchBody)
+			}
 		}
 	})
 

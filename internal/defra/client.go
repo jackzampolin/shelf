@@ -170,6 +170,68 @@ func (c *Client) AddSchema(ctx context.Context, schema string) error {
 	return nil
 }
 
+// CollectionDescription is the subset of DefraDB's collection metadata needed
+// for additive startup migrations.
+type CollectionDescription struct {
+	Name   string                       `json:"Name"`
+	Fields []CollectionFieldDescription `json:"Fields"`
+}
+
+type CollectionFieldDescription struct {
+	Name string `json:"Name"`
+}
+
+// ListCollectionDescriptions returns active collection definitions.
+func (c *Client) ListCollectionDescriptions(ctx context.Context) ([]CollectionDescription, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url+"/api/v0/collections", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("describe collections error (status %d): %s", resp.StatusCode, string(body))
+	}
+	var descriptions []CollectionDescription
+	if err := json.Unmarshal(body, &descriptions); err != nil {
+		return nil, fmt.Errorf("failed to decode collection descriptions: %w", err)
+	}
+	return descriptions, nil
+}
+
+// PatchCollection applies a JSON Patch string to active collection versions.
+// Additive fields become queryable immediately; existing documents read null.
+func (c *Client) PatchCollection(ctx context.Context, patch string) error {
+	body, err := json.Marshal(struct {
+		Patch string `json:"Patch"`
+	}{Patch: patch})
+	if err != nil {
+		return fmt.Errorf("failed to encode collection patch: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, c.url+"/api/v0/collections", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("collection patch error (status %d): %s", resp.StatusCode, string(respBody))
+	}
+	return nil
+}
+
 // Query executes a query and returns the results.
 func (c *Client) Query(ctx context.Context, query string) (*GQLResponse, error) {
 	return c.Execute(ctx, query, nil)

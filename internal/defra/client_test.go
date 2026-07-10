@@ -2,8 +2,10 @@ package defra
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -197,6 +199,46 @@ func TestClient_AddSchema_Error(t *testing.T) {
 
 	if err == nil {
 		t.Error("expected error for invalid schema")
+	}
+}
+
+func TestClient_ListCollectionDescriptions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v0/collections" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"Name":"Job","Fields":[{"Name":"status"},{"Name":"heartbeat_at"}]}]`))
+	}))
+	defer server.Close()
+
+	descriptions, err := NewClient(server.URL).ListCollectionDescriptions(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(descriptions) != 1 || descriptions[0].Name != "Job" || len(descriptions[0].Fields) != 2 {
+		t.Fatalf("descriptions = %#v", descriptions)
+	}
+}
+
+func TestClient_PatchCollection(t *testing.T) {
+	var requestBody string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch || r.URL.Path != "/api/v0/collections" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		body, _ := io.ReadAll(r.Body)
+		requestBody = string(body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	patch := `[{"op":"add","path":"/Job/Fields/-","value":{"Name":"heartbeat_at","Kind":10}}]`
+	if err := NewClient(server.URL).PatchCollection(context.Background(), patch); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(requestBody, `"Patch"`) || !strings.Contains(requestBody, `heartbeat_at`) {
+		t.Fatalf("patch request body = %s", requestBody)
 	}
 }
 
