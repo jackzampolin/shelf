@@ -621,6 +621,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
                         }
                     },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -1380,7 +1386,7 @@ const docTemplate = `{
         },
         "/api/jobs/start/{book_id}": {
             "post": {
-                "description": "Start processing job (OCR, blend, label) for a book",
+                "description": "Start processing job for a book",
                 "consumes": [
                     "application/json"
                 ],
@@ -2399,11 +2405,25 @@ const docTemplate = `{
                     "tts"
                 ],
                 "summary": "Get TTS configuration",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "TTS provider override",
+                        "name": "provider",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/internal_server_endpoints.TTSConfigResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
                         }
                     },
                     "500": {
@@ -2698,7 +2718,13 @@ const docTemplate = `{
                 "error": {
                     "type": "string"
                 },
+                "heartbeat_at": {
+                    "type": "string"
+                },
                 "job_type": {
+                    "type": "string"
+                },
+                "last_progress_at": {
                     "type": "string"
                 },
                 "metadata": {
@@ -2710,6 +2736,9 @@ const docTemplate = `{
                 },
                 "status": {
                     "$ref": "#/definitions/github_com_jackzampolin_shelf_internal_jobs.Status"
+                },
+                "status_reason": {
+                    "type": "string"
                 }
             }
         },
@@ -2718,6 +2747,7 @@ const docTemplate = `{
             "enum": [
                 "queued",
                 "running",
+                "waiting_provider",
                 "completed",
                 "failed",
                 "cancelled"
@@ -2725,6 +2755,7 @@ const docTemplate = `{
             "x-enum-varnames": [
                 "StatusQueued",
                 "StatusRunning",
+                "StatusWaitingProvider",
                 "StatusCompleted",
                 "StatusFailed",
                 "StatusCancelled"
@@ -2733,6 +2764,24 @@ const docTemplate = `{
         "github_com_jackzampolin_shelf_internal_jobs.WorkerStatusInfo": {
             "type": "object",
             "properties": {
+                "health": {
+                    "type": "string"
+                },
+                "in_flight": {
+                    "type": "integer"
+                },
+                "job_in_flight": {
+                    "type": "integer"
+                },
+                "job_parked": {
+                    "type": "integer"
+                },
+                "job_queued": {
+                    "type": "integer"
+                },
+                "parked_units": {
+                    "type": "integer"
+                },
                 "queue_depth": {
                     "type": "integer"
                 },
@@ -2741,6 +2790,9 @@ const docTemplate = `{
                 },
                 "type": {
                     "type": "string"
+                },
+                "workers": {
+                    "type": "integer"
                 }
             }
         },
@@ -3092,6 +3144,9 @@ const docTemplate = `{
                         "$ref": "#/definitions/internal_server_endpoints.ChapterAudioStatus"
                     }
                 },
+                "error_message": {
+                    "type": "string"
+                },
                 "format": {
                     "type": "string"
                 },
@@ -3127,14 +3182,23 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "metadata_complete": {
+                    "type": "boolean"
+                },
                 "page_count": {
                     "type": "integer"
                 },
-                "page_pattern_analysis_json": {
-                    "type": "string"
-                },
                 "status": {
                     "type": "string"
+                },
+                "status_reason": {
+                    "type": "string"
+                },
+                "structure_complete": {
+                    "type": "boolean"
+                },
+                "structure_failed": {
+                    "type": "boolean"
                 },
                 "title": {
                     "type": "string"
@@ -3571,7 +3635,11 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "format": {
-                    "description": "Optional: output format (mp3, wav)",
+                    "description": "Optional: output format (mp3)",
+                    "type": "string"
+                },
+                "provider": {
+                    "description": "Optional: provider override (\"elevenlabs\" or \"openai\")",
                     "type": "string"
                 },
                 "voice": {
@@ -3618,7 +3686,13 @@ const docTemplate = `{
                 "error": {
                     "type": "string"
                 },
+                "heartbeat_at": {
+                    "type": "string"
+                },
                 "job_type": {
+                    "type": "string"
+                },
+                "last_progress_at": {
                     "type": "string"
                 },
                 "live_status": {
@@ -3646,6 +3720,9 @@ const docTemplate = `{
                 },
                 "status": {
                     "$ref": "#/definitions/github_com_jackzampolin_shelf_internal_jobs.Status"
+                },
+                "status_reason": {
+                    "type": "string"
                 },
                 "worker_status": {
                     "type": "object",
@@ -3697,6 +3774,9 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "stitch": {
+                    "type": "boolean"
                 },
                 "title": {
                     "type": "string"
@@ -3989,6 +4069,20 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_server_endpoints.PoolHealthInfo": {
+            "type": "object",
+            "properties": {
+                "health": {
+                    "type": "string"
+                },
+                "parked_units": {
+                    "type": "integer"
+                },
+                "queue_depth": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_server_endpoints.PromptResponse": {
             "type": "object",
             "properties": {
@@ -4182,6 +4276,12 @@ const docTemplate = `{
                 "defra": {
                     "$ref": "#/definitions/internal_server_endpoints.DefraStatus"
                 },
+                "pools": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/internal_server_endpoints.PoolHealthInfo"
+                    }
+                },
                 "providers": {
                     "$ref": "#/definitions/internal_server_endpoints.ProvidersStatus"
                 },
@@ -4278,6 +4378,12 @@ const docTemplate = `{
         "internal_server_endpoints.TTSConfigResponse": {
             "type": "object",
             "properties": {
+                "available_providers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "default_format": {
                     "type": "string"
                 },
