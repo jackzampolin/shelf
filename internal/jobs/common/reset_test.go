@@ -173,6 +173,77 @@ func TestResetFrom_TocLinkReloadsClearedEntries(t *testing.T) {
 	}
 }
 
+func TestResetFrom_TocExtractClearsFinalizeCheckpoints(t *testing.T) {
+	book := NewBookState("book-1")
+	store := NewMemoryStateStore()
+	book.Store = store
+	book.SetTocDocID("toc-1")
+	book.SetFinalizePhase("gaps")
+	book.SetFinalizePatternResult(&FinalizePatternResult{Reasoning: "stale"})
+	book.SetEntriesToFind([]*EntryToFind{{Key: "missing-chapter"}})
+	book.SetFinalizeEntriesTotal(3)
+	book.SetFinalizeGapsTotal(2)
+	book.SetFinalizeProgress(2, 1, 1, 1)
+
+	store.SetTocDoc("toc-1", map[string]any{
+		"finalize_phase":    "gaps",
+		"finalize_complete": true,
+	})
+	store.SetBookDoc("book-1", map[string]any{
+		"pattern_analysis_json":     `{"reasoning":"stale"}`,
+		"finalize_entries_total":    3,
+		"finalize_entries_complete": 2,
+		"finalize_entries_found":    1,
+		"finalize_gaps_total":       2,
+		"finalize_gaps_complete":    1,
+		"finalize_gaps_fixes":       1,
+	})
+
+	if err := ResetFrom(context.Background(), book, "toc-1", ResetTocExtract); err != nil {
+		t.Fatalf("ResetFrom(toc_extract) failed: %v", err)
+	}
+
+	toc := store.GetDoc("ToC", "toc-1")
+	if _, ok := toc["finalize_phase"]; ok {
+		t.Fatalf("expected finalize_phase to be cleared, got %v", toc["finalize_phase"])
+	}
+	bookDoc := store.GetDoc("Book", "book-1")
+	if _, ok := bookDoc["pattern_analysis_json"]; ok {
+		t.Fatalf("expected pattern_analysis_json to be cleared, got %v", bookDoc["pattern_analysis_json"])
+	}
+	for _, field := range []string{
+		"finalize_entries_total",
+		"finalize_entries_complete",
+		"finalize_entries_found",
+		"finalize_gaps_total",
+		"finalize_gaps_complete",
+		"finalize_gaps_fixes",
+	} {
+		if got := bookDoc[field]; got != 0 {
+			t.Errorf("%s = %v, want 0", field, got)
+		}
+	}
+	if got := book.GetFinalizePhase(); got != "" {
+		t.Errorf("in-memory finalize phase = %q, want empty", got)
+	}
+	if got := book.GetFinalizePatternResult(); got != nil {
+		t.Errorf("in-memory finalize pattern = %#v, want nil", got)
+	}
+	if got := len(book.GetEntriesToFind()); got != 0 {
+		t.Errorf("in-memory entries to find = %d, want 0", got)
+	}
+	if got := book.GetFinalizeEntriesTotalCount(); got != 0 {
+		t.Errorf("in-memory finalize entries total = %d, want 0", got)
+	}
+	if got := book.GetFinalizeGapsTotalCount(); got != 0 {
+		t.Errorf("in-memory finalize gaps total = %d, want 0", got)
+	}
+	entriesComplete, entriesFound, gapsComplete, gapsFixes := book.GetFinalizeProgress()
+	if entriesComplete != 0 || entriesFound != 0 || gapsComplete != 0 || gapsFixes != 0 {
+		t.Errorf("in-memory finalize progress = (%d,%d,%d,%d), want zeros", entriesComplete, entriesFound, gapsComplete, gapsFixes)
+	}
+}
+
 // TestValidResetOperations verifies the ValidResetOperations list is complete.
 func TestValidResetOperations(t *testing.T) {
 	expected := []ResetOperation{

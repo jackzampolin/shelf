@@ -115,16 +115,22 @@ var OpRegistry = map[OpType]*OpConfig{
 		DocIDSource: func(b *BookState) string { return b.TocDocID() },
 		CascadesTo:  []OpType{OpStructure},
 		AgentTypes:  []string{AgentTypeGapInvestigator, AgentTypeChapterFinder},
+		ResetDBFields: map[string]any{
+			"finalize_phase": nil,
+		},
 		ResetMemoryHook: func(book *BookState) {
 			book.finalizePhase = ""
 			book.finalizePatternResult = nil
 			book.entriesToFind = nil
 			book.finalizeGaps = nil
+			book.finalizeEntriesTotal = 0
 			book.finalizeEntriesComplete = 0
 			book.finalizeEntriesFound = 0
+			book.finalizeGapsTotal = 0
 			book.finalizeGapsComplete = 0
 			book.finalizeGapsFixes = 0
 		},
+		ResetHook: resetTocFinalizeHook,
 	},
 	OpStructure: {
 		Collection:  "Book",
@@ -368,6 +374,38 @@ func resetTocLinkHook(ctx context.Context, book *BookState, tocDocID string) err
 
 	if logger := svcctx.LoggerFrom(ctx); logger != nil {
 		logger.Debug("reloaded ToC entries after link reset", "toc_id", tocDocID, "count", len(entries))
+	}
+	return nil
+}
+
+// resetTocFinalizeHook clears the restart checkpoint stored on Book. The
+// standard finalize operation fields and finalize_phase live on ToC, but the
+// pattern result and progress counters live on Book and must be reset with the
+// same operation. Otherwise a restarted job can reuse stale pattern analysis.
+func resetTocFinalizeHook(ctx context.Context, book *BookState, tocDocID string) error {
+	fields := map[string]any{
+		"pattern_analysis_json":     nil,
+		"finalize_entries_total":    0,
+		"finalize_entries_complete": 0,
+		"finalize_entries_found":    0,
+		"finalize_gaps_total":       0,
+		"finalize_gaps_complete":    0,
+		"finalize_gaps_fixes":       0,
+	}
+	writeOp := defra.WriteOp{
+		Collection: "Book",
+		DocID:      book.BookID,
+		Document:   fields,
+		Op:         defra.OpUpdate,
+	}
+	if book.Store != nil {
+		if _, err := book.Store.SendSync(ctx, writeOp); err != nil {
+			return fmt.Errorf("failed to clear ToC finalize checkpoint: %w", err)
+		}
+		return nil
+	}
+	if err := SendToSinkSync(ctx, writeOp); err != nil {
+		return fmt.Errorf("failed to clear ToC finalize checkpoint: %w", err)
 	}
 	return nil
 }

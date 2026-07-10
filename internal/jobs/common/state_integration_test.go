@@ -89,6 +89,13 @@ type Book {
 	total_chapters: Int
 	total_paragraphs: Int
 	total_words: Int
+	pattern_analysis_json: String
+	finalize_entries_total: Int
+	finalize_entries_complete: Int
+	finalize_entries_found: Int
+	finalize_gaps_total: Int
+	finalize_gaps_complete: Int
+	finalize_gaps_fixes: Int
 
 	# Relationships (auto-generate _tocID on Book; _bookID on the child types)
 	pages: [Page]
