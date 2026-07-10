@@ -25,6 +25,11 @@ var requiredAdditiveFields = []additiveField{
 	{Collection: "Job", Name: "status_reason", Kind: 11, Typ: 1},
 	{Collection: "Job", Name: "heartbeat_at", Kind: 10, Typ: 1},
 	{Collection: "Job", Name: "last_progress_at", Kind: 10, Typ: 1},
+	{Collection: "Book", Name: "source_format", Kind: 11, Typ: 1},
+	{Collection: "Book", Name: "source_filename", Kind: 11, Typ: 1},
+	{Collection: "Book", Name: "source_sha256", Kind: 11, Typ: 1},
+	{Collection: "Book", Name: "source_identifier", Kind: 11, Typ: 1},
+	{Collection: "Book", Name: "source_imported_at", Kind: 10, Typ: 1},
 	{Collection: "Page", Name: "ocr_quarantined", Kind: 2, Typ: 1},
 	{Collection: "Page", Name: "ocr_quarantine_reason", Kind: 11, Typ: 1},
 }

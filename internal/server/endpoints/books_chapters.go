@@ -27,6 +27,7 @@ type Chapter struct {
 	AudioInclude            bool   `json:"audio_include"`
 	AudioIncludeReasoning   string `json:"audio_include_reasoning,omitempty"`
 	SortOrder               int    `json:"sort_order"`
+	Source                  string `json:"source,omitempty"`
 	WordCount               int    `json:"word_count,omitempty"`
 	PageCount               int    `json:"page_count"`
 	PolishComplete          bool   `json:"polish_complete"`
@@ -151,6 +152,7 @@ func (e *GetBookChaptersEndpoint) handler(w http.ResponseWriter, r *http.Request
 			audio_include
 			audio_include_reasoning
 			sort_order
+			source
 			word_count
 			polish_complete
 			polish_failed
@@ -194,6 +196,7 @@ func (e *GetBookChaptersEndpoint) handler(w http.ResponseWriter, r *http.Request
 				AudioInclude:            getBool(cm, "audio_include"),
 				AudioIncludeReasoning:   getString(cm, "audio_include_reasoning"),
 				SortOrder:               getInt(cm, "sort_order"),
+				Source:                  getString(cm, "source"),
 				WordCount:               getInt(cm, "word_count"),
 				PageCount:               endPage - startPage + 1,
 				PolishComplete:          getBool(cm, "polish_complete"),

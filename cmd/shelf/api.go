@@ -81,8 +81,10 @@ func init() {
 
 	// Books as subcommand group
 	booksCmd.AddCommand((&endpoints.IngestEndpoint{}).Command(getServerURL))
+	booksCmd.AddCommand((&endpoints.ImportEPUBEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.ListBooksEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.GetBookEndpoint{}).Command(getServerURL))
+	booksCmd.AddCommand((&endpoints.GetBookChaptersEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.RepairOCREndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.RepairPDFTextEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.QuarantineOCREndpoint{}).Command(getServerURL))

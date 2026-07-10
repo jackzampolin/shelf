@@ -8,6 +8,13 @@ type Book {
     status_reason: String
     created_at: DateTime
 
+    # Original-source provenance (direct import paths such as EPUB).
+    source_format: String
+    source_filename: String
+    source_sha256: String
+    source_identifier: String
+    source_imported_at: DateTime
+
     # Metadata from agent
     isbn: String
     lccn: String

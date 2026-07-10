@@ -72,7 +72,7 @@ func TestInitialize(t *testing.T) {
 			}
 			if r.URL.Path == "/api/v0/collections" && r.Method == http.MethodGet {
 				w.Header().Set("Content-Type", "application/json")
-				w.Write([]byte(`[{"Name":"Job","Fields":[{"Name":"status_reason","Typ":1},{"Name":"heartbeat_at","Typ":1},{"Name":"last_progress_at","Typ":1}]},{"Name":"Page","Fields":[{"Name":"ocr_quarantined","Typ":1},{"Name":"ocr_quarantine_reason","Typ":1}]}]`))
+				w.Write([]byte(`[{"Name":"Job","Fields":[{"Name":"status_reason","Typ":1},{"Name":"heartbeat_at","Typ":1},{"Name":"last_progress_at","Typ":1}]},{"Name":"Book","Fields":[{"Name":"source_format","Typ":1},{"Name":"source_filename","Typ":1},{"Name":"source_sha256","Typ":1},{"Name":"source_identifier","Typ":1},{"Name":"source_imported_at","Typ":1}]},{"Name":"Page","Fields":[{"Name":"ocr_quarantined","Typ":1},{"Name":"ocr_quarantine_reason","Typ":1}]}]`))
 				return
 			}
 			t.Errorf("unexpected path: %s", r.URL.Path)
@@ -98,7 +98,7 @@ func TestInitialize(t *testing.T) {
 			}
 			if r.URL.Path == "/api/v0/collections" && r.Method == http.MethodGet {
 				w.Header().Set("Content-Type", "application/json")
-				w.Write([]byte(`[{"Name":"Job","Fields":[{"Name":"status"}]},{"Name":"Page","Fields":[{"Name":"ocr_complete"}]}]`))
+				w.Write([]byte(`[{"Name":"Job","Fields":[{"Name":"status"}]},{"Name":"Book","Fields":[{"Name":"status"}]},{"Name":"Page","Fields":[{"Name":"ocr_complete"}]}]`))
 				return
 			}
 			if r.URL.Path == "/api/v0/collections" && r.Method == http.MethodPatch {
@@ -118,7 +118,7 @@ func TestInitialize(t *testing.T) {
 		if err != nil {
 			t.Errorf("Initialize() should handle already exists, got error = %v", err)
 		}
-		for _, field := range []string{"status_reason", "heartbeat_at", "last_progress_at", "ocr_quarantined", "ocr_quarantine_reason"} {
+		for _, field := range []string{"status_reason", "heartbeat_at", "last_progress_at", "source_format", "source_filename", "source_sha256", "source_identifier", "source_imported_at", "ocr_quarantined", "ocr_quarantine_reason"} {
 			if !strings.Contains(patchBody, field) {
 				t.Errorf("additive patch missing %s: %s", field, patchBody)
 			}
@@ -137,7 +137,7 @@ func TestInitialize(t *testing.T) {
 				w.Write([]byte("collection already exists"))
 			case http.MethodGet:
 				w.Header().Set("Content-Type", "application/json")
-				w.Write([]byte(`[{"Name":"Job","Fields":[{"Name":"status_reason","Typ":1},{"Name":"heartbeat_at","Typ":1},{"Name":"last_progress_at","Typ":1}]},{"Name":"Page","Fields":[{"Name":"ocr_quarantined","Typ":0},{"Name":"ocr_quarantine_reason","Typ":0}]}]`))
+				w.Write([]byte(`[{"Name":"Job","Fields":[{"Name":"status_reason","Typ":1},{"Name":"heartbeat_at","Typ":1},{"Name":"last_progress_at","Typ":1}]},{"Name":"Book","Fields":[{"Name":"source_format","Typ":1},{"Name":"source_filename","Typ":1},{"Name":"source_sha256","Typ":1},{"Name":"source_identifier","Typ":1},{"Name":"source_imported_at","Typ":1}]},{"Name":"Page","Fields":[{"Name":"ocr_quarantined","Typ":0},{"Name":"ocr_quarantine_reason","Typ":0}]}]`))
 			case http.MethodPatch:
 				body, _ := io.ReadAll(r.Body)
 				patchBody = string(body)

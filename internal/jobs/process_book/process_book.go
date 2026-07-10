@@ -142,17 +142,22 @@ func (c Config) Validate() error {
 
 // Status represents the status of page processing for a book.
 type Status struct {
-	TotalPages       int  `json:"total_pages"`
-	OcrComplete      int  `json:"ocr_complete"`
-	OcrQuarantined   int  `json:"ocr_quarantined"`
-	MetadataComplete bool `json:"metadata_complete"`
-	TocFound         bool `json:"toc_found"`
-	TocExtracted     bool `json:"toc_extracted"`
+	TotalPages        int  `json:"total_pages"`
+	OcrComplete       int  `json:"ocr_complete"`
+	OcrQuarantined    int  `json:"ocr_quarantined"`
+	MetadataComplete  bool `json:"metadata_complete"`
+	TocFound          bool `json:"toc_found"`
+	TocExtracted      bool `json:"toc_extracted"`
+	BookComplete      bool `json:"-"`
+	StructureComplete bool `json:"-"`
 }
 
 // IsComplete returns whether processing is complete for this book.
 func (st *Status) IsComplete() bool {
 	allPagesComplete := st.OcrComplete+st.OcrQuarantined >= st.TotalPages
+	if st.BookComplete && st.StructureComplete {
+		return allPagesComplete && st.MetadataComplete
+	}
 	return allPagesComplete && st.MetadataComplete && st.TocExtracted
 }
 
@@ -172,7 +177,13 @@ func GetStatusWithClient(ctx context.Context, client *defra.Client, bookID strin
 	bookQuery := fmt.Sprintf(`{
 		Book(filter: {_docID: {_eq: "%s"}}) {
 			page_count
+			status
 			metadata_complete
+			structure_complete
+			toc {
+				toc_found
+				extract_complete
+			}
 		}
 	}`, bookID)
 
@@ -190,6 +201,18 @@ func GetStatusWithClient(ctx context.Context, client *defra.Client, bookID strin
 			}
 			if mc, ok := book["metadata_complete"].(bool); ok {
 				status.MetadataComplete = mc
+			}
+			status.BookComplete = getStatusString(book, "status") == "complete"
+			if complete, ok := book["structure_complete"].(bool); ok {
+				status.StructureComplete = complete
+			}
+			if toc, ok := book["toc"].(map[string]any); ok {
+				if found, ok := toc["toc_found"].(bool); ok {
+					status.TocFound = found
+				}
+				if extracted, ok := toc["extract_complete"].(bool); ok {
+					status.TocExtracted = extracted
+				}
 			}
 		}
 	}
@@ -221,29 +244,12 @@ func GetStatusWithClient(ctx context.Context, client *defra.Client, bookID strin
 		}
 	}
 
-	// Query ToC status
-	tocQuery := fmt.Sprintf(`{
-		ToC(filter: {_bookID: {_eq: "%s"}}) {
-			toc_found
-			extract_complete
-		}
-	}`, bookID)
-
-	tocResp, err := client.Execute(ctx, tocQuery, nil)
-	if err == nil {
-		if tocs, ok := tocResp.Data["ToC"].([]any); ok && len(tocs) > 0 {
-			if toc, ok := tocs[0].(map[string]any); ok {
-				if found, ok := toc["toc_found"].(bool); ok {
-					status.TocFound = found
-				}
-				if extracted, ok := toc["extract_complete"].(bool); ok {
-					status.TocExtracted = extracted
-				}
-			}
-		}
-	}
-
 	return status, nil
+}
+
+func getStatusString(values map[string]any, key string) string {
+	value, _ := values[key].(string)
+	return value
 }
 
 // NewJob creates a new process pages job for the given book.

@@ -53,6 +53,11 @@ func (e *GetBookEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 			page_count
 			status
 			status_reason
+			source_format
+			source_filename
+			source_sha256
+			source_identifier
+			source_imported_at
 			metadata_complete
 			structure_complete
 			structure_failed
@@ -89,6 +94,11 @@ func (e *GetBookEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		Author:            getString(m, "author"),
 		Status:            getString(m, "status"),
 		StatusReason:      getString(m, "status_reason"),
+		SourceFormat:      getString(m, "source_format"),
+		SourceFilename:    getString(m, "source_filename"),
+		SourceSHA256:      getString(m, "source_sha256"),
+		SourceIdentifier:  getString(m, "source_identifier"),
+		SourceImportedAt:  getString(m, "source_imported_at"),
 		MetadataComplete:  getBool(m, "metadata_complete"),
 		StructureComplete: getBool(m, "structure_complete"),
 		StructureFailed:   getBool(m, "structure_failed"),
