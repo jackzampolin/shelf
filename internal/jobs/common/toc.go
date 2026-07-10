@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -179,6 +180,27 @@ func SaveTocExtractResult(ctx context.Context, tocDocID string, result *extract_
 
 		// Upsert: create if not exists, update if exists
 		_, err := defraClient.Upsert(ctx, "TocEntry", filter, entryData, entryData)
+		if err != nil && isDefraDocIDCollision(err) {
+			// A previous partial toc_extract can leave the same logical row under
+			// an older unique_key. Defra derives the would-be add DocID from the
+			// new input, so upsert reports an ID collision even though the stable
+			// key filter found nothing. Recover by the load-bearing identity for
+			// this relation: ToC + sort order.
+			existingDocID, findErr := findTocEntryByIdentity(ctx, defraClient, tocDocID, i)
+			if findErr != nil {
+				return "", fmt.Errorf("failed to recover TocEntry %d collision: %w", i, findErr)
+			}
+			if existingDocID != "" {
+				if logger != nil {
+					logger.Warn("ToC entry upsert collided; updating existing entry by identity",
+						"sort_order", i,
+						"toc_doc_id", tocDocID,
+						"existing_doc_id", existingDocID,
+						"error", err)
+				}
+				_, err = defraClient.UpdateWithVersion(ctx, "TocEntry", existingDocID, entryData)
+			}
+		}
 		if err != nil {
 			if logger != nil {
 				logger.Error("failed to upsert extracted ToC entry",
@@ -209,6 +231,54 @@ func SaveTocExtractResult(ctx context.Context, tocDocID string, result *extract_
 		return "", err
 	}
 	return writeResult.CID, nil
+}
+
+func isDefraDocIDCollision(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "document with the given id already exists") ||
+		strings.Contains(msg, "document with given id already exists")
+}
+
+func findTocEntryByIdentity(ctx context.Context, client *defra.Client, tocDocID string, sortOrder int) (string, error) {
+	query := fmt.Sprintf(`{
+		TocEntry(filter: {_tocID: {_eq: %q}}, limit: 5000) {
+			_docID
+			sort_order
+			unique_key
+		}
+	}`, tocDocID)
+	resp, err := client.Execute(ctx, query, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to query existing ToC entries: %w", err)
+	}
+	if errMsg := resp.Error(); errMsg != "" {
+		return "", fmt.Errorf("failed to query existing ToC entries: %s", errMsg)
+	}
+	raw, ok := resp.Data["TocEntry"].([]any)
+	if !ok {
+		return "", fmt.Errorf("unexpected TocEntry identity response: %+v", resp.Data)
+	}
+	matches := make([]string, 0, 1)
+	for _, item := range raw {
+		entry, ok := item.(map[string]any)
+		if !ok || numericToInt(entry["sort_order"]) != sortOrder {
+			continue
+		}
+		docID, _ := entry["_docID"].(string)
+		if docID != "" {
+			matches = append(matches, docID)
+		}
+	}
+	if len(matches) > 1 {
+		return "", fmt.Errorf("multiple TocEntry records matched toc=%s sort_order=%d", tocDocID, sortOrder)
+	}
+	if len(matches) == 1 {
+		return matches[0], nil
+	}
+	return "", nil
 }
 
 // LinkedTocEntry represents a ToC entry with its page link.
