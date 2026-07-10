@@ -310,6 +310,26 @@ func (s *Scheduler) removeJob(jobID string) {
 	s.mu.Unlock()
 }
 
+// cancelJobWork discards all work for a terminal job that has not entered a
+// provider call yet. Provider calls already in flight may still return, but a
+// failed job must not continue consuming queued inference.
+func (s *Scheduler) cancelJobWork(jobID string) int {
+	s.mu.RLock()
+	pools := make([]WorkerPool, 0, len(s.pools))
+	for _, pool := range s.pools {
+		pools = append(pools, pool)
+	}
+	s.mu.RUnlock()
+
+	purged := 0
+	for _, pool := range pools {
+		if canceller, ok := pool.(JobWorkCanceller); ok {
+			purged += canceller.CancelJob(jobID)
+		}
+	}
+	return purged
+}
+
 // GetJobByBookID returns an active job processing the given book, if any.
 // Returns nil if no active job is found for this book.
 func (s *Scheduler) GetJobByBookID(bookID string) Job {
@@ -365,18 +385,7 @@ func (s *Scheduler) CancelActiveJobsByBookIDAndType(ctx context.Context, bookID,
 	s.mu.Unlock()
 
 	for _, jobID := range jobIDs {
-		purged := 0
-		s.mu.RLock()
-		pools := make([]WorkerPool, 0, len(s.pools))
-		for _, pool := range s.pools {
-			pools = append(pools, pool)
-		}
-		s.mu.RUnlock()
-		for _, pool := range pools {
-			if canceller, ok := pool.(JobWorkCanceller); ok {
-				purged += canceller.CancelJob(jobID)
-			}
-		}
+		purged := s.cancelJobWork(jobID)
 		s.logger.Warn("cancelled active job",
 			"job_id", jobID,
 			"type", jobType,
@@ -506,6 +515,10 @@ func (s *Scheduler) handleResult(ctx context.Context, wr workerResult) {
 	if err != nil {
 		s.logger.Error("job OnComplete failed", "job_id", wr.JobID, "error", err)
 		s.failBookForJob(enrichedCtx, job, err.Error())
+		purged := s.cancelJobWork(wr.JobID)
+		if purged > 0 {
+			s.logger.Warn("purged work after job failure", "job_id", wr.JobID, "purged_units", purged)
+		}
 		s.removeJob(wr.JobID)
 		if s.manager != nil {
 			if updateErr := s.manager.UpdateStatus(ctx, wr.JobID, StatusFailed, err.Error()); updateErr != nil {
@@ -544,6 +557,7 @@ func (s *Scheduler) handleResult(ctx context.Context, wr workerResult) {
 			"job_type", job.Type(),
 			"reason", reason)
 		s.failBookForJob(enrichedCtx, job, reason)
+		s.cancelJobWork(wr.JobID)
 		if s.manager != nil {
 			if updateErr := s.manager.UpdateStatus(ctx, wr.JobID, StatusFailed, reason); updateErr != nil {
 				s.logger.Warn("failed to update drained job status in DefraDB", "error", updateErr)

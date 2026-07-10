@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jackzampolin/shelf/internal/defra"
+	"github.com/jackzampolin/shelf/internal/providers"
 )
 
 // stubPanicJob panics from OnComplete to exercise scheduler panic recovery.
@@ -84,12 +85,26 @@ func (j *stubDrainedJob) NoWorkFailure() string { return j.reason }
 
 func TestHandleResultFailsBookOnJobError(t *testing.T) {
 	s := NewScheduler(SchedulerConfig{Logger: slog.Default()})
+	pool, err := NewProviderWorkerPool(ProviderWorkerPoolConfig{
+		Name:      "llm",
+		LLMClient: providers.NewMockClient(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.RegisterPool(pool)
 	stub := &stubFailJob{bookID: "book-1"}
 
 	s.mu.Lock()
 	s.jobs["job-1"] = stub
-	s.pending["job-1"] = 1
+	s.pending["job-1"] = 3
 	s.mu.Unlock()
+	if err := pool.Submit(&WorkUnit{ID: "queued", JobID: "job-1", Type: WorkUnitTypeLLM}); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.circuit.park(&WorkUnit{ID: "parked", JobID: "job-1", Type: WorkUnitTypeLLM}, fmt.Errorf("connection refused")); err != nil {
+		t.Fatal(err)
+	}
 
 	s.handleResult(context.Background(), workerResult{
 		JobID:  "job-1",
@@ -99,6 +114,15 @@ func TestHandleResultFailsBookOnJobError(t *testing.T) {
 
 	if stub.failedReason == "" {
 		t.Fatal("expected FailBook to be called with a reason after OnComplete error")
+	}
+	if pool.queue.Len() != 0 {
+		t.Fatalf("provider queue depth = %d, want failed job work purged", pool.queue.Len())
+	}
+	if _, parked := pool.circuit.status(); parked != 0 {
+		t.Fatalf("parked units = %d, want failed job work purged", parked)
+	}
+	if s.ActiveJobs() != 0 {
+		t.Fatal("failed job remained active")
 	}
 }
 
