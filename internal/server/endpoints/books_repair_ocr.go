@@ -141,7 +141,7 @@ func (e *RepairOCREndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to repair OCR pages: %v", err))
 		return
 	}
-	if err := resetRepairDownstream(r.Context(), book, cfg); err != nil {
+	if err := resetRepairDownstream(r.Context(), book, cfg, repair.Pages); err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to invalidate downstream state: %v", err))
 		return
 	}
@@ -193,18 +193,55 @@ func repairBookPageCount(ctx context.Context, bookID string) (int, error) {
 	return int(pageCount), nil
 }
 
-func resetRepairDownstream(ctx context.Context, book *common.BookState, cfg process_book.Config) error {
-	if cfg.EnableMetadata {
-		if err := common.ResetFrom(ctx, book, book.TocDocID(), common.ResetMetadata); err != nil {
-			return fmt.Errorf("metadata: %w", err)
-		}
-	}
-	if cfg.EnableTocFinder || cfg.EnableTocExtract || cfg.EnableTocLink || cfg.EnableTocFinalize || cfg.EnableStructure {
-		if err := common.ResetFrom(ctx, book, book.TocDocID(), common.ResetTocFinder); err != nil {
-			return fmt.Errorf("toc_finder: %w", err)
+func resetRepairDownstream(ctx context.Context, book *common.BookState, cfg process_book.Config, pages []int) error {
+	for _, op := range repairInvalidationPlan(cfg, pages) {
+		if err := common.ResetFrom(ctx, book, book.TocDocID(), op); err != nil {
+			return fmt.Errorf("%s: %w", op, err)
 		}
 	}
 	return nil
+}
+
+// repairInvalidationPlan returns the earliest affected operations without
+// throwing away independent, still-valid artifacts. Metadata reads only its
+// prefix, ToC discovery reads the front-matter window, ToC linking may consult
+// any page, and structure consumes the linked chapter ranges. ResetFrom then
+// handles the normal downstream cascade from the selected operation.
+func repairInvalidationPlan(cfg process_book.Config, pages []int) []common.ResetOperation {
+	metadataAffected := false
+	frontMatterAffected := false
+	for _, page := range pages {
+		if page <= process_book.OcrThresholdForMetadata {
+			metadataAffected = true
+		}
+		if page <= process_book.FrontMatterPageCount {
+			frontMatterAffected = true
+		}
+	}
+
+	var plan []common.ResetOperation
+	if cfg.EnableMetadata && metadataAffected {
+		plan = append(plan, common.ResetMetadata)
+	}
+
+	if frontMatterAffected {
+		switch {
+		case cfg.EnableTocFinder:
+			return append(plan, common.ResetTocFinder)
+		case cfg.EnableTocExtract:
+			return append(plan, common.ResetTocExtract)
+		}
+	}
+
+	switch {
+	case cfg.EnableTocLink:
+		plan = append(plan, common.ResetTocLink)
+	case cfg.EnableTocFinalize:
+		plan = append(plan, common.ResetTocFinalize)
+	case cfg.EnableStructure:
+		plan = append(plan, common.ResetStructure)
+	}
+	return plan
 }
 
 func validateRepairProviders(providers, configured []string) error {

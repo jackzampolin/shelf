@@ -677,3 +677,39 @@ func (j *Job) FailBook(ctx context.Context, reason string) {
 		}
 	}
 }
+
+// NoWorkFailure explains a synchronous phase transition that returned no
+// downstream units without completing the job. Implements
+// jobs.NoWorkFailureProvider.
+func (j *Job) NoWorkFailure() string {
+	j.Mu.Lock()
+	defer j.Mu.Unlock()
+	if j.noWorkFailure != "" {
+		return j.noWorkFailure
+	}
+	if j.Book == nil {
+		return ""
+	}
+	if j.Book.EnableOCR && !j.AllPagesOcrComplete() {
+		return "ocr phase drained without completing every page"
+	}
+	if j.Book.EnableMetadata && !j.Book.MetadataIsDone() {
+		return "metadata phase drained without reaching a terminal state"
+	}
+	if j.Book.EnableTocFinder && !j.Book.TocFinderIsDone() {
+		return "toc finder phase drained without reaching a terminal state"
+	}
+	if j.Book.EnableTocExtract && j.Book.GetTocFound() && !j.Book.TocExtractIsDone() {
+		return "toc extraction phase drained without reaching a terminal state"
+	}
+	if j.Book.EnableTocLink && j.Book.TocExtractIsDone() && !j.Book.TocLinkIsDone() {
+		return "toc link phase drained without reaching a terminal state"
+	}
+	if j.Book.EnableTocFinalize && j.Book.TocLinkIsComplete() && !j.Book.TocFinalizeIsDone() {
+		return "toc finalize phase drained without reaching a terminal state"
+	}
+	if j.Book.EnableStructure && j.Book.TocFinalizeIsComplete() && !j.Book.StructureIsDone() {
+		return "structure phase drained without reaching a terminal state"
+	}
+	return ""
+}

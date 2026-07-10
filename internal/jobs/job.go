@@ -205,6 +205,14 @@ type BookFailer interface {
 	FailBook(ctx context.Context, reason string)
 }
 
+// NoWorkFailureProvider is implemented by jobs that can explain why a phase
+// drained its final work unit without reaching Done. The scheduler uses this
+// detail when it converts that otherwise-stranded state into an actionable
+// failed job record.
+type NoWorkFailureProvider interface {
+	NoWorkFailure() string
+}
+
 // LiveStatusProvider is implemented by jobs that can provide real-time
 // status from in-memory state, avoiding database queries during execution.
 type LiveStatusProvider interface {

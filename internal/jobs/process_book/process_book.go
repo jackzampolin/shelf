@@ -14,6 +14,13 @@ import (
 // JobType is the identifier for this job type.
 const JobType = "process-book"
 
+// OCR dependency windows are re-exported for callers that must invalidate
+// only the pipeline stages whose inputs include a repaired page.
+const (
+	OcrThresholdForMetadata = pjob.OcrThresholdForMetadata
+	FrontMatterPageCount    = pjob.FrontMatterPageCount
+)
+
 // Config configures the process pages job.
 type Config struct {
 	// Provider settings

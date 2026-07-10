@@ -139,6 +139,13 @@ type PDFInfo = common.PDFInfo
 type Job struct {
 	common.TrackedBaseJob[WorkUnitInfo]
 
+	// noWorkFailure records a synchronous phase-transition failure. Some book
+	// phases do their setup inline after the preceding unit completes; if setup
+	// cannot emit downstream work, the scheduler needs the stage-specific reason
+	// to fail the job visibly instead of leaving it running with zero pending.
+	// Access is protected by the job's Mu.
+	noWorkFailure string
+
 	// ToC agent (stateful during execution)
 	TocAgent *agent.Agent
 	TocDocID string

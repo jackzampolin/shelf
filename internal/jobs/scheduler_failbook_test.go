@@ -71,6 +71,17 @@ func (j *stubTransientStartJob) Start(context.Context) ([]WorkUnit, error) {
 
 func (j *stubTransientStartJob) Done() bool { return j.done }
 
+type stubDrainedJob struct {
+	stubFailJob
+	reason string
+}
+
+func (j *stubDrainedJob) OnComplete(context.Context, WorkResult) ([]WorkUnit, error) {
+	return nil, nil
+}
+
+func (j *stubDrainedJob) NoWorkFailure() string { return j.reason }
+
 func TestHandleResultFailsBookOnJobError(t *testing.T) {
 	s := NewScheduler(SchedulerConfig{Logger: slog.Default()})
 	stub := &stubFailJob{bookID: "book-1"}
@@ -88,6 +99,32 @@ func TestHandleResultFailsBookOnJobError(t *testing.T) {
 
 	if stub.failedReason == "" {
 		t.Fatal("expected FailBook to be called with a reason after OnComplete error")
+	}
+}
+
+func TestHandleResultFailsBookWhenLastUnitDrainsWithoutDone(t *testing.T) {
+	s := NewScheduler(SchedulerConfig{Logger: slog.Default()})
+	stub := &stubDrainedJob{
+		stubFailJob: stubFailJob{bookID: "book-1"},
+		reason:      "structure failed to build chapter skeleton: no linked ToC entries found",
+	}
+
+	s.mu.Lock()
+	s.jobs["job-1"] = stub
+	s.pending["job-1"] = 1
+	s.mu.Unlock()
+
+	s.handleResult(context.Background(), workerResult{
+		JobID:  "job-1",
+		Unit:   &WorkUnit{ID: "u1"},
+		Result: WorkResult{WorkUnitID: "u1", Success: true},
+	})
+
+	if stub.failedReason != stub.reason {
+		t.Fatalf("failedReason = %q, want %q", stub.failedReason, stub.reason)
+	}
+	if s.ActiveJobs() != 0 {
+		t.Fatal("drained nonterminal job remained active")
 	}
 }
 
@@ -148,6 +185,24 @@ func TestStartJobAsyncFailsBookOnNoWorkNotDone(t *testing.T) {
 
 	if !strings.Contains(stub.failedReason, "no work units") {
 		t.Fatalf("failedReason = %q, want no-work failure", stub.failedReason)
+	}
+}
+
+func TestStartJobAsyncUsesActionableNoWorkFailure(t *testing.T) {
+	s := NewScheduler(SchedulerConfig{Logger: slog.Default()})
+	stub := &stubDrainedJob{
+		stubFailJob: stubFailJob{bookID: "book-1"},
+		reason:      "structure failed to build chapter skeleton: no linked ToC entries found",
+	}
+	s.mu.Lock()
+	s.jobs[stub.ID()] = stub
+	s.pending[stub.ID()] = 0
+	s.mu.Unlock()
+
+	s.startJobAsync(stub)
+
+	if stub.failedReason != stub.reason {
+		t.Fatalf("failedReason = %q, want actionable stage reason %q", stub.failedReason, stub.reason)
 	}
 }
 

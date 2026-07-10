@@ -204,6 +204,15 @@ func (s *Scheduler) failBookForJob(ctx context.Context, job Job, reason string) 
 	}
 }
 
+func noWorkFailureReason(job Job, fallback string) string {
+	if provider, ok := job.(NoWorkFailureProvider); ok {
+		if detail := provider.NoWorkFailure(); detail != "" {
+			return detail
+		}
+	}
+	return fallback
+}
+
 // failBookByRecord marks a book failed when no live Job exists (e.g. a Resume
 // factory failure). It also marks the job record failed so the stale "running"
 // record does not defeat the reconciler. The "failed" status string must match
@@ -511,11 +520,15 @@ func (s *Scheduler) handleResult(ctx context.Context, wr workerResult) {
 		s.enqueueUnits(wr.JobID, newUnits)
 	}
 
-	// Check if job is done
+	// Check if job is done. A multi-phase job is not allowed to drain its final
+	// unit while remaining nonterminal: without this invariant it stays
+	// "running" forever with pending_units=0 and no event capable of waking it.
 	s.mu.Lock()
 	pendingCount := s.pending[wr.JobID]
-	isDone := job.Done() && pendingCount == 0
-	if isDone {
+	jobDone := job.Done()
+	isDone := jobDone && pendingCount == 0
+	isDrainedNonterminal := !jobDone && pendingCount == 0
+	if isDone || isDrainedNonterminal {
 		delete(s.jobs, wr.JobID)
 		delete(s.jobSeq, wr.JobID)
 		delete(s.pending, wr.JobID)
@@ -523,6 +536,21 @@ func (s *Scheduler) handleResult(ctx context.Context, wr workerResult) {
 		delete(s.waitingProviders, wr.JobID)
 	}
 	s.mu.Unlock()
+
+	if isDrainedNonterminal {
+		reason := noWorkFailureReason(job, "job drained all work units but is not done")
+		s.logger.Error("job drained without reaching a terminal state",
+			"job_id", wr.JobID,
+			"job_type", job.Type(),
+			"reason", reason)
+		s.failBookForJob(enrichedCtx, job, reason)
+		if s.manager != nil {
+			if updateErr := s.manager.UpdateStatus(ctx, wr.JobID, StatusFailed, reason); updateErr != nil {
+				s.logger.Warn("failed to update drained job status in DefraDB", "error", updateErr)
+			}
+		}
+		return
+	}
 
 	if isDone {
 		s.logger.Info("job completed", "id", job.ID(), "type", job.Type())

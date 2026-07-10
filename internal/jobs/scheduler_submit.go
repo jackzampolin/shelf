@@ -167,7 +167,8 @@ func (s *Scheduler) startJobAsync(job Job) {
 	}
 	if len(units) == 0 {
 		jobID := job.ID()
-		err := fmt.Errorf("job started with no work units and is not done")
+		reason := noWorkFailureReason(job, "job started with no work units and is not done")
+		err := fmt.Errorf("%s", reason)
 		s.logger.Error("job start produced no work", "job_id", jobID, "type", job.Type())
 		s.failBookForJob(ctx, job, err.Error())
 		s.removeJob(jobID)
@@ -329,7 +330,8 @@ func (s *Scheduler) Resume(ctx context.Context) (int, error) {
 			continue
 		}
 		if len(units) == 0 {
-			err := fmt.Errorf("resumed job produced no work units and is not done")
+			reason := noWorkFailureReason(job, "resumed job produced no work units and is not done")
+			err := fmt.Errorf("%s", reason)
 			s.logger.Error("failed to resume job",
 				"job_id", record.ID,
 				"type", record.JobType,

@@ -3,6 +3,7 @@ package job
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -50,6 +51,7 @@ func (j *Job) StartStructurePhase(ctx context.Context) []jobs.WorkUnit {
 	// Load linked entries (uses cache, refreshed after finalize_toc)
 	entries, err := common.RefreshLinkedEntries(ctx, j.Book, j.TocDocID)
 	if err != nil {
+		j.noWorkFailure = fmt.Sprintf("structure failed to load linked ToC entries: %v", err)
 		if logger != nil {
 			logger.Error("failed to load linked entries for structure",
 				"book_id", j.Book.BookID,
@@ -74,6 +76,7 @@ func (j *Job) StartStructurePhase(ctx context.Context) []jobs.WorkUnit {
 	// Phase 1: Build skeleton (synchronous)
 	j.Book.SetStructurePhase(StructPhaseBuild)
 	if err := j.buildChapterSkeleton(ctx, entries); err != nil {
+		j.noWorkFailure = fmt.Sprintf("structure failed to build chapter skeleton: %v", err)
 		if logger != nil {
 			logger.Error("failed to build skeleton", "error", err)
 		}
@@ -81,6 +84,7 @@ func (j *Job) StartStructurePhase(ctx context.Context) []jobs.WorkUnit {
 		j.Book.PersistOpStateAsync(ctx, common.OpStructure)
 		return nil
 	}
+	j.noWorkFailure = ""
 
 	// Update progress (async - memory is updated by SetStructureProgress)
 	chapters := j.Book.GetStructureChapters()
