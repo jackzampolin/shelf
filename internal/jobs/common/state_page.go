@@ -112,6 +112,22 @@ func (p *PageState) GetOcrResult(provider string) (string, bool) {
 	return text, ok
 }
 
+// ResetOcrProviders marks selected providers incomplete and clears derived OCR
+// fields. The next process-book start will emit work only for the missing
+// provider results while preserving OCR from providers not being repaired.
+func (p *PageState) ResetOcrProviders(providers []string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, provider := range providers {
+		delete(p.ocrResults, provider)
+	}
+	p.ocrMarkdown = ""
+	p.header = ""
+	p.footer = ""
+	p.headings = nil
+	p.dataLoaded = false
+}
+
 // GetPageDocID returns the page document ID (thread-safe).
 func (p *PageState) GetPageDocID() string {
 	p.mu.RLock()

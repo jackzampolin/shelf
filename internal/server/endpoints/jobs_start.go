@@ -106,46 +106,8 @@ func startJobForBook(ctx context.Context, bookID string, req StartJobRequest) (*
 		return nil, http.StatusBadRequest, fmt.Errorf("unknown job type: %s (only 'process-book' is supported)", jobType)
 	}
 
-	if !req.Force {
-		if existing := scheduler.GetJobByBookIDAndType(bookID, jobType); existing != nil {
-			return nil, http.StatusConflict, fmt.Errorf("%s job already active for book %s: %s", jobType, bookID, existing.ID())
-		}
-		if jobManager := svcctx.JobManagerFrom(ctx); jobManager != nil {
-			running, err := jobManager.List(ctx, jobs.ListFilter{
-				Status:  jobs.StatusRunning,
-				JobType: jobType,
-				BookID:  bookID,
-				Limit:   1,
-			})
-			if err != nil {
-				return nil, http.StatusInternalServerError, fmt.Errorf("failed to check running jobs: %v", err)
-			}
-			if len(running) > 0 {
-				return nil, http.StatusConflict, fmt.Errorf("%s job already running for book %s: %s", jobType, bookID, running[0].ID)
-			}
-		}
-	} else {
-		reason := fmt.Sprintf("cancelled by forced %s restart for book %s", jobType, bookID)
-		scheduler.CancelActiveJobsByBookIDAndType(ctx, bookID, jobType, reason)
-		if jobManager := svcctx.JobManagerFrom(ctx); jobManager != nil {
-			running, err := jobManager.List(ctx, jobs.ListFilter{
-				Status:  jobs.StatusRunning,
-				JobType: jobType,
-				BookID:  bookID,
-				Limit:   100,
-			})
-			if err != nil {
-				return nil, http.StatusInternalServerError, fmt.Errorf("failed to list running jobs for forced restart: %v", err)
-			}
-			for _, record := range running {
-				if record == nil {
-					continue
-				}
-				if err := jobManager.UpdateStatus(ctx, record.ID, jobs.StatusCancelled, reason); err != nil {
-					return nil, http.StatusInternalServerError, fmt.Errorf("failed to cancel running job %s: %v", record.ID, err)
-				}
-			}
-		}
+	if status, err := prepareBookJobStart(ctx, scheduler, bookID, jobType, req.Force); err != nil {
+		return nil, status, err
 	}
 
 	cfg, cfgErr := builder.ProcessBookConfig(ctx)
@@ -179,6 +141,55 @@ func startJobForBook(ctx context.Context, bookID string, req StartJobRequest) (*
 		BookID:  bookID,
 		Status:  "queued",
 	}, http.StatusAccepted, nil
+}
+
+// prepareBookJobStart rejects an active job unless force is set. A forced start
+// removes in-memory scheduler state and marks every durable running record
+// cancelled before callers mutate book state or submit a replacement.
+func prepareBookJobStart(ctx context.Context, scheduler *jobs.Scheduler, bookID, jobType string, force bool) (int, error) {
+	if !force {
+		if existing := scheduler.GetJobByBookIDAndType(bookID, jobType); existing != nil {
+			return http.StatusConflict, fmt.Errorf("%s job already active for book %s: %s", jobType, bookID, existing.ID())
+		}
+		if jobManager := svcctx.JobManagerFrom(ctx); jobManager != nil {
+			running, err := jobManager.List(ctx, jobs.ListFilter{
+				Status:  jobs.StatusRunning,
+				JobType: jobType,
+				BookID:  bookID,
+				Limit:   1,
+			})
+			if err != nil {
+				return http.StatusInternalServerError, fmt.Errorf("failed to check running jobs: %v", err)
+			}
+			if len(running) > 0 {
+				return http.StatusConflict, fmt.Errorf("%s job already running for book %s: %s", jobType, bookID, running[0].ID)
+			}
+		}
+		return 0, nil
+	}
+
+	reason := fmt.Sprintf("cancelled by forced %s restart for book %s", jobType, bookID)
+	scheduler.CancelActiveJobsByBookIDAndType(ctx, bookID, jobType, reason)
+	if jobManager := svcctx.JobManagerFrom(ctx); jobManager != nil {
+		running, err := jobManager.List(ctx, jobs.ListFilter{
+			Status:  jobs.StatusRunning,
+			JobType: jobType,
+			BookID:  bookID,
+			Limit:   100,
+		})
+		if err != nil {
+			return http.StatusInternalServerError, fmt.Errorf("failed to list running jobs for forced restart: %v", err)
+		}
+		for _, record := range running {
+			if record == nil {
+				continue
+			}
+			if err := jobManager.UpdateStatus(ctx, record.ID, jobs.StatusCancelled, reason); err != nil {
+				return http.StatusInternalServerError, fmt.Errorf("failed to cancel running job %s: %v", record.ID, err)
+			}
+		}
+	}
+	return 0, nil
 }
 
 func (e *StartJobEndpoint) Command(getServerURL func() string) *cobra.Command {

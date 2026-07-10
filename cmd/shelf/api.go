@@ -83,6 +83,7 @@ func init() {
 	booksCmd.AddCommand((&endpoints.IngestEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.ListBooksEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.GetBookEndpoint{}).Command(getServerURL))
+	booksCmd.AddCommand((&endpoints.RepairOCREndpoint{}).Command(getServerURL))
 
 	// Metrics as subcommand group
 	metricsCmd.AddCommand((&endpoints.ListMetricsEndpoint{}).Command(getServerURL))
