@@ -91,11 +91,11 @@ func (e *RetryJobEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	if resetFrom == "" {
 		resetFrom = inferResetFromJobError(record.Error)
 	}
-	if resetFrom == "" {
+	if resetFrom == "" && !retryWithoutResetAllowed(record.Error) {
 		writeError(w, http.StatusBadRequest, "reset_from is required because the failed stage could not be inferred")
 		return
 	}
-	if !common.IsValidResetOperation(resetFrom) {
+	if resetFrom != "" && !common.IsValidResetOperation(resetFrom) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid reset_from %q", resetFrom))
 		return
 	}
@@ -119,6 +119,13 @@ func (e *RetryJobEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		Status:        startResp.Status,
 		ResetFrom:     resetFrom,
 	})
+}
+
+func retryWithoutResetAllowed(errMsg string) bool {
+	msg := strings.ToLower(errMsg)
+	return strings.Contains(msg, "resume failed to recreate job") ||
+		strings.Contains(msg, "failed to load page states") ||
+		strings.Contains(msg, "failed to load book")
 }
 
 func (e *RetryJobEndpoint) Command(getServerURL func() string) *cobra.Command {

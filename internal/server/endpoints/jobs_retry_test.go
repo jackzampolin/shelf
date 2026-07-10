@@ -157,6 +157,13 @@ func TestRetryJobEndpointValidation(t *testing.T) {
 			Status:  jobs.StatusFailed,
 			Error:   "work unit failed (extract): worker queue full: cpu",
 		},
+		"job-resume-load": {
+			ID:      "job-resume-load",
+			JobType: process_book.JobType,
+			BookID:  "book-1",
+			Status:  jobs.StatusFailed,
+			Error:   "resume failed to recreate job: failed to load book: failed to load page states: context deadline exceeded",
+		},
 	}
 	ctx, cleanup := retryEndpointTestContext(t, records)
 	defer cleanup()
@@ -215,6 +222,12 @@ func TestRetryJobEndpointValidation(t *testing.T) {
 			name:       "explicit reset reaches start path",
 			jobID:      "job-unknown-stage",
 			body:       `{"reset_from":"metadata"}`,
+			wantStatus: http.StatusServiceUnavailable,
+			wantBody:   "scheduler not initialized",
+		},
+		{
+			name:       "resume loader failure retries without destructive reset",
+			jobID:      "job-resume-load",
 			wantStatus: http.StatusServiceUnavailable,
 			wantBody:   "scheduler not initialized",
 		},
