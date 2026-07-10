@@ -65,7 +65,10 @@ func CreateWorkUnit(input Input) *jobs.WorkUnit {
 			},
 			ResponseFormat: buildResponseFormat(),
 			Temperature:    0.1,
-			MaxTokens:      2048,
+			// Local reasoning models may spend a substantial part of the output
+			// budget before emitting the schema-constrained JSON. Keep this bounded,
+			// but large enough that valid metadata does not fail at the old 2K cap.
+			MaxTokens: 4096,
 		},
 	}
 }
