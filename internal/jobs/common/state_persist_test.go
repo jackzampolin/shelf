@@ -2,8 +2,26 @@ package common
 
 import (
 	"context"
+	"fmt"
 	"testing"
+
+	"github.com/jackzampolin/shelf/internal/defra"
 )
+
+type flakyAgentStateStore struct {
+	*MemoryStateStore
+	remainingFailures int
+	calls             int
+}
+
+func (s *flakyAgentStateStore) UpsertWithVersion(ctx context.Context, collection string, filter, createInput, updateInput map[string]any) (defra.WriteResult, error) {
+	s.calls++
+	if s.remainingFailures > 0 {
+		s.remainingFailures--
+		return defra.WriteResult{}, fmt.Errorf("defra server error (status 500)")
+	}
+	return s.MemoryStateStore.UpsertWithVersion(ctx, collection, filter, createInput, updateInput)
+}
 
 // TestBookState_PersistBookStatus tests the PersistBookStatus method.
 func TestBookState_PersistBookStatus(t *testing.T) {
@@ -360,5 +378,25 @@ func TestPersistAgentStateScopesStableIDToBook(t *testing.T) {
 	}
 	if got := len(store.docs["AgentState"]); got != 2 {
 		t.Fatalf("AgentState count = %d, want 2", got)
+	}
+}
+
+func TestPersistAgentStateRetriesTransientDefraWrite(t *testing.T) {
+	store := &flakyAgentStateStore{
+		MemoryStateStore:  NewMemoryStateStore(),
+		remainingFailures: 1,
+	}
+	book := NewBookState("book-a")
+	book.Store = store
+	state := &AgentState{AgentID: "agent-a", AgentType: AgentTypeChapterFinder, EntryDocID: "entry-a"}
+
+	if err := PersistAgentState(context.Background(), book, state); err != nil {
+		t.Fatal(err)
+	}
+	if store.calls != 2 {
+		t.Fatalf("upsert calls = %d, want one retry after transient 500", store.calls)
+	}
+	if state.DocID == "" {
+		t.Fatal("successful retry did not capture AgentState DocID")
 	}
 }

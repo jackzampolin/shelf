@@ -5,9 +5,15 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/svcctx"
+)
+
+const (
+	maxAgentStateWriteAttempts = 4
+	agentStateWriteRetryDelay  = 75 * time.Millisecond
 )
 
 // --- Agent State Persistence ---
@@ -46,7 +52,7 @@ func PersistAgentState(ctx context.Context, book *BookState, state *AgentState) 
 	// book's agent state.
 	// createInput and updateInput are both the full agent-state doc.
 	filter := map[string]any{"_bookID": book.BookID, "agent_id": state.AgentID}
-	result, err := store.UpsertWithVersion(ctx, "AgentState", filter, doc, doc)
+	result, err := upsertAgentStateWithRetry(ctx, store, filter, doc)
 	if err != nil {
 		return err
 	}
@@ -123,7 +129,7 @@ func PersistAgentStates(ctx context.Context, book *BookState, states []*AgentSta
 			}
 
 			filter := map[string]any{"_bookID": book.BookID, "agent_id": st.AgentID}
-			res, err := store.UpsertWithVersion(ctx, "AgentState", filter, doc, doc)
+			res, err := upsertAgentStateWithRetry(ctx, store, filter, doc)
 			if err != nil {
 				results <- upsertResult{index: idx, err: fmt.Errorf("agent state %d (%s): %w", idx, st.AgentID, err)}
 				return
@@ -163,6 +169,43 @@ func PersistAgentStates(ctx context.Context, book *BookState, states []*AgentSta
 	}
 
 	return nil
+}
+
+func upsertAgentStateWithRetry(ctx context.Context, store StateStore, filter, doc map[string]any) (defra.WriteResult, error) {
+	var lastErr error
+	for attempt := 1; attempt <= maxAgentStateWriteAttempts; attempt++ {
+		result, err := store.UpsertWithVersion(ctx, "AgentState", filter, doc, doc)
+		if err == nil {
+			return result, nil
+		}
+		lastErr = err
+		if !isTransientAgentStateWriteError(err) || attempt == maxAgentStateWriteAttempts {
+			break
+		}
+		delay := agentStateWriteRetryDelay * time.Duration(attempt)
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return defra.WriteResult{}, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return defra.WriteResult{}, fmt.Errorf("agent state upsert failed after %d attempts: %w", maxAgentStateWriteAttempts, lastErr)
+}
+
+func isTransientAgentStateWriteError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "status 500") ||
+		strings.Contains(msg, "transaction conflict") ||
+		strings.Contains(msg, "context deadline exceeded") ||
+		strings.Contains(msg, "connection reset") ||
+		strings.Contains(msg, "unexpected eof") ||
+		strings.Contains(msg, "document with the given id already exists") ||
+		strings.Contains(msg, "document with given id already exists")
 }
 
 // DeleteAgentStateByAgentIDAsync removes an agent state record asynchronously.

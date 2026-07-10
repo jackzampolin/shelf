@@ -31,7 +31,7 @@ func (b *BookState) PersistNewAgentState(ctx context.Context, state *AgentState)
 	}
 
 	filter := map[string]any{"_bookID": b.BookID, "agent_id": state.AgentID}
-	result, err := store.UpsertWithVersion(ctx, "AgentState", filter, doc, doc)
+	result, err := upsertAgentStateWithRetry(ctx, store, filter, doc)
 	if err != nil {
 		return fmt.Errorf("failed to upsert agent state: %w", err)
 	}
@@ -75,7 +75,7 @@ func (b *BookState) PersistNewAgentStates(ctx context.Context, states []*AgentSt
 		}
 
 		filter := map[string]any{"_bookID": b.BookID, "agent_id": state.AgentID}
-		result, err := store.UpsertWithVersion(ctx, "AgentState", filter, doc, doc)
+		result, err := upsertAgentStateWithRetry(ctx, store, filter, doc)
 		if err != nil {
 			return fmt.Errorf("failed to upsert agent state %s: %w", state.AgentID, err)
 		}
