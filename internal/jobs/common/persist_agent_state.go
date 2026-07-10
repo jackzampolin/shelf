@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -179,7 +180,17 @@ func upsertAgentStateWithRetry(ctx context.Context, store StateStore, filter, do
 			return result, nil
 		}
 		lastErr = err
-		if !isTransientAgentStateWriteError(err) || attempt == maxAgentStateWriteAttempts {
+		if !isTransientAgentStateWriteError(err) {
+			break
+		}
+		// DefraDB can commit an upsert and then return an empty HTTP 500 while
+		// assembling the response. Read the row back before retrying so a
+		// post-commit transport failure is treated as success, but an older row
+		// with the same stable identity is not.
+		if recovered, ok := verifyAgentStateWrite(ctx, store, filter, doc); ok {
+			return recovered, nil
+		}
+		if attempt == maxAgentStateWriteAttempts {
 			break
 		}
 		delay := agentStateWriteRetryDelay * time.Duration(attempt)
@@ -192,6 +203,105 @@ func upsertAgentStateWithRetry(ctx context.Context, store StateStore, filter, do
 		}
 	}
 	return defra.WriteResult{}, fmt.Errorf("agent state upsert failed after %d attempts: %w", maxAgentStateWriteAttempts, lastErr)
+}
+
+func verifyAgentStateWrite(ctx context.Context, store StateStore, filter, wanted map[string]any) (defra.WriteResult, bool) {
+	bookID, bookOK := filter["_bookID"].(string)
+	agentID, agentOK := filter["agent_id"].(string)
+	if !bookOK || !agentOK || bookID == "" || agentID == "" {
+		return defra.WriteResult{}, false
+	}
+	bookGQL, err := json.Marshal(bookID)
+	if err != nil {
+		return defra.WriteResult{}, false
+	}
+	agentGQL, err := json.Marshal(agentID)
+	if err != nil {
+		return defra.WriteResult{}, false
+	}
+	query := fmt.Sprintf(`{
+		AgentState(filter: {_bookID: {_eq: %s}, agent_id: {_eq: %s}}) {
+			_docID
+			_version { cid }
+			_bookID
+			agent_id
+			agent_type
+			entry_doc_id
+			iteration
+			complete
+			messages_json
+			pending_tool_calls
+			tool_results
+			result_json
+		}
+	}`, bookGQL, agentGQL)
+
+	resp, err := store.Execute(ctx, query, nil)
+	if err != nil || resp == nil || resp.Error() != "" {
+		return defra.WriteResult{}, false
+	}
+	docs, ok := resp.Data["AgentState"].([]any)
+	if !ok {
+		return defra.WriteResult{}, false
+	}
+	for _, raw := range docs {
+		doc, ok := raw.(map[string]any)
+		if !ok || !agentStateDocumentMatches(doc, wanted) {
+			continue
+		}
+		docID, _ := doc["_docID"].(string)
+		if docID != "" {
+			result := defra.WriteResult{DocID: docID}
+			if versions, ok := doc["_version"].([]any); ok {
+				for _, rawVersion := range versions {
+					version, ok := rawVersion.(map[string]any)
+					if !ok {
+						continue
+					}
+					if cid, ok := version["cid"].(string); ok && cid != "" {
+						result.CIDs = append(result.CIDs, cid)
+					}
+				}
+			}
+			if len(result.CIDs) > 0 {
+				result.CID = result.CIDs[0]
+			}
+			return result, true
+		}
+	}
+	return defra.WriteResult{}, false
+}
+
+func agentStateDocumentMatches(got, wanted map[string]any) bool {
+	for _, field := range []string{
+		"_bookID", "agent_id", "agent_type", "entry_doc_id", "messages_json",
+		"pending_tool_calls", "tool_results", "result_json",
+	} {
+		gotValue, gotOK := got[field].(string)
+		wantValue, wantOK := wanted[field].(string)
+		if !gotOK || !wantOK || gotValue != wantValue {
+			return false
+		}
+	}
+	gotComplete, gotOK := got["complete"].(bool)
+	wantComplete, wantOK := wanted["complete"].(bool)
+	if !gotOK || !wantOK || gotComplete != wantComplete {
+		return false
+	}
+	wantIteration, ok := wanted["iteration"].(int)
+	if !ok {
+		return false
+	}
+	switch gotIteration := got["iteration"].(type) {
+	case int:
+		return gotIteration == wantIteration
+	case int64:
+		return gotIteration == int64(wantIteration)
+	case float64:
+		return gotIteration == float64(wantIteration)
+	default:
+		return false
+	}
 }
 
 func isTransientAgentStateWriteError(err error) bool {

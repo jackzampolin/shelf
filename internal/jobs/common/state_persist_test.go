@@ -14,6 +14,20 @@ type flakyAgentStateStore struct {
 	calls             int
 }
 
+type commitThenErrorAgentStateStore struct {
+	*MemoryStateStore
+	calls int
+}
+
+func (s *commitThenErrorAgentStateStore) UpsertWithVersion(ctx context.Context, collection string, filter, createInput, updateInput map[string]any) (defra.WriteResult, error) {
+	s.calls++
+	result, err := s.MemoryStateStore.UpsertWithVersion(ctx, collection, filter, createInput, updateInput)
+	if err != nil {
+		return result, err
+	}
+	return result, fmt.Errorf("defra server error (status 500): ")
+}
+
 func (s *flakyAgentStateStore) UpsertWithVersion(ctx context.Context, collection string, filter, createInput, updateInput map[string]any) (defra.WriteResult, error) {
 	s.calls++
 	if s.remainingFailures > 0 {
@@ -398,5 +412,64 @@ func TestPersistAgentStateRetriesTransientDefraWrite(t *testing.T) {
 	}
 	if state.DocID == "" {
 		t.Fatal("successful retry did not capture AgentState DocID")
+	}
+}
+
+func TestPersistAgentStateRecoversCommittedWriteAfterServerError(t *testing.T) {
+	store := &commitThenErrorAgentStateStore{MemoryStateStore: NewMemoryStateStore()}
+	book := NewBookState("book-a")
+	book.Store = store
+	state := &AgentState{
+		AgentID:          "agent-a",
+		AgentType:        AgentTypeChapterFinder,
+		EntryDocID:       "entry-a",
+		Iteration:        3,
+		MessagesJSON:     "messages",
+		PendingToolCalls: "pending",
+		ToolResults:      "results",
+		ResultJSON:       "result",
+	}
+
+	if err := PersistAgentState(context.Background(), book, state); err != nil {
+		t.Fatal(err)
+	}
+	if store.calls != 1 {
+		t.Fatalf("upsert calls = %d, want committed write recovered without retry", store.calls)
+	}
+	if state.DocID == "" {
+		t.Fatal("read-after-error recovery did not capture AgentState DocID")
+	}
+}
+
+func TestPersistAgentStateDoesNotAcceptStaleRowAfterServerError(t *testing.T) {
+	memory := NewMemoryStateStore()
+	memory.SetDoc("AgentState", "old", map[string]any{
+		"_bookID":            "book-a",
+		"agent_id":           "agent-a",
+		"agent_type":         AgentTypeChapterFinder,
+		"entry_doc_id":       "entry-a",
+		"iteration":          0,
+		"complete":           false,
+		"messages_json":      "old",
+		"pending_tool_calls": "",
+		"tool_results":       "",
+		"result_json":        "",
+	})
+	store := &flakyAgentStateStore{MemoryStateStore: memory, remainingFailures: 1}
+	book := NewBookState("book-a")
+	book.Store = store
+	state := &AgentState{
+		AgentID:      "agent-a",
+		AgentType:    AgentTypeChapterFinder,
+		EntryDocID:   "entry-a",
+		Iteration:    1,
+		MessagesJSON: "new",
+	}
+
+	if err := PersistAgentState(context.Background(), book, state); err != nil {
+		t.Fatal(err)
+	}
+	if store.calls != 2 {
+		t.Fatalf("upsert calls = %d, want retry after stale read-back", store.calls)
 	}
 }
