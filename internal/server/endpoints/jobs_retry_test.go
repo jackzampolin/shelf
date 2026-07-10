@@ -63,6 +63,11 @@ func TestInferResetFromJobError(t *testing.T) {
 			want: "structure",
 		},
 		{
+			name: "structure missing linked toc dependency",
+			err:  `structure failed to build chapter skeleton: no linked ToC entries found`,
+			want: "toc_extract",
+		},
+		{
 			name: "unknown",
 			err:  `job failed`,
 			want: "",

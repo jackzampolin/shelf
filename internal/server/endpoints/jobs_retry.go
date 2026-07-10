@@ -174,6 +174,11 @@ func jobRecordBookID(record *jobs.Record) string {
 func inferResetFromJobError(errMsg string) string {
 	errMsg = strings.ToLower(errMsg)
 	switch {
+	case strings.Contains(errMsg, "structure") && strings.Contains(errMsg, "no linked toc entries"):
+		// Structure has no usable input; resetting structure alone can only
+		// repeat the same failure. Re-extract the ToC and cascade through link,
+		// finalize, and structure.
+		return string(common.ResetTocExtract)
 	case strings.Contains(errMsg, "(metadata)") || strings.Contains(errMsg, "metadata"):
 		return string(common.ResetMetadata)
 	case strings.Contains(errMsg, "(toc_finder)") || strings.Contains(errMsg, "toc finder"):
