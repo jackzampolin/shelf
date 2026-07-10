@@ -14,17 +14,18 @@ type additiveField struct {
 	Collection string
 	Name       string
 	Kind       int
+	Typ        int
 }
 
 // DefraDB does not merge an SDL into an existing collection. Additive changes
 // must be explicit JSON Patches; keeping the list here makes startup migration
 // idempotent and preserves all existing documents.
 var requiredAdditiveFields = []additiveField{
-	{Collection: "Job", Name: "status_reason", Kind: 11},
-	{Collection: "Job", Name: "heartbeat_at", Kind: 10},
-	{Collection: "Job", Name: "last_progress_at", Kind: 10},
-	{Collection: "Page", Name: "ocr_quarantined", Kind: 2},
-	{Collection: "Page", Name: "ocr_quarantine_reason", Kind: 11},
+	{Collection: "Job", Name: "status_reason", Kind: 11, Typ: 1},
+	{Collection: "Job", Name: "heartbeat_at", Kind: 10, Typ: 1},
+	{Collection: "Job", Name: "last_progress_at", Kind: 10, Typ: 1},
+	{Collection: "Page", Name: "ocr_quarantined", Kind: 2, Typ: 1},
+	{Collection: "Page", Name: "ocr_quarantine_reason", Kind: 11, Typ: 1},
 }
 
 // Initialize applies all schemas to DefraDB.
@@ -66,11 +67,15 @@ func ensureAdditiveFields(ctx context.Context, client *defra.Client, logger *slo
 	if err != nil {
 		return fmt.Errorf("failed to describe collections for migration: %w", err)
 	}
-	existing := make(map[string]map[string]struct{}, len(descriptions))
+	type existingField struct {
+		Index int
+		Typ   int
+	}
+	existing := make(map[string]map[string]existingField, len(descriptions))
 	for _, description := range descriptions {
-		fields := make(map[string]struct{}, len(description.Fields))
-		for _, field := range description.Fields {
-			fields[field.Name] = struct{}{}
+		fields := make(map[string]existingField, len(description.Fields))
+		for index, field := range description.Fields {
+			fields[field.Name] = existingField{Index: index, Typ: field.Typ}
 		}
 		existing[description.Name] = fields
 	}
@@ -78,11 +83,12 @@ func ensureAdditiveFields(ctx context.Context, client *defra.Client, logger *slo
 	type patchValue struct {
 		Name string `json:"Name"`
 		Kind int    `json:"Kind"`
+		Typ  int    `json:"Typ"`
 	}
 	type patchOperation struct {
-		Op    string     `json:"op"`
-		Path  string     `json:"path"`
-		Value patchValue `json:"value"`
+		Op    string `json:"op"`
+		Path  string `json:"path"`
+		Value any    `json:"value"`
 	}
 	operations := make([]patchOperation, 0, len(requiredAdditiveFields))
 	var added []string
@@ -91,7 +97,15 @@ func ensureAdditiveFields(ctx context.Context, client *defra.Client, logger *slo
 		if !collectionExists {
 			return fmt.Errorf("required collection %s is missing after schema initialization", required.Collection)
 		}
-		if _, fieldExists := fields[required.Name]; fieldExists {
+		if field, fieldExists := fields[required.Name]; fieldExists {
+			if field.Typ != required.Typ {
+				operations = append(operations, patchOperation{
+					Op:    "replace",
+					Path:  fmt.Sprintf("/%s/Fields/%d/Typ", required.Collection, field.Index),
+					Value: required.Typ,
+				})
+				added = append(added, required.Collection+"."+required.Name+".Typ")
+			}
 			continue
 		}
 		operations = append(operations, patchOperation{
@@ -100,6 +114,7 @@ func ensureAdditiveFields(ctx context.Context, client *defra.Client, logger *slo
 			Value: patchValue{
 				Name: required.Name,
 				Kind: required.Kind,
+				Typ:  required.Typ,
 			},
 		})
 		added = append(added, required.Collection+"."+required.Name)

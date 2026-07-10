@@ -179,6 +179,7 @@ type CollectionDescription struct {
 
 type CollectionFieldDescription struct {
 	Name string `json:"Name"`
+	Typ  int    `json:"Typ"`
 }
 
 // ListCollectionDescriptions returns active collection definitions.

@@ -72,7 +72,7 @@ func TestInitialize(t *testing.T) {
 			}
 			if r.URL.Path == "/api/v0/collections" && r.Method == http.MethodGet {
 				w.Header().Set("Content-Type", "application/json")
-				w.Write([]byte(`[{"Name":"Job","Fields":[{"Name":"status_reason"},{"Name":"heartbeat_at"},{"Name":"last_progress_at"}]},{"Name":"Page","Fields":[{"Name":"ocr_quarantined"},{"Name":"ocr_quarantine_reason"}]}]`))
+				w.Write([]byte(`[{"Name":"Job","Fields":[{"Name":"status_reason","Typ":1},{"Name":"heartbeat_at","Typ":1},{"Name":"last_progress_at","Typ":1}]},{"Name":"Page","Fields":[{"Name":"ocr_quarantined","Typ":1},{"Name":"ocr_quarantine_reason","Typ":1}]}]`))
 				return
 			}
 			t.Errorf("unexpected path: %s", r.URL.Path)
@@ -122,6 +122,35 @@ func TestInitialize(t *testing.T) {
 			if !strings.Contains(patchBody, field) {
 				t.Errorf("additive patch missing %s: %s", field, patchBody)
 			}
+		}
+		if !strings.Contains(patchBody, `\"Typ\":1`) {
+			t.Errorf("additive patch does not assign a CRDT type: %s", patchBody)
+		}
+	})
+
+	t.Run("repairs additive field missing CRDT type", func(t *testing.T) {
+		var patchBody string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodPost:
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte("collection already exists"))
+			case http.MethodGet:
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(`[{"Name":"Job","Fields":[{"Name":"status_reason","Typ":1},{"Name":"heartbeat_at","Typ":1},{"Name":"last_progress_at","Typ":1}]},{"Name":"Page","Fields":[{"Name":"ocr_quarantined","Typ":0},{"Name":"ocr_quarantine_reason","Typ":0}]}]`))
+			case http.MethodPatch:
+				body, _ := io.ReadAll(r.Body)
+				patchBody = string(body)
+				w.WriteHeader(http.StatusOK)
+			}
+		}))
+		defer server.Close()
+
+		if err := Initialize(context.Background(), defra.NewClient(server.URL), slog.Default()); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(patchBody, `replace`) || !strings.Contains(patchBody, `/Page/Fields/0/Typ`) || !strings.Contains(patchBody, `/Page/Fields/1/Typ`) {
+			t.Fatalf("missing CRDT type repair operations: %s", patchBody)
 		}
 	})
 
