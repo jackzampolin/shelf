@@ -43,15 +43,14 @@ func (j *Job) GeneratePageWorkUnits(ctx context.Context, pageNum int, state *Pag
 // Must be called with j.mu held.
 // Respects pipeline stage toggles for each operation.
 func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
-	ocrCount := j.CountOcrPages()
-
 	var units []jobs.WorkUnit
 
-	// Start metadata extraction after threshold pages have OCR complete
-	// Metadata only needs OCR text, so it can start early
+	// Metadata reads the first N OCR pages. Require that exact prefix rather than
+	// any N pages so a targeted repair in front matter cannot be silently skipped
+	// in favor of later pages while the repaired OCR is still queued.
 	// IMPORTANT: Call Start() before creating work unit to prevent duplicate agents
 	// if work unit creation has side effects (like creating agent logs)
-	if j.Book.EnableMetadata && ocrCount >= OcrThresholdForMetadata && j.Book.MetadataCanStart() {
+	if j.Book.EnableMetadata && j.Book.ConsecutivePagesComplete(OcrThresholdForMetadata) && j.Book.MetadataCanStart() {
 		if err := j.Book.MetadataStart(); err == nil {
 			unit := j.CreateMetadataWorkUnit(ctx)
 			if unit != nil {
