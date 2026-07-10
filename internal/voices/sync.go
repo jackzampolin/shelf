@@ -88,8 +88,13 @@ func Sync(ctx context.Context, cfg SyncConfig) error {
 			}
 
 			if _, err := cfg.Client.Upsert(ctx, "Voice", filter, createInput, updateInput); err != nil {
-				cfg.Logger.Warn("failed to upsert voice", "provider", name, "voice_id", v.VoiceID, "error", err)
-				continue
+				// DefraDB can commit an upsert and then return an empty HTTP 500
+				// while assembling the response. Read the exact row back before
+				// reporting failure so startup sync remains truthful and quiet.
+				if !voiceSyncWriteCommitted(ctx, cfg.Client, name, v, now) {
+					cfg.Logger.Warn("failed to upsert voice", "provider", name, "voice_id", v.VoiceID, "error", err)
+					continue
+				}
 			}
 			totalSynced++
 		}
@@ -102,6 +107,40 @@ func Sync(ctx context.Context, cfg SyncConfig) error {
 
 	cfg.Logger.Info("voice sync complete", "synced", totalSynced)
 	return nil
+}
+
+func voiceSyncWriteCommitted(ctx context.Context, client *defra.Client, provider string, wanted providers.Voice, syncedAt string) bool {
+	query := fmt.Sprintf(`{
+		Voice(filter: {voice_id: {_eq: %q}, provider: {_eq: %q}}) {
+			voice_id
+			name
+			description
+			provider
+			synced_at
+		}
+	}`, wanted.VoiceID, provider)
+	resp, err := client.Query(ctx, query)
+	if err != nil || resp == nil || resp.Error() != "" {
+		return false
+	}
+	rawVoices, ok := resp.Data["Voice"].([]any)
+	if !ok {
+		return false
+	}
+	for _, raw := range rawVoices {
+		voice, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if voice["voice_id"] == wanted.VoiceID &&
+			voice["name"] == wanted.Name &&
+			voice["description"] == wanted.Description &&
+			voice["provider"] == provider &&
+			voice["synced_at"] == syncedAt {
+			return true
+		}
+	}
+	return false
 }
 
 // List returns all voices from the database.
