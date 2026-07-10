@@ -2,7 +2,8 @@ type TocEntry {
     # Many-to-one: TocEntry belongs to ToC
     toc: ToC
 
-    # Unique key for content-based DocID uniqueness (toc_id:sort_order)
+    # Unique key for replace-set identity (toc_id:generation:sort_order).
+    # Generation avoids reusing Defra tombstoned IDs after extraction reset.
     unique_key: String
 
     # Core fields

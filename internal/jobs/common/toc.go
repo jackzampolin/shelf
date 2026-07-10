@@ -150,10 +150,20 @@ func SaveTocExtractResult(ctx context.Context, tocDocID string, result *extract_
 			"entry_count", len(result.Entries))
 	}
 
+	// Defra retains deleted document identities as tombstones. Reusing the old
+	// deterministic unique_key after reset can therefore fail even though no
+	// active row is queryable. Treat each extraction result as one replace-set:
+	// remove any active partial attempt, then namespace all rows by a fresh
+	// generation so neither tombstones nor a prior partial save can collide.
+	if err := deleteTocEntries(ctx, tocDocID); err != nil {
+		return "", fmt.Errorf("failed to clear previous ToC extraction rows: %w", err)
+	}
+	generation := uuid.NewString()
+
 	// Upsert each TocEntry (filter by unique_key for uniqueness)
 	for i, entry := range result.Entries {
-		// unique_key ensures content-based DocID uniqueness across ToCs
-		uniqueKey := fmt.Sprintf("%s:%d", tocDocID, i)
+		// A generation-scoped key avoids Defra tombstone ID reuse after reset.
+		uniqueKey := fmt.Sprintf("%s:%s:%d", tocDocID, generation, i)
 
 		entryData := map[string]any{
 			"_tocID":     tocDocID,

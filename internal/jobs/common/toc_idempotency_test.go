@@ -15,7 +15,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
-func TestSaveTocExtractResultRecoversExistingDocIDCollision(t *testing.T) {
+func TestSaveTocExtractResultReplacesPriorRowsWithFreshGeneration(t *testing.T) {
 	var mu sync.Mutex
 	requests := make([]string, 0, 4)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -32,17 +32,20 @@ func TestSaveTocExtractResultRecoversExistingDocIDCollision(t *testing.T) {
 
 		switch {
 		case strings.Contains(body.Query, "upsert_TocEntry"):
-			w.Write([]byte(`{"errors":[{"message":"a document with the given ID already exists. DocID: bae-collision"}]}`))
-		case strings.Contains(body.Query, "TocEntry(filter"):
-			w.Write([]byte(`{"data":{"TocEntry":[{"_docID":"entry-existing","sort_order":0,"unique_key":"toc-1:0:old"}]}}`))
-		case strings.Contains(body.Query, "update_TocEntry"):
-			if !strings.Contains(body.Query, `docID: "entry-existing"`) {
-				t.Fatalf("updated wrong ToC entry: %s", body.Query)
+			if strings.Contains(body.Query, `unique_key: "toc-1:0"`) ||
+				!strings.Contains(body.Query, `unique_key: "toc-1:`) {
+				t.Fatalf("ToC entry did not use a generation-scoped key: %s", body.Query)
 			}
-			if !strings.Contains(body.Query, `unique_key: "toc-1:0"`) {
-				t.Fatalf("stable unique key not restored: %s", body.Query)
+			w.Write([]byte(`{"data":{"upsert_TocEntry":[{"_docID":"entry-new"}]}}`))
+		case strings.Contains(body.Query, "TocEntry(filter: {_docID"):
+			w.Write([]byte(`{"data":{"TocEntry":[{"_version":[{"cid":"entry-cid"}]}]}}`))
+		case strings.Contains(body.Query, "TocEntry(filter") && strings.Contains(body.Query, "_tocID"):
+			w.Write([]byte(`{"data":{"TocEntry":[{"_docID":"entry-old"}]}}`))
+		case strings.Contains(body.Query, "delete_TocEntry"):
+			if !strings.Contains(body.Query, `docID: "entry-old"`) {
+				t.Fatalf("deleted wrong old ToC entry: %s", body.Query)
 			}
-			w.Write([]byte(`{"data":{"update_TocEntry":[{"_docID":"entry-existing","_version":[{"cid":"entry-cid"}]}]}}`))
+			w.Write([]byte(`{"data":{"delete_TocEntry":[{"_docID":"entry-old"}]}}`))
 		case strings.Contains(body.Query, "update_ToC"):
 			w.Write([]byte(`{"data":{"update_ToC":[{"_docID":"toc-1","_version":[{"cid":"toc-cid"}]}]}}`))
 		default:
@@ -79,7 +82,7 @@ func TestSaveTocExtractResultRecoversExistingDocIDCollision(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	if len(requests) != 4 {
-		t.Fatalf("requests = %d, want 4: %#v", len(requests), requests)
+	if len(requests) != 5 {
+		t.Fatalf("requests = %d, want 5: %#v", len(requests), requests)
 	}
 }
