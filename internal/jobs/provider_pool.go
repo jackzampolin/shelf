@@ -194,7 +194,11 @@ func (p *ProviderWorkerPool) Type() PoolType {
 // init initializes the priority queue and channels. Called by scheduler before Start.
 func (p *ProviderWorkerPool) init(results chan<- workerResult) {
 	p.queue = NewPriorityQueue()
-	p.work = make(chan *WorkUnit, p.workerCount) // Buffered to avoid blocking dispatcher
+	// Keep dispatch synchronous with worker availability. A worker-sized buffer
+	// lets the first book loaded after a restart pre-claim another full batch
+	// before the remaining books join the fair queue, and makes "in_flight"
+	// indistinguishable from waiting in an internal FIFO.
+	p.work = make(chan *WorkUnit)
 	p.results = results
 	p.logger.Debug("provider pool initialized")
 }

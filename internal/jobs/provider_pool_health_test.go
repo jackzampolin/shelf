@@ -191,6 +191,21 @@ func TestProviderPoolReportsPerJobUnitLocation(t *testing.T) {
 	pool.release("job-located")
 }
 
+func TestProviderPoolDoesNotPrefetchIntoHiddenWorkerBuffer(t *testing.T) {
+	pool, err := NewProviderWorkerPool(ProviderWorkerPoolConfig{
+		Name:        "unbuffered",
+		OCRProvider: newCtrlProvider(),
+		WorkerCount: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool.init(make(chan workerResult, 8))
+	if got := cap(pool.work); got != 0 {
+		t.Fatalf("internal worker queue capacity = %d, want 0 so fair dispatch tracks worker availability", got)
+	}
+}
+
 func TestParkAndReplayOnRecovery(t *testing.T) {
 	prov := newCtrlProvider()
 	prov.setDown(true)
