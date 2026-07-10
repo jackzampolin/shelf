@@ -82,9 +82,12 @@ var OpRegistry = map[OpType]*OpConfig{
 			book.setTocPageRangeUnlocked(0, 0)
 		},
 		ResetDBFields: map[string]any{
-			"toc_found":  false,
-			"start_page": nil,
-			"end_page":   nil,
+			"toc_found":              false,
+			"start_page":             nil,
+			"end_page":               nil,
+			"finder_override":        false,
+			"finder_override_reason": nil,
+			"finder_override_at":     nil,
 		},
 	},
 	OpTocExtract: {

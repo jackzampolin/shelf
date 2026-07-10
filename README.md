@@ -114,6 +114,7 @@ shelf api books ingest <pdf>     # Ingest a PDF scan
 shelf api books ingest --stitch <dir> # Ingest a directory of numbered PDF parts as books
 shelf api books get <id>         # Get book details
 shelf api books chapters <id>    # Inspect imported/structured chapters
+shelf api books repair-toc-range <id> --start 1052 --end 1053 --reason "verified printed contents"
 
 # Jobs
 shelf api jobs start <book-id>   # Start processing a book

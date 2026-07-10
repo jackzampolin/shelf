@@ -37,6 +37,7 @@ func All(cfg Config) []api.Endpoint {
 		&RerunTocEndpoint{},
 		&RepairOCREndpoint{},
 		&RepairPDFTextEndpoint{},
+		&RepairTocRangeEndpoint{},
 		&QuarantineOCREndpoint{},
 
 		// Export endpoints

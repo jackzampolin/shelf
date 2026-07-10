@@ -25,6 +25,9 @@ func buildTocStatus(ctx context.Context, client *defra.Client, bookID string, re
 				toc_found
 				start_page
 				end_page
+				finder_override
+				finder_override_reason
+				finder_override_at
 				extract_started
 				extract_complete
 				extract_failed
@@ -75,6 +78,15 @@ func buildTocStatus(ctx context.Context, client *defra.Client, bookID string, re
 					}
 					if v, ok := toc["end_page"].(float64); ok {
 						resp.ToC.EndPage = int(v)
+					}
+					if v, ok := toc["finder_override"].(bool); ok {
+						resp.ToC.FinderOverride = v
+					}
+					if v, ok := toc["finder_override_reason"].(string); ok {
+						resp.ToC.FinderOverrideReason = v
+					}
+					if v, ok := toc["finder_override_at"].(string); ok {
+						resp.ToC.FinderOverrideAt = v
 					}
 					if v, ok := toc["extract_started"].(bool); ok {
 						resp.ToC.ExtractStarted = v

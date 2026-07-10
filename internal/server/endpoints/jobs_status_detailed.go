@@ -88,12 +88,15 @@ type BookMetadata struct {
 // ToCStatus represents ToC finding and extraction status.
 type ToCStatus struct {
 	// Finder stage
-	FinderStarted  bool `json:"finder_started"`
-	FinderComplete bool `json:"finder_complete"`
-	FinderFailed   bool `json:"finder_failed"`
-	Found          bool `json:"found"`
-	StartPage      int  `json:"start_page,omitempty"`
-	EndPage        int  `json:"end_page,omitempty"`
+	FinderStarted        bool   `json:"finder_started"`
+	FinderComplete       bool   `json:"finder_complete"`
+	FinderFailed         bool   `json:"finder_failed"`
+	Found                bool   `json:"found"`
+	StartPage            int    `json:"start_page,omitempty"`
+	EndPage              int    `json:"end_page,omitempty"`
+	FinderOverride       bool   `json:"finder_override,omitempty"`
+	FinderOverrideReason string `json:"finder_override_reason,omitempty"`
+	FinderOverrideAt     string `json:"finder_override_at,omitempty"`
 
 	// Extract stage
 	ExtractStarted  bool `json:"extract_started"`
