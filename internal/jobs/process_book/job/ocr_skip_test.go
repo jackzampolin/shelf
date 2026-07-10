@@ -65,6 +65,31 @@ func TestOnCompleteOcrInfrastructureFailureAfterRetriesFailsWithoutResolvingPage
 	}
 }
 
+func TestOcrProviderRetryBudgetIsNotRepeatedByWorkflow(t *testing.T) {
+	if MaxOCRPageRetries != 0 {
+		t.Fatalf("MaxOCRPageRetries = %d, want zero workflow retries", MaxOCRPageRetries)
+	}
+	j, _ := newOcrSkipJob()
+	const unitID = "wu-ocr-single-budget"
+	j.RegisterWorkUnit(unitID, WorkUnitInfo{
+		UnitType: WorkUnitTypeOCR,
+		PageNum:  12,
+		Provider: "chandra-local",
+	})
+
+	units, err := j.OnComplete(context.Background(), jobs.WorkResult{
+		WorkUnitID: unitID,
+		Success:    false,
+		Error:      fmt.Errorf("max retries (3) exceeded: context deadline exceeded"),
+	})
+	if err == nil {
+		t.Fatal("provider budget exhaustion should fail visibly")
+	}
+	if len(units) != 0 {
+		t.Fatalf("provider budget was repeated with %d workflow unit(s)", len(units))
+	}
+}
+
 func TestStartAfterOcrInfrastructureFailureReemitsOnlyIncompletePage(t *testing.T) {
 	store := common.NewMemoryStateStore()
 	store.SetDoc("Book", "book-1", map[string]any{})

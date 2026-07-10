@@ -53,14 +53,12 @@ const MaxBookOpRetries = 3
 // Set higher (10) to handle transient failures on difficult pages (maps, images).
 const MaxPageOpRetries = 10
 
-// MaxOCRPageRetries is the maximum number of process-book retries for OCR work
-// units after the provider worker has already applied its HTTP retry policy.
-// Self-hosted inference endpoints drop connections and time out under load, so a
-// few job-level retries (each re-reading the image and round-robining to a
-// healthy endpoint) absorb transient failures. If infrastructure retries remain
-// exhausted, the job fails visibly and a durable retry re-emits the incomplete
-// page. Only deterministic page-content failures are skipped after this limit.
-const MaxOCRPageRetries = 3
+// MaxOCRPageRetries is zero because OCR providers own their configured HTTP
+// retry and endpoint-failover budget. Repeating that budget at the workflow
+// layer makes attempts multiplicative and can leave one page executing for an
+// hour. Once the provider budget is exhausted, the job fails visibly with the
+// page number and a durable retry/repair re-emits only that incomplete page.
+const MaxOCRPageRetries = 0
 
 // WorkUnitType constants for type-safe work unit handling.
 const (
