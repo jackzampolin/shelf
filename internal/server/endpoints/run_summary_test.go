@@ -71,7 +71,8 @@ func fakeDefra(t *testing.T) *httptest.Server {
 	// Newest failed record listed FIRST to prove selection is by time, not order.
 	const jobsData = `{"data":{"Job":[
 		{"_docID":"j2","job_type":"process-book","book_id":"book-A","status":"failed","error":"maximum context length exceeded","created_at":"2026-07-01T10:00:00Z","completed_at":"2026-07-01T10:05:00Z"},
-		{"_docID":"j1","job_type":"process-book","book_id":"book-A","status":"failed","error":"old transient error","created_at":"2026-06-30T10:00:00Z","completed_at":"2026-06-30T10:05:00Z"}
+		{"_docID":"j1","job_type":"process-book","book_id":"book-A","status":"failed","error":"old transient error","created_at":"2026-06-30T10:00:00Z","completed_at":"2026-06-30T10:05:00Z"},
+		{"_docID":"j3","job_type":"process-book","book_id":"book-B","status":"waiting_provider","status_reason":"waiting for provider recovery: chandra-local","created_at":"2026-07-01T11:00:00Z"}
 	]}}`
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -133,8 +134,11 @@ func TestRunSummaryHandler(t *testing.T) {
 	if b.LatestError != "" {
 		t.Fatalf("book-B (processing) latest_error = %q, want empty (not terminal)", b.LatestError)
 	}
-	if !strings.Contains(strings.ToLower(b.RecoveryHint), "active job") {
-		t.Fatalf("book-B recovery_hint = %q, want processing hint", b.RecoveryHint)
+	if b.JobStatusReason != "waiting for provider recovery: chandra-local" {
+		t.Fatalf("book-B job_status_reason = %q", b.JobStatusReason)
+	}
+	if !strings.Contains(strings.ToLower(b.RecoveryHint), "provider unavailable") {
+		t.Fatalf("book-B recovery_hint = %q, want provider wait hint", b.RecoveryHint)
 	}
 
 	c := byID["book-C"]

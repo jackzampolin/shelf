@@ -31,6 +31,7 @@ type BookSummary struct {
 	StatusReason    string     `json:"status_reason,omitempty"`
 	LatestJobID     string     `json:"latest_job_id,omitempty"`
 	JobStatus       string     `json:"job_status,omitempty"`
+	JobStatusReason string     `json:"job_status_reason,omitempty"`
 	HeartbeatAt     *time.Time `json:"heartbeat_at,omitempty"`
 	LastProgressAt  *time.Time `json:"last_progress_at,omitempty"`
 	LatestError     string     `json:"latest_error,omitempty"`
@@ -142,6 +143,7 @@ func (e *RunSummaryEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 			if latest != nil {
 				book.LatestJobID = latest.ID
 				book.JobStatus = string(latest.Status)
+				book.JobStatusReason = latest.StatusReason
 				book.HeartbeatAt = latest.HeartbeatAt
 				book.LastProgressAt = latest.LastProgressAt
 			}
