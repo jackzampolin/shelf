@@ -139,7 +139,7 @@ func defraStructureWriteWithRetry(ctx context.Context, write func() (defra.Write
 	var err error
 	for attempt := 0; attempt < maxDefraStructureWriteAttempts; attempt++ {
 		result, err = write()
-		if err == nil || !isDefraTransactionConflictError(err) {
+		if err == nil || !(isDefraTransactionConflictError(err) || jobs.IsRetriableError(err)) {
 			return result, err
 		}
 		if attempt == maxDefraStructureWriteAttempts-1 {

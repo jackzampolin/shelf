@@ -90,6 +90,23 @@ func TestDefraStructureWriteWithRetryRetriesTransactionConflict(t *testing.T) {
 	}
 }
 
+func TestDefraStructureWriteWithRetryRetriesTransientServerError(t *testing.T) {
+	attempts := 0
+	_, err := defraStructureWriteWithRetry(context.Background(), func() (defra.WriteResult, error) {
+		attempts++
+		if attempts < 3 {
+			return defra.WriteResult{}, errors.New("defra server error (status 500)")
+		}
+		return defra.WriteResult{DocID: "chapter-doc"}, nil
+	})
+	if err != nil {
+		t.Fatalf("defraStructureWriteWithRetry error: %v", err)
+	}
+	if attempts != 3 {
+		t.Fatalf("attempts = %d, want 3", attempts)
+	}
+}
+
 func TestPersistChapterSkeletonDocUpdatesExistingIdentityAfterDocIDCollision(t *testing.T) {
 	book := common.NewBookState("book-1")
 	j := NewFromLoadResult(&common.LoadBookResult{Book: book})

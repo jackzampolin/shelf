@@ -173,8 +173,10 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 }
 
 // CheckCompletion checks if the entire job is complete.
-// A job is complete when all enabled pages stages are done AND enabled book-level operations
-// are either complete or permanently failed.
+// A job is complete when all enabled page stages and every required enabled
+// book-level operation completed successfully. A permanently failed operation
+// remains nonterminal here so the scheduler's zero-work invariant marks the
+// job and book failed instead of laundering degraded output into "complete".
 // Disabled stages are skipped in the completion check.
 func (j *Job) CheckCompletion(ctx context.Context) {
 	// All pages must complete OCR (the only page-level stage)
@@ -184,13 +186,13 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 		}
 	}
 
-	// Metadata must be complete or permanently failed (if enabled)
-	if j.Book.EnableMetadata && !j.Book.MetadataIsDone() {
+	// Metadata must complete successfully (if enabled).
+	if j.Book.EnableMetadata && !j.Book.MetadataIsComplete() {
 		return
 	}
 
-	// ToC finder must be complete or permanently failed (if enabled)
-	if j.Book.EnableTocFinder && !j.Book.TocFinderIsDone() {
+	// ToC finder must complete successfully (if enabled).
+	if j.Book.EnableTocFinder && !j.Book.TocFinderIsComplete() {
 		return
 	}
 
@@ -205,7 +207,7 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 			if logger != nil {
 				logger.Debug("ToC extract enabled but finder disabled - extraction skipped")
 			}
-		} else if j.Book.GetTocFound() && !j.Book.TocExtractIsDone() {
+		} else if j.Book.GetTocFound() && !j.Book.TocExtractIsComplete() {
 			return
 		}
 	}
@@ -218,7 +220,7 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 			if logger != nil {
 				logger.Debug("ToC link enabled but extract disabled - linking skipped")
 			}
-		} else if j.Book.TocExtractIsDone() && !j.Book.TocLinkIsDone() {
+		} else if j.Book.TocExtractIsComplete() && !j.Book.TocLinkIsComplete() {
 			return
 		}
 	}
@@ -230,7 +232,7 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 			if logger != nil {
 				logger.Debug("ToC finalize enabled but link disabled - finalize skipped")
 			}
-		} else if j.Book.TocLinkIsComplete() && !j.Book.TocFinalizeIsDone() {
+		} else if j.Book.TocLinkIsComplete() && !j.Book.TocFinalizeIsComplete() {
 			return
 		}
 	}
@@ -242,7 +244,7 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 			if logger != nil {
 				logger.Debug("Structure enabled but finalize disabled - structure skipped")
 			}
-		} else if j.Book.TocFinalizeIsComplete() && !j.Book.StructureIsDone() {
+		} else if j.Book.TocFinalizeIsComplete() && !j.Book.StructureIsComplete() {
 			return
 		}
 	}

@@ -68,7 +68,9 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 		j.Book.TocExtractFail(MaxBookOpRetries)
 		j.PersistTocExtractState(ctx)
 	}
-	j.reconcileTocLinkRecovery(ctx)
+	if err := j.reconcileTocLinkRecovery(ctx); err != nil {
+		return nil, fmt.Errorf("failed to reconcile ToC link recovery: %w", err)
+	}
 	// TocFinalize: fail/retry if started but not done. Pattern analysis results
 	// are preserved in pattern_analysis_json and will be reused on retry.
 	if j.Book.TocFinalizeIsStarted() {
@@ -142,16 +144,16 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 // describe the old full work set rather than the current pending set. Treat the
 // database links as authoritative: pending entries should be attempted again,
 // while an in-progress/failed link op with no pending entries is complete.
-func (j *Job) reconcileTocLinkRecovery(ctx context.Context) {
+func (j *Job) reconcileTocLinkRecovery(ctx context.Context) error {
 	if !j.Book.EnableTocLink || !j.Book.TocExtractIsDone() {
-		return
+		return nil
 	}
 
 	pendingEntries := j.Book.GetTocEntries()
 	j.cleanupLinkedTocAgentStates(ctx, pendingEntries)
 	state := j.Book.GetTocLinkState()
 	if !state.IsStarted() && !state.IsFailed() && !(state.IsComplete() && len(pendingEntries) > 0) {
-		return
+		return nil
 	}
 	logger := svcctx.LoggerFrom(ctx)
 
@@ -165,7 +167,19 @@ func (j *Job) reconcileTocLinkRecovery(ctx context.Context) {
 				"book_id", j.Book.BookID,
 				"reason", "no_pending_entries")
 		}
-		return
+		return nil
+	}
+
+	// A newly reopened link invalidates every downstream artifact that may have
+	// been built while this entry was skipped. Preserve the links that already
+	// succeeded, but reset finalize and structure before any Start-time stage
+	// checks can launch them against the stale partial link set.
+	finalizeState := j.Book.GetTocFinalizeState()
+	structureState := j.Book.GetStructureState()
+	if !finalizeState.CanStart() || !structureState.CanStart() {
+		if err := common.ResetFrom(ctx, j.Book, j.TocDocID, common.ResetTocFinalize); err != nil {
+			return fmt.Errorf("reset downstream of reopened ToC link: %w", err)
+		}
 	}
 
 	oldTotal, oldDone := j.Book.GetTocLinkProgress()
@@ -182,6 +196,7 @@ func (j *Job) reconcileTocLinkRecovery(ctx context.Context) {
 			"was_started", state.IsStarted(),
 			"was_failed", state.IsFailed())
 	}
+	return nil
 }
 
 func (j *Job) cleanupLinkedTocAgentStates(ctx context.Context, pendingEntries []*toc_entry_finder.TocEntry) {
@@ -693,20 +708,38 @@ func (j *Job) NoWorkFailure() string {
 	if j.Book.EnableOCR && !j.AllPagesOcrComplete() {
 		return "ocr phase drained without completing every page"
 	}
+	if state := j.Book.GetMetadataState(); j.Book.EnableMetadata && state.IsFailed() {
+		return "metadata phase failed after retries"
+	}
 	if j.Book.EnableMetadata && !j.Book.MetadataIsDone() {
 		return "metadata phase drained without reaching a terminal state"
+	}
+	if state := j.Book.GetTocFinderState(); j.Book.EnableTocFinder && state.IsFailed() {
+		return "toc finder phase failed after retries"
 	}
 	if j.Book.EnableTocFinder && !j.Book.TocFinderIsDone() {
 		return "toc finder phase drained without reaching a terminal state"
 	}
+	if state := j.Book.GetTocExtractState(); j.Book.EnableTocExtract && j.Book.GetTocFound() && state.IsFailed() {
+		return "toc extraction phase failed after retries"
+	}
 	if j.Book.EnableTocExtract && j.Book.GetTocFound() && !j.Book.TocExtractIsDone() {
 		return "toc extraction phase drained without reaching a terminal state"
+	}
+	if state := j.Book.GetTocLinkState(); j.Book.EnableTocLink && j.Book.TocExtractIsDone() && state.IsFailed() {
+		return "toc link phase failed after retries"
 	}
 	if j.Book.EnableTocLink && j.Book.TocExtractIsDone() && !j.Book.TocLinkIsDone() {
 		return "toc link phase drained without reaching a terminal state"
 	}
+	if state := j.Book.GetTocFinalizeState(); j.Book.EnableTocFinalize && j.Book.TocLinkIsComplete() && state.IsFailed() {
+		return "toc finalize phase failed after retries"
+	}
 	if j.Book.EnableTocFinalize && j.Book.TocLinkIsComplete() && !j.Book.TocFinalizeIsDone() {
 		return "toc finalize phase drained without reaching a terminal state"
+	}
+	if state := j.Book.GetStructureState(); j.Book.EnableStructure && j.Book.TocFinalizeIsComplete() && state.IsFailed() {
+		return "structure phase failed after retries"
 	}
 	if j.Book.EnableStructure && j.Book.TocFinalizeIsComplete() && !j.Book.StructureIsDone() {
 		return "structure phase drained without reaching a terminal state"

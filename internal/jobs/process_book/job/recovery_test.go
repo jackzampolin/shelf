@@ -36,7 +36,9 @@ func TestReconcileTocLinkRecoveryResetsFailedPendingEntries(t *testing.T) {
 	j.Book.SetOpState(common.OpTocLink, false, false, true, 3)
 	j.Book.SetTocLinkProgress(13, 9)
 
-	j.reconcileTocLinkRecovery(context.Background())
+	if err := j.reconcileTocLinkRecovery(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 
 	total, done := j.Book.GetTocLinkProgress()
 	if total != 2 || done != 0 {
@@ -64,7 +66,9 @@ func TestReconcileTocLinkRecoveryCompletesWhenNoPendingEntries(t *testing.T) {
 	j.Book.SetOpState(common.OpTocLink, true, false, false, 2)
 	j.Book.SetTocLinkProgress(32, 30)
 
-	j.reconcileTocLinkRecovery(context.Background())
+	if err := j.reconcileTocLinkRecovery(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 
 	total, done := j.Book.GetTocLinkProgress()
 	if total != 0 || done != 0 {
@@ -89,8 +93,12 @@ func TestReconcileTocLinkRecoveryReopensCompleteWithPendingEntries(t *testing.T)
 	})
 	j.Book.SetOpState(common.OpTocLink, false, true, false, 0)
 	j.Book.SetTocLinkProgress(32, 32)
+	j.Book.SetOpState(common.OpTocFinalize, false, true, false, 0)
+	j.Book.SetOpState(common.OpStructure, true, false, false, 0)
 
-	j.reconcileTocLinkRecovery(context.Background())
+	if err := j.reconcileTocLinkRecovery(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 
 	total, done := j.Book.GetTocLinkProgress()
 	if total != 1 || done != 0 {
@@ -106,6 +114,18 @@ func TestReconcileTocLinkRecoveryReopensCompleteWithPendingEntries(t *testing.T)
 	tocDoc := store.GetDoc("ToC", "toc-1")
 	if tocDoc["link_started"] != false || tocDoc["link_complete"] != false || tocDoc["link_failed"] != false || tocDoc["link_retries"] != 0 {
 		t.Fatalf("persisted ToC link state = %#v, want reopened", tocDoc)
+	}
+	if j.Book.TocFinalizeIsDone() || !j.Book.TocFinalizeCanStart() {
+		t.Fatal("ToC finalize was not reset after reopening a completed link")
+	}
+	if j.Book.StructureIsDone() || !j.Book.StructureCanStart() {
+		t.Fatal("structure was not reset after reopening a completed link")
+	}
+	if tocDoc["finalize_complete"] != false {
+		t.Fatalf("persisted finalize state was not reset: %#v", tocDoc)
+	}
+	if bookDoc := store.GetDoc("Book", "book-1"); bookDoc["structure_complete"] != false {
+		t.Fatalf("persisted structure state was not reset: %#v", bookDoc)
 	}
 }
 
@@ -140,7 +160,9 @@ func TestReconcileTocLinkRecoveryDeletesStaleLinkedEntryAgentStates(t *testing.T
 		EntryDocID: "pending-entry",
 	})
 
-	j.reconcileTocLinkRecovery(context.Background())
+	if err := j.reconcileTocLinkRecovery(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 
 	if got := j.Book.GetAgentState(common.AgentTypeTocEntryFinder, "linked-entry"); got != nil {
 		t.Fatalf("linked entry agent state still in memory: %#v", got)
