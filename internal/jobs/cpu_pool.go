@@ -28,7 +28,8 @@ type CPUWorkerPool struct {
 	mu       sync.RWMutex
 
 	// In-flight tracking
-	inFlight atomic.Int32
+	inFlight      atomic.Int32
+	cancelledJobs sync.Map
 }
 
 // CPUWorkerPoolConfig configures a new CPU worker pool.
@@ -119,6 +120,9 @@ func (p *CPUWorkerPool) worker(ctx context.Context, id int) {
 			return
 
 		case unit := <-p.queue:
+			if p.jobCancelled(unit.JobID) {
+				continue
+			}
 			p.logger.Debug("cpu worker received unit", "worker_id", id, "unit_id", unit.ID, "job_id", unit.JobID)
 			p.inFlight.Add(1)
 			result := p.process(ctx, unit)
@@ -135,6 +139,7 @@ func (p *CPUWorkerPool) worker(ctx context.Context, id int) {
 
 // Submit adds a work unit to the pool's queue.
 func (p *CPUWorkerPool) Submit(unit *WorkUnit) error {
+	p.cancelledJobs.Delete(unit.JobID)
 	select {
 	case p.queue <- unit:
 		p.logger.Debug("cpu pool accepted unit", "unit_id", unit.ID, "job_id", unit.JobID, "queue_len", len(p.queue))
@@ -143,6 +148,21 @@ func (p *CPUWorkerPool) Submit(unit *WorkUnit) error {
 		p.logger.Warn("cpu pool queue full", "unit_id", unit.ID, "job_id", unit.JobID)
 		return fmt.Errorf("%w: %s", ErrWorkerQueueFull, p.name)
 	}
+}
+
+// CancelJob marks buffered CPU work to be discarded when dequeued. A channel
+// queue cannot be filtered safely while workers consume it, but cancelled units
+// never execute their handlers or emit results.
+func (p *CPUWorkerPool) CancelJob(jobID string) int {
+	if jobID != "" {
+		p.cancelledJobs.Store(jobID, struct{}{})
+	}
+	return 0
+}
+
+func (p *CPUWorkerPool) jobCancelled(jobID string) bool {
+	_, cancelled := p.cancelledJobs.Load(jobID)
+	return cancelled
 }
 
 // Status returns current pool status.

@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"testing"
 	"time"
@@ -190,6 +191,38 @@ func TestScheduler_PoolQueueDepth(t *testing.T) {
 	status := scheduler.PoolStatuses()
 	if status["llm"].QueueDepth != 5 {
 		t.Errorf("QueueDepth = %d, want 5", status["llm"].QueueDepth)
+	}
+}
+
+func TestCancelActiveJobPurgesProviderQueue(t *testing.T) {
+	scheduler := NewScheduler(SchedulerConfig{})
+	llmClient := providers.NewMockClient()
+	pool, err := NewProviderWorkerPool(ProviderWorkerPoolConfig{Name: "llm", LLMClient: llmClient})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scheduler.RegisterPool(pool)
+
+	job := &stubFailJob{bookID: "book-1"}
+	scheduler.mu.Lock()
+	scheduler.jobs[job.ID()] = job
+	scheduler.pending[job.ID()] = 2
+	scheduler.mu.Unlock()
+	if err := pool.Submit(&WorkUnit{ID: "queued", JobID: job.ID(), Type: WorkUnitTypeLLM}); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.circuit.park(&WorkUnit{ID: "parked", JobID: job.ID(), Type: WorkUnitTypeLLM}, fmt.Errorf("connection refused")); err != nil {
+		t.Fatal(err)
+	}
+
+	if cancelled := scheduler.CancelActiveJobsByBookIDAndType(context.Background(), "book-1", "stub", "repair restart"); cancelled != 1 {
+		t.Fatalf("cancelled = %d, want 1", cancelled)
+	}
+	if pool.queue.Len() != 0 {
+		t.Fatalf("provider queue depth = %d, want cancelled work purged", pool.queue.Len())
+	}
+	if _, parked := pool.circuit.status(); parked != 0 {
+		t.Fatalf("parked units = %d, want cancelled work purged", parked)
 	}
 }
 

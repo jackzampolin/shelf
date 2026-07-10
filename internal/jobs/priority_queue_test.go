@@ -126,6 +126,42 @@ func TestPriorityQueue_PriorityWithinSameBookSeq(t *testing.T) {
 	}
 }
 
+func TestPriorityQueue_RoundRobinsAcrossJobs(t *testing.T) {
+	pq := NewPriorityQueue()
+	mustPush(t, pq, &WorkUnit{ID: "a-1", JobID: "job-a", BookSeq: 100, Priority: PriorityNormal})
+	mustPush(t, pq, &WorkUnit{ID: "a-2", JobID: "job-a", BookSeq: 100, Priority: PriorityNormal})
+	mustPush(t, pq, &WorkUnit{ID: "a-3", JobID: "job-a", BookSeq: 100, Priority: PriorityNormal})
+	mustPush(t, pq, &WorkUnit{ID: "repair", JobID: "job-repair", BookSeq: 200, Priority: PriorityNormal})
+
+	want := []string{"a-1", "repair", "a-2", "a-3"}
+	for i, id := range want {
+		unit := pq.TryPop()
+		if unit == nil || unit.ID != id {
+			t.Fatalf("pop %d = %#v, want %q (repair must not sit behind the whole book)", i, unit, id)
+		}
+	}
+}
+
+func TestPriorityQueue_NewRepairJoinsCurrentRound(t *testing.T) {
+	pq := NewPriorityQueue()
+	for i := 1; i <= 4; i++ {
+		mustPush(t, pq, &WorkUnit{ID: fmt.Sprintf("bulk-%d", i), JobID: "bulk", BookSeq: 100, Priority: PriorityNormal})
+	}
+	if unit := pq.TryPop(); unit == nil || unit.ID != "bulk-1" {
+		t.Fatalf("first pop = %#v", unit)
+	}
+	mustPush(t, pq, &WorkUnit{ID: "repair", JobID: "repair", BookSeq: 200, Priority: PriorityNormal})
+
+	// A job arriving just after the bulk job's turn waits at most one additional
+	// unit, then receives its own dispatch turn.
+	if unit := pq.TryPop(); unit == nil || unit.ID != "bulk-2" {
+		t.Fatalf("second pop = %#v, want bulk-2", unit)
+	}
+	if unit := pq.TryPop(); unit == nil || unit.ID != "repair" {
+		t.Fatalf("third pop = %#v, want repair", unit)
+	}
+}
+
 func TestPriorityQueue_UnsetBookSeqSortsAfterRealBooks(t *testing.T) {
 	pq := NewPriorityQueue()
 
@@ -387,6 +423,23 @@ func TestPriorityQueue_PushNil(t *testing.T) {
 	}
 	if pq.Len() != 1 {
 		t.Errorf("expected queue length 1, got %d", pq.Len())
+	}
+}
+
+func TestPriorityQueue_RemoveJobPurgesOnlyMatchingUnits(t *testing.T) {
+	pq := NewPriorityQueue()
+	mustPush(t, pq, &WorkUnit{ID: "a-1", JobID: "job-a", Priority: PriorityHigh})
+	mustPush(t, pq, &WorkUnit{ID: "b-1", JobID: "job-b", Priority: PriorityNormal})
+	mustPush(t, pq, &WorkUnit{ID: "a-2", JobID: "job-a", Priority: PriorityLow})
+
+	if removed := pq.RemoveJob("job-a"); removed != 2 {
+		t.Fatalf("RemoveJob removed %d, want 2", removed)
+	}
+	if pq.Len() != 1 {
+		t.Fatalf("queue length = %d, want 1", pq.Len())
+	}
+	if unit := pq.TryPop(); unit == nil || unit.JobID != "job-b" {
+		t.Fatalf("remaining unit = %#v, want job-b", unit)
 	}
 }
 

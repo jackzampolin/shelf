@@ -223,6 +223,67 @@ func TestParkCapacityOverflowFailsThrough(t *testing.T) {
 	drain(results)
 }
 
+func TestDefaultParkedWorkDoesNotExpire(t *testing.T) {
+	c := &circuit{cfg: circuitConfig{ParkMaxAge: 0, ParkCapacity: 2}}
+	c.parked = []parkedUnit{{
+		unit:     ocrUnit("old"),
+		err:      errBackendDown,
+		parkedAt: time.Now().Add(-24 * time.Hour),
+	}}
+	if expired := c.expireParked(); len(expired) != 0 {
+		t.Fatalf("default durable provider wait expired %d units, want 0", len(expired))
+	}
+	if _, parked := c.status(); parked != 1 {
+		t.Fatalf("parked units = %d, want old work retained", parked)
+	}
+}
+
+func TestProviderCircuitReportsWaitingAndRecoveryPerJob(t *testing.T) {
+	prov := newCtrlProvider()
+	prov.setDown(true)
+	pool, results := newTestPool(t, prov, circuitConfig{
+		TripThreshold: 1,
+		ProbeInterval: 10 * time.Millisecond,
+		ParkMaxAge:    0,
+		ParkCapacity:  8,
+	})
+	type event struct {
+		jobID   string
+		waiting bool
+	}
+	events := make(chan event, 4)
+	pool.onWaitChange = func(_ string, jobID string, waiting bool) {
+		events <- event{jobID: jobID, waiting: waiting}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go pool.Start(ctx)
+	mustSubmit(t, pool, ocrUnit("wait-state"))
+
+	select {
+	case got := <-events:
+		if got.jobID != "job-1" || !got.waiting {
+			t.Fatalf("open event = %#v, want job-1 waiting", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no waiting_provider callback after circuit opened")
+	}
+
+	prov.setDown(false)
+	if result := recvResult(t, results, time.Second); !result.Result.Success {
+		t.Fatalf("replayed work failed: %v", result.Result.Error)
+	}
+	select {
+	case got := <-events:
+		if got.jobID != "job-1" || got.waiting {
+			t.Fatalf("recovery event = %#v, want job-1 running", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no recovery callback after circuit closed")
+	}
+}
+
 // --- helpers ---
 
 func waitFor(t *testing.T, timeout time.Duration, cond func() bool) {

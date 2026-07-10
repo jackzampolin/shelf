@@ -61,7 +61,7 @@ func (p *ProviderWorkerPool) process(ctx context.Context, unit *WorkUnit) (WorkR
 			if err != nil {
 				lastErr = err
 				if p.isRetriableError(err) && attempt < maxRetries {
-					p.noteInfraFailure(ctx)
+					p.noteInfraFailure(ctx, unit.JobID)
 					p.logger.Debug("LLM request failed, retrying",
 						"unit_id", unit.ID,
 						"attempt", attempt+1,
@@ -105,7 +105,7 @@ func (p *ProviderWorkerPool) process(ctx context.Context, unit *WorkUnit) (WorkR
 			if err != nil {
 				lastErr = err
 				if p.isRetriableError(err) && attempt < maxRetries {
-					p.noteInfraFailure(ctx)
+					p.noteInfraFailure(ctx, unit.JobID)
 					p.logger.Debug("OCR request failed, retrying",
 						"unit_id", unit.ID,
 						"attempt", attempt+1,
@@ -145,7 +145,7 @@ func (p *ProviderWorkerPool) process(ctx context.Context, unit *WorkUnit) (WorkR
 			if err != nil {
 				lastErr = err
 				if p.isRetriableError(err) && attempt < maxRetries {
-					p.noteInfraFailure(ctx)
+					p.noteInfraFailure(ctx, unit.JobID)
 					p.logger.Debug("TTS request failed, retrying",
 						"unit_id", unit.ID,
 						"attempt", attempt+1,
@@ -180,9 +180,10 @@ func (p *ProviderWorkerPool) process(ctx context.Context, unit *WorkUnit) (WorkR
 	if !result.Success {
 		parked, justTripped := p.circuit.noteFinalFailure(unit, result.Error)
 		if justTripped {
-			p.onCircuitOpen(ctx)
+			p.onCircuitOpen(ctx, unit.JobID)
 		}
 		if parked {
+			p.markJobWaiting(unit.JobID)
 			p.logger.Warn("work unit parked pending provider recovery",
 				"unit_id", unit.ID, "error", result.Error)
 			return result, true

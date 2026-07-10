@@ -24,6 +24,9 @@ func (s *Scheduler) RegisterFactory(jobType string, factory JobFactory) {
 // If the scheduler is already running, the pool is started immediately.
 func (s *Scheduler) RegisterPool(p WorkerPool) {
 	s.mu.Lock()
+	if providerPool, ok := p.(*ProviderWorkerPool); ok {
+		providerPool.onWaitChange = s.providerWaitChanged
+	}
 
 	// Initialize pool with shared results channel
 	p.init(s.results)

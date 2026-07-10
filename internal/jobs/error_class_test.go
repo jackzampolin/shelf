@@ -11,6 +11,10 @@ func TestIsRetriableError(t *testing.T) {
 		"context deadline exceeded",
 		"Client.Timeout exceeded while awaiting headers",
 		"connection closed: EOF",
+		"write tcp: broken pipe",
+		"dial tcp: no route to host",
+		"update error: transaction conflict. Please retry",
+		"service temporarily unavailable",
 		"OpenRouter error (status 503): overloaded",
 		"OpenRouter error (status 429): rate limit",
 	}

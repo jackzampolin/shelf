@@ -184,11 +184,12 @@ type Job interface {
 type Status string
 
 const (
-	StatusQueued    Status = "queued"
-	StatusRunning   Status = "running"
-	StatusCompleted Status = "completed"
-	StatusFailed    Status = "failed"
-	StatusCancelled Status = "cancelled"
+	StatusQueued          Status = "queued"
+	StatusRunning         Status = "running"
+	StatusWaitingProvider Status = "waiting_provider"
+	StatusCompleted       Status = "completed"
+	StatusFailed          Status = "failed"
+	StatusCancelled       Status = "cancelled"
 )
 
 // BookIDProvider is implemented by jobs that process a specific book.
@@ -235,15 +236,18 @@ type LiveStatus struct {
 // Record represents a job record stored in DefraDB.
 // This maps to the Job schema.
 type Record struct {
-	ID          string         `json:"_docID,omitempty"`
-	JobType     string         `json:"job_type"`
-	BookID      string         `json:"book_id,omitempty"`
-	Status      Status         `json:"status"`
-	CreatedAt   time.Time      `json:"created_at"`
-	StartedAt   *time.Time     `json:"started_at,omitempty"`
-	CompletedAt *time.Time     `json:"completed_at,omitempty"`
-	Error       string         `json:"error,omitempty"`
-	Metadata    map[string]any `json:"metadata,omitempty"`
+	ID             string         `json:"_docID,omitempty"`
+	JobType        string         `json:"job_type"`
+	BookID         string         `json:"book_id,omitempty"`
+	Status         Status         `json:"status"`
+	StatusReason   string         `json:"status_reason,omitempty"`
+	CreatedAt      time.Time      `json:"created_at"`
+	StartedAt      *time.Time     `json:"started_at,omitempty"`
+	CompletedAt    *time.Time     `json:"completed_at,omitempty"`
+	HeartbeatAt    *time.Time     `json:"heartbeat_at,omitempty"`
+	LastProgressAt *time.Time     `json:"last_progress_at,omitempty"`
+	Error          string         `json:"error,omitempty"`
+	Metadata       map[string]any `json:"metadata,omitempty"`
 }
 
 // Duration returns the job duration if started and completed.

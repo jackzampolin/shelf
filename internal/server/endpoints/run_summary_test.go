@@ -42,6 +42,23 @@ func TestRecoveryHint(t *testing.T) {
 	}
 }
 
+func TestFailedPage(t *testing.T) {
+	for _, tc := range []struct {
+		text string
+		page int
+		ok   bool
+	}{
+		{"work unit failed (ocr page=57 provider=chandra-local retries=3)", 57, true},
+		{"page 12 failed to extract", 12, true},
+		{"metadata failed", 0, false},
+	} {
+		page, ok := failedPage(tc.text)
+		if page != tc.page || ok != tc.ok {
+			t.Fatalf("failedPage(%q) = %d,%v want %d,%v", tc.text, page, ok, tc.page, tc.ok)
+		}
+	}
+}
+
 // fakeDefra answers the two GraphQL queries the handler issues (Book list and
 // Job list) from a single httptest server, routing by request body.
 func fakeDefra(t *testing.T) *httptest.Server {

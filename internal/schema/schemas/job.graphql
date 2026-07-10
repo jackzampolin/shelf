@@ -1,10 +1,13 @@
 type Job {
     job_type: String
     status: String
+    status_reason: String
     book_id: String
     created_at: DateTime
     started_at: DateTime
     completed_at: DateTime
+    heartbeat_at: DateTime
+    last_progress_at: DateTime
     error: String
     metadata: JSON
 }

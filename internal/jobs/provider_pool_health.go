@@ -16,7 +16,9 @@ const healthHealthy = "healthy"
 const (
 	defaultCircuitTripThreshold = 5
 	defaultCircuitProbeInterval = 15 * time.Second
-	defaultParkMaxAge           = 30 * time.Minute
+	// Zero means wait indefinitely. Provider outages are operational pauses, not
+	// page-quality failures; queued/parked work replays when health recovers.
+	defaultParkMaxAge = 0
 )
 
 // errParkFull is returned by park when the parked list is at capacity; the
@@ -142,7 +144,7 @@ func (c *circuit) closeNow() []parkedUnit {
 func (c *circuit) expireParked() []parkedUnit {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if len(c.parked) == 0 {
+	if len(c.parked) == 0 || c.cfg.ParkMaxAge <= 0 {
 		return nil
 	}
 	cutoff := time.Now().Add(-c.cfg.ParkMaxAge)
@@ -157,6 +159,22 @@ func (c *circuit) expireParked() []parkedUnit {
 	}
 	c.parked = kept
 	return expired
+}
+
+func (c *circuit) removeJob(jobID string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	kept := c.parked[:0]
+	removed := 0
+	for _, pu := range c.parked {
+		if pu.unit.JobID == jobID {
+			removed++
+			continue
+		}
+		kept = append(kept, pu)
+	}
+	c.parked = kept
+	return removed
 }
 
 // isOpen reports the circuit state.
@@ -211,9 +229,9 @@ func (p *ProviderWorkerPool) healthCheck(ctx context.Context) error {
 
 // noteInfraFailure counts a mid-retry infra failure and starts the prober on
 // a fresh trip.
-func (p *ProviderWorkerPool) noteInfraFailure(ctx context.Context) {
+func (p *ProviderWorkerPool) noteInfraFailure(ctx context.Context, jobID string) {
 	if p.circuit.recordFailure() {
-		p.onCircuitOpen(ctx)
+		p.onCircuitOpen(ctx, jobID)
 	}
 }
 
@@ -222,15 +240,20 @@ func (p *ProviderWorkerPool) noteInfraFailure(ctx context.Context) {
 func (p *ProviderWorkerPool) noteCallSuccess() {
 	if parked := p.circuit.recordSuccess(); parked != nil {
 		p.logger.Warn("provider circuit closed (in-flight success)", "replaying", len(parked))
+		p.clearWaitingJobs()
 		p.replayParked(parked)
 	}
 }
 
 // onCircuitOpen logs the trip and starts the recovery prober.
-func (p *ProviderWorkerPool) onCircuitOpen(ctx context.Context) {
+func (p *ProviderWorkerPool) onCircuitOpen(ctx context.Context, triggerJobID string) {
 	p.logger.Warn("provider circuit OPEN: pausing dispatch, probing for recovery",
 		"trip_threshold", p.circuit.cfg.TripThreshold,
 		"probe_interval", p.circuit.cfg.ProbeInterval)
+	p.markJobWaiting(triggerJobID)
+	for _, jobID := range p.queue.JobIDs() {
+		p.markJobWaiting(jobID)
+	}
 	go p.probeUntilRecovered(ctx)
 }
 
@@ -259,14 +282,62 @@ func (p *ProviderWorkerPool) probeUntilRecovered(ctx context.Context) {
 		parked := p.circuit.closeNow()
 		p.logger.Warn("provider circuit CLOSED: backend recovered, resuming dispatch",
 			"replaying", len(parked))
+		p.clearWaitingJobs()
 		p.replayParked(parked)
 		return
+	}
+}
+
+func (p *ProviderWorkerPool) markJobWaiting(jobID string) {
+	if jobID == "" {
+		return
+	}
+	p.waitMu.Lock()
+	if _, exists := p.waitingJobs[jobID]; exists {
+		p.waitMu.Unlock()
+		return
+	}
+	p.waitingJobs[jobID] = struct{}{}
+	callback := p.onWaitChange
+	p.waitMu.Unlock()
+	if callback != nil {
+		callback(p.name, jobID, true)
+	}
+}
+
+func (p *ProviderWorkerPool) clearWaitingJobs() {
+	p.waitMu.Lock()
+	jobIDs := make([]string, 0, len(p.waitingJobs))
+	for jobID := range p.waitingJobs {
+		jobIDs = append(jobIDs, jobID)
+	}
+	p.waitingJobs = make(map[string]struct{})
+	callback := p.onWaitChange
+	p.waitMu.Unlock()
+	if callback != nil {
+		for _, jobID := range jobIDs {
+			callback(p.name, jobID, false)
+		}
+	}
+}
+
+func (p *ProviderWorkerPool) removeWaitingJob(jobID string) {
+	p.waitMu.Lock()
+	_, existed := p.waitingJobs[jobID]
+	delete(p.waitingJobs, jobID)
+	callback := p.onWaitChange
+	p.waitMu.Unlock()
+	if existed && callback != nil {
+		callback(p.name, jobID, false)
 	}
 }
 
 // replayParked re-submits parked units to the pool's queue.
 func (p *ProviderWorkerPool) replayParked(parked []parkedUnit) {
 	for _, pu := range parked {
+		if p.jobCancelled(pu.unit.JobID) {
+			continue
+		}
 		if err := p.queue.Push(pu.unit); err != nil {
 			p.logger.Warn("failed to replay parked unit, failing through",
 				"unit_id", pu.unit.ID, "error", err)

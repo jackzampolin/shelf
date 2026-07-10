@@ -16,6 +16,11 @@ import (
 // by a full pool queue.
 const cpuRequeueBackoff = 250 * time.Millisecond
 
+// heartbeatInterval bounds how stale a healthy active job can look in durable
+// state. Progress timestamps are updated in memory per result and flushed on
+// this cadence to avoid a DefraDB write for every OCR page.
+const heartbeatInterval = 30 * time.Second
+
 // JobFactory creates a Job instance from stored metadata.
 // Used for resuming jobs after restart.
 // Context provides access to services (DefraClient, HomeDir, etc.) via svcctx.
@@ -44,6 +49,14 @@ type Scheduler struct {
 
 	// Track pending work per job
 	pending map[string]int // jobID -> count of pending work units
+
+	// Durable liveness bookkeeping. lastProgress is updated only when a work
+	// result arrives; the heartbeat loop persists it alongside its own timestamp.
+	lastProgress map[string]time.Time
+
+	// Providers currently blocking each job. A job remains waiting_provider
+	// until every provider that parked it reports recovery.
+	waitingProviders map[string]map[string]struct{}
 
 	// Running state
 	running bool
@@ -92,6 +105,9 @@ func (s *Scheduler) requeueLoop(ctx context.Context) {
 }
 
 func (s *Scheduler) resubmitWithBackoff(ctx context.Context, unit *WorkUnit) {
+	if !s.jobActive(unit.JobID) {
+		return
+	}
 	pool := s.findPool(unit)
 	if pool == nil {
 		s.emitFailure(unit, fmt.Errorf("no pool available for type %s provider %s", unit.Type, unit.Provider))
@@ -103,6 +119,9 @@ func (s *Scheduler) resubmitWithBackoff(ctx context.Context, unit *WorkUnit) {
 		case <-ctx.Done():
 			return
 		default:
+		}
+		if !s.jobActive(unit.JobID) {
+			return
 		}
 
 		err := pool.Submit(unit)
@@ -120,6 +139,13 @@ func (s *Scheduler) resubmitWithBackoff(ctx context.Context, unit *WorkUnit) {
 		case <-time.After(cpuRequeueBackoff):
 		}
 	}
+}
+
+func (s *Scheduler) jobActive(jobID string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.jobs[jobID]
+	return ok
 }
 
 // emitFailure sends a failed WorkResult for a unit that could not be routed.
@@ -206,7 +232,7 @@ func (s *Scheduler) failBookByRecord(ctx context.Context, record *Record, reason
 			if r.ID == record.ID {
 				continue
 			}
-			if r.Status == StatusRunning || r.Status == StatusQueued {
+			if r.Status == StatusRunning || r.Status == StatusQueued || r.Status == StatusWaitingProvider {
 				s.logger.Debug("skipping book-fail write; another live job record for the book",
 					"book_id", record.BookID, "other_record_id", r.ID)
 				return
@@ -239,16 +265,18 @@ func NewScheduler(cfg SchedulerConfig) *Scheduler {
 	logger.Debug("scheduler created")
 
 	return &Scheduler{
-		manager:   cfg.Manager,
-		pools:     make(map[string]WorkerPool),
-		jobs:      make(map[string]Job),
-		jobSeq:    make(map[string]int64),
-		factories: make(map[string]JobFactory),
-		pending:   make(map[string]int),
-		results:   results,
-		requeue:   make(chan *WorkUnit, 100000),
-		logger:    logger,
-		sink:      cfg.Sink,
+		manager:          cfg.Manager,
+		pools:            make(map[string]WorkerPool),
+		jobs:             make(map[string]Job),
+		jobSeq:           make(map[string]int64),
+		factories:        make(map[string]JobFactory),
+		pending:          make(map[string]int),
+		lastProgress:     make(map[string]time.Time),
+		waitingProviders: make(map[string]map[string]struct{}),
+		results:          results,
+		requeue:          make(chan *WorkUnit, 100000),
+		logger:           logger,
+		sink:             cfg.Sink,
 	}
 }
 
@@ -268,6 +296,8 @@ func (s *Scheduler) removeJob(jobID string) {
 	delete(s.jobs, jobID)
 	delete(s.jobSeq, jobID)
 	delete(s.pending, jobID)
+	delete(s.lastProgress, jobID)
+	delete(s.waitingProviders, jobID)
 	s.mu.Unlock()
 }
 
@@ -318,17 +348,32 @@ func (s *Scheduler) CancelActiveJobsByBookIDAndType(ctx context.Context, bookID,
 			delete(s.jobs, jobID)
 			delete(s.jobSeq, jobID)
 			delete(s.pending, jobID)
+			delete(s.lastProgress, jobID)
+			delete(s.waitingProviders, jobID)
 			jobIDs = append(jobIDs, jobID)
 		}
 	}
 	s.mu.Unlock()
 
 	for _, jobID := range jobIDs {
+		purged := 0
+		s.mu.RLock()
+		pools := make([]WorkerPool, 0, len(s.pools))
+		for _, pool := range s.pools {
+			pools = append(pools, pool)
+		}
+		s.mu.RUnlock()
+		for _, pool := range pools {
+			if canceller, ok := pool.(JobWorkCanceller); ok {
+				purged += canceller.CancelJob(jobID)
+			}
+		}
 		s.logger.Warn("cancelled active job",
 			"job_id", jobID,
 			"type", jobType,
 			"book_id", bookID,
-			"reason", reason)
+			"reason", reason,
+			"purged_units", purged)
 		if s.manager != nil {
 			if err := s.manager.UpdateStatus(ctx, jobID, StatusCancelled, reason); err != nil {
 				s.logger.Warn("failed to mark active job cancelled",
@@ -367,6 +412,7 @@ func (s *Scheduler) Start(ctx context.Context) {
 	// Periodically catch books stranded in "processing" (flag-only).
 	go s.reconcileLoop(ctx)
 	go s.requeueLoop(ctx)
+	go s.heartbeatLoop(ctx)
 
 	s.logger.Info("scheduler started", "pools", len(s.pools))
 
@@ -433,6 +479,7 @@ func (s *Scheduler) handleResult(ctx context.Context, wr workerResult) {
 	job, ok := s.jobs[wr.JobID]
 	if ok {
 		s.pending[wr.JobID]--
+		s.lastProgress[wr.JobID] = time.Now().UTC()
 	}
 	s.mu.Unlock()
 
@@ -472,6 +519,8 @@ func (s *Scheduler) handleResult(ctx context.Context, wr workerResult) {
 		delete(s.jobs, wr.JobID)
 		delete(s.jobSeq, wr.JobID)
 		delete(s.pending, wr.JobID)
+		delete(s.lastProgress, wr.JobID)
+		delete(s.waitingProviders, wr.JobID)
 	}
 	s.mu.Unlock()
 

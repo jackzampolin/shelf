@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/jackzampolin/shelf/internal/home"
@@ -129,10 +130,9 @@ func TestStartAfterOcrInfrastructureFailureReemitsOnlyIncompletePage(t *testing.
 	}
 }
 
-// A deterministic page-content failure may still be skipped after retries. It
-// is unlikely to recover when replayed, and must not prevent the other pages in
-// a large book from completing.
-func TestOnCompleteOcrDeterministicFailureAfterRetriesSkipsPageAndContinues(t *testing.T) {
+// A deterministic page-content failure is actionable, not a blank page. It
+// must fail visibly and remain incomplete for targeted repair.
+func TestOnCompleteOcrDeterministicFailureAfterRetriesFailsWithoutResolvingPage(t *testing.T) {
 	j, book := newOcrSkipJob()
 
 	const unitID = "wu-ocr-pathological-12"
@@ -149,25 +149,26 @@ func TestOnCompleteOcrDeterministicFailureAfterRetriesSkipsPageAndContinues(t *t
 		Error:      fmt.Errorf("OCR failed: invalid image content"),
 	})
 
-	if err != nil {
-		t.Fatalf("OnComplete returned a fatal error for deterministic page failure; want skip: %v", err)
+	if err == nil {
+		t.Fatal("OnComplete error = nil, want deterministic page failure to fail visibly")
 	}
 	if len(units) != 0 {
-		t.Fatalf("expected no new work units after skipping the page, got %d", len(units))
+		t.Fatalf("expected no new work units after fatal page failure, got %d", len(units))
 	}
-	if page := book.GetPage(12); page == nil || !page.OcrComplete("chandra-local") {
-		t.Fatal("deterministically failing page should be marked OCR-resolved after retries")
+	if page := book.GetPage(12); page == nil || page.OcrComplete("chandra-local") {
+		t.Fatal("deterministically failing page must remain incomplete after retries")
 	}
 	if _, ok := j.GetWorkUnit(unitID); ok {
-		t.Fatal("failed OCR work unit should be removed after skipping the page")
+		t.Fatal("failed OCR work unit should be removed after failing the job")
+	}
+	if !strings.Contains(err.Error(), "page=12") || !strings.Contains(err.Error(), "provider=chandra-local") {
+		t.Fatalf("error is not actionable: %v", err)
 	}
 }
 
-// A page whose image extraction exhausts its retries cannot be OCR'd, so it must
-// be skipped (resolved as a blank page) rather than failing the whole book. With
-// thousands of pages, pathological/corrupt PDF pages are common; one must not be
-// fatal.
-func TestOnCompleteExtractFailureAfterRetriesSkipsPageAndContinues(t *testing.T) {
+// Extraction failure leaves the page unresolved. Treating a corrupt PDF page
+// as an extracted blank page would allow a silently degraded complete book.
+func TestOnCompleteExtractFailureAfterRetriesFailsWithoutResolvingPage(t *testing.T) {
 	store := common.NewMemoryStateStore()
 	store.SetDoc("Book", "book-1", map[string]any{})
 
@@ -192,27 +193,25 @@ func TestOnCompleteExtractFailureAfterRetriesSkipsPageAndContinues(t *testing.T)
 		Success:    false,
 		Error:      fmt.Errorf("failed to extract page image: corrupt page"),
 	})
-	if err != nil {
-		t.Fatalf("OnComplete returned a fatal error for a page that exhausted extract retries; want nil so the book continues: %v", err)
+	if err == nil {
+		t.Fatal("OnComplete error = nil, want exhausted extraction failure to fail visibly")
 	}
 
 	page := book.GetPage(5)
-	if page == nil || !page.IsExtractDone() {
-		t.Fatal("page 5 should be marked extract-done after giving up, so extract is not re-emitted")
+	if page == nil || page.IsExtractDone() {
+		t.Fatal("page 5 must remain extraction-incomplete so a repair can re-emit it")
 	}
-	if !page.OcrComplete("chandra-local") {
-		t.Fatal("page 5 should be OCR-resolved (no image to OCR) so the OCR stage can complete")
+	if page.OcrComplete("chandra-local") {
+		t.Fatal("page 5 must remain OCR-incomplete when no image was extracted")
 	}
 	if _, ok := j.GetWorkUnit(unitID); ok {
-		t.Fatal("failed extract work unit should be removed after giving up on it")
+		t.Fatal("failed extract work unit should be removed after failing the job")
 	}
 }
 
-// Skipping a page resolves its OCR, so if that page is the one that crosses a
-// downstream threshold, the skip must trigger the next book operation exactly
-// like a successful OCR would. Otherwise a book whose last gating page is
-// pathological stalls with OCR "done" but nothing downstream ever starting.
-func TestOnCompleteOcrSkipTriggersDownstreamBookOperations(t *testing.T) {
+// A failed page must not trigger downstream book operations. The pipeline stops
+// at the fidelity boundary until that page is repaired.
+func TestOnCompleteOcrFailureDoesNotTriggerDownstreamBookOperations(t *testing.T) {
 	store := common.NewMemoryStateStore()
 	store.SetDoc("Book", "book-1", map[string]any{})
 
@@ -250,14 +249,14 @@ func TestOnCompleteOcrSkipTriggersDownstreamBookOperations(t *testing.T) {
 		Success:    false,
 		Error:      fmt.Errorf("OCR failed: invalid image content"),
 	})
-	if err != nil {
-		t.Fatalf("OnComplete returned a fatal error skipping the page: %v", err)
+	if err == nil {
+		t.Fatal("OnComplete error = nil, want failed page to stop downstream work")
 	}
 
-	if !j.Book.MetadataIsStarted() {
-		t.Fatal("skipping the page that crosses the OCR threshold should trigger downstream book operations (metadata)")
+	if j.Book.MetadataIsStarted() {
+		t.Fatal("failed OCR page must not trigger downstream metadata")
 	}
-	if len(units) == 0 {
-		t.Fatal("skip should return the triggered downstream work unit")
+	if len(units) != 0 {
+		t.Fatalf("failed OCR page returned %d downstream units, want 0", len(units))
 	}
 }

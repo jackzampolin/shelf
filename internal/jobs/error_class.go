@@ -22,6 +22,12 @@ func IsRetriableError(err error) bool {
 		return true
 	case strings.Contains(s, "connection refused"),
 		strings.Contains(s, "connection reset"),
+		strings.Contains(s, "connection closed"),
+		strings.Contains(s, "broken pipe"),
+		strings.Contains(s, "no route to host"),
+		strings.Contains(s, "server misbehaving"),
+		strings.Contains(s, "transaction conflict"),
+		strings.Contains(s, "temporarily unavailable"),
 		isEOFError(s):
 		return true
 	default:

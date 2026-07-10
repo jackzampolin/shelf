@@ -340,33 +340,18 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 					return []jobs.WorkUnit{*retryUnit}, nil
 				}
 			}
-			// Never turn an exhausted infrastructure failure into a successful blank
-			// page. The provider circuit already parks transient outages for automatic
-			// replay. If that recovery window and the page retries are both exhausted,
-			// fail the job visibly while leaving this page incomplete. A normal
-			// process-book retry can then resume only the incomplete durable work.
-			if jobs.IsRetriableError(result.Error) {
-				if logger != nil {
-					logger.Error("OCR infrastructure failure after retries; failing book without resolving page",
-						"page_num", info.PageNum,
-						"provider", info.Provider,
-						"retry_count", info.RetryCount,
-						"error", result.Error)
-				}
-				break
+			// No exhausted OCR failure is a successful blank page. Infrastructure
+			// outages wait in the provider circuit; deterministic content failures
+			// fail visibly and remain incomplete for targeted repair.
+			if logger != nil {
+				logger.Error("OCR failed after retries; leaving page incomplete",
+					"page_num", info.PageNum,
+					"provider", info.Provider,
+					"retry_count", info.RetryCount,
+					"retriable", jobs.IsRetriableError(result.Error),
+					"error", result.Error)
 			}
-			// Retries exhausted: skip this (likely pathological) page rather than
-			// failing the whole book. The page is recorded resolved with no text,
-			// like a blank page, so it is not re-emitted and downstream stages run.
-			j.skipFailedOcrPage(ctx, info, result.Error)
-			j.RemoveWorkUnit(result.WorkUnitID)
-			// Resolving the page may have satisfied a downstream threshold (e.g. the
-			// last front-matter page), so trigger book operations exactly as a
-			// successful OCR does; otherwise the book stalls with OCR "done" but
-			// nothing downstream started.
-			bookUnits := j.MaybeStartBookOperations(ctx)
-			j.CheckCompletion(ctx)
-			return bookUnits, nil
+			break
 		case WorkUnitTypeExtract:
 			// Retry first; transient extract failures recover.
 			if info.RetryCount < maxRetriesForPageWorkUnit(info.UnitType) {
@@ -376,15 +361,13 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 					return []jobs.WorkUnit{*retryUnit}, nil
 				}
 			}
-			// Retries exhausted: the page image can't be produced (corrupt/
-			// pathological page), so the page can't be OCR'd. Skip it rather than
-			// failing the whole book, then trigger downstream just like a resolved
-			// page would.
-			j.skipFailedExtractPage(ctx, info, result.Error)
-			j.RemoveWorkUnit(result.WorkUnitID)
-			bookUnits := j.MaybeStartBookOperations(ctx)
-			j.CheckCompletion(ctx)
-			return bookUnits, nil
+			if logger != nil {
+				logger.Error("page extraction failed after retries; leaving page incomplete",
+					"page_num", info.PageNum,
+					"retry_count", info.RetryCount,
+					"error", result.Error)
+			}
+			break
 		default:
 			// Any other work type - retry if under limit, else fall through to fatal.
 			if info.RetryCount < maxRetriesForPageWorkUnit(info.UnitType) {
@@ -403,7 +386,8 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 			}
 		}
 		j.RemoveWorkUnit(result.WorkUnitID)
-		return nil, fmt.Errorf("work unit failed (%s): %v", info.UnitType, result.Error)
+		return nil, fmt.Errorf("work unit failed (%s page=%d provider=%s retries=%d): %v",
+			info.UnitType, info.PageNum, info.Provider, info.RetryCount, result.Error)
 	}
 
 	var newUnits []jobs.WorkUnit

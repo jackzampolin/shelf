@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"sync/atomic"
 
 	"github.com/jackzampolin/shelf/internal/defra"
@@ -46,6 +47,12 @@ type ProviderWorkerPool struct {
 
 	// Health circuit breaker (see provider_pool_health.go)
 	circuit *circuit
+
+	// Provider wait state is reported back to the scheduler per affected job.
+	waitMu        sync.Mutex
+	waitingJobs   map[string]struct{}
+	onWaitChange  func(provider, jobID string, waiting bool)
+	cancelledJobs sync.Map
 
 	// Metrics sink (optional)
 	sink *defra.Sink
@@ -98,8 +105,9 @@ func NewProviderWorkerPool(cfg ProviderWorkerPoolConfig) (*ProviderWorkerPool, e
 	}
 
 	p := &ProviderWorkerPool{
-		name: cfg.Name,
-		sink: cfg.Sink,
+		name:        cfg.Name,
+		sink:        cfg.Sink,
+		waitingJobs: make(map[string]struct{}),
 	}
 
 	// Determine type, RPS, and worker count from provider
@@ -216,9 +224,13 @@ func (p *ProviderWorkerPool) dispatcher(ctx context.Context) {
 			// Context cancelled
 			return
 		}
+		if p.jobCancelled(unit.JobID) {
+			continue
+		}
 
 		// Pause while the provider circuit is open (see provider_pool_health.go).
 		if ch := p.circuit.openWait(); ch != nil {
+			p.markJobWaiting(unit.JobID)
 			select {
 			case <-ch:
 				// Circuit closed; proceed with this unit.
@@ -275,6 +287,10 @@ func (p *ProviderWorkerPool) worker(ctx context.Context, id int) {
 			if !ok || unit == nil {
 				return
 			}
+			if p.jobCancelled(unit.JobID) {
+				p.inFlight.Add(-1)
+				continue
+			}
 			result, parked := p.process(ctx, unit)
 			p.inFlight.Add(-1)
 			if parked {
@@ -305,7 +321,35 @@ func (p *ProviderWorkerPool) Submit(unit *WorkUnit) error {
 	if p.queue == nil {
 		return fmt.Errorf("pool not initialized: call init() before Submit()")
 	}
-	return p.queue.Push(unit)
+	p.cancelledJobs.Delete(unit.JobID)
+	if err := p.queue.Push(unit); err != nil {
+		return err
+	}
+	if p.circuit.isOpen() {
+		p.markJobWaiting(unit.JobID)
+	}
+	return nil
+}
+
+// CancelJob purges queued and parked work and marks already-dispatched buffered
+// units to be skipped by workers. Provider calls already in flight may finish.
+func (p *ProviderWorkerPool) CancelJob(jobID string) int {
+	if jobID == "" {
+		return 0
+	}
+	p.cancelledJobs.Store(jobID, struct{}{})
+	removed := 0
+	if p.queue != nil {
+		removed += p.queue.RemoveJob(jobID)
+	}
+	removed += p.circuit.removeJob(jobID)
+	p.removeWaitingJob(jobID)
+	return removed
+}
+
+func (p *ProviderWorkerPool) jobCancelled(jobID string) bool {
+	_, cancelled := p.cancelledJobs.Load(jobID)
+	return cancelled
 }
 
 // Status returns current pool status with priority queue breakdown.

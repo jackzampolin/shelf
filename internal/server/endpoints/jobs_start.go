@@ -152,17 +152,19 @@ func prepareBookJobStart(ctx context.Context, scheduler *jobs.Scheduler, bookID,
 			return http.StatusConflict, fmt.Errorf("%s job already active for book %s: %s", jobType, bookID, existing.ID())
 		}
 		if jobManager := svcctx.JobManagerFrom(ctx); jobManager != nil {
-			running, err := jobManager.List(ctx, jobs.ListFilter{
-				Status:  jobs.StatusRunning,
-				JobType: jobType,
-				BookID:  bookID,
-				Limit:   1,
-			})
-			if err != nil {
-				return http.StatusInternalServerError, fmt.Errorf("failed to check running jobs: %v", err)
-			}
-			if len(running) > 0 {
-				return http.StatusConflict, fmt.Errorf("%s job already running for book %s: %s", jobType, bookID, running[0].ID)
+			for _, activeStatus := range []jobs.Status{jobs.StatusRunning, jobs.StatusWaitingProvider} {
+				active, err := jobManager.List(ctx, jobs.ListFilter{
+					Status:  activeStatus,
+					JobType: jobType,
+					BookID:  bookID,
+					Limit:   1,
+				})
+				if err != nil {
+					return http.StatusInternalServerError, fmt.Errorf("failed to check active jobs: %v", err)
+				}
+				if len(active) > 0 {
+					return http.StatusConflict, fmt.Errorf("%s job already %s for book %s: %s", jobType, activeStatus, bookID, active[0].ID)
+				}
 			}
 		}
 		return 0, nil
@@ -171,21 +173,23 @@ func prepareBookJobStart(ctx context.Context, scheduler *jobs.Scheduler, bookID,
 	reason := fmt.Sprintf("cancelled by forced %s restart for book %s", jobType, bookID)
 	scheduler.CancelActiveJobsByBookIDAndType(ctx, bookID, jobType, reason)
 	if jobManager := svcctx.JobManagerFrom(ctx); jobManager != nil {
-		running, err := jobManager.List(ctx, jobs.ListFilter{
-			Status:  jobs.StatusRunning,
-			JobType: jobType,
-			BookID:  bookID,
-			Limit:   100,
-		})
-		if err != nil {
-			return http.StatusInternalServerError, fmt.Errorf("failed to list running jobs for forced restart: %v", err)
-		}
-		for _, record := range running {
-			if record == nil {
-				continue
+		for _, activeStatus := range []jobs.Status{jobs.StatusRunning, jobs.StatusWaitingProvider} {
+			active, err := jobManager.List(ctx, jobs.ListFilter{
+				Status:  activeStatus,
+				JobType: jobType,
+				BookID:  bookID,
+				Limit:   100,
+			})
+			if err != nil {
+				return http.StatusInternalServerError, fmt.Errorf("failed to list active jobs for forced restart: %v", err)
 			}
-			if err := jobManager.UpdateStatus(ctx, record.ID, jobs.StatusCancelled, reason); err != nil {
-				return http.StatusInternalServerError, fmt.Errorf("failed to cancel running job %s: %v", record.ID, err)
+			for _, record := range active {
+				if record == nil {
+					continue
+				}
+				if err := jobManager.UpdateStatus(ctx, record.ID, jobs.StatusCancelled, reason); err != nil {
+					return http.StatusInternalServerError, fmt.Errorf("failed to cancel active job %s: %v", record.ID, err)
+				}
 			}
 		}
 	}

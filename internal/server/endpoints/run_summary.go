@@ -1,8 +1,11 @@
 package endpoints
 
 import (
+	"fmt"
 	"net/http"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,12 +25,28 @@ type RunSummaryResponse struct {
 
 // BookSummary is one book's terminal/processing state and recovery hint.
 type BookSummary struct {
-	ID           string `json:"id"`
-	Title        string `json:"title"`
-	Status       string `json:"status"`
-	StatusReason string `json:"status_reason,omitempty"`
-	LatestError  string `json:"latest_error,omitempty"`
-	RecoveryHint string `json:"recovery_hint,omitempty"`
+	ID              string     `json:"id"`
+	Title           string     `json:"title"`
+	Status          string     `json:"status"`
+	StatusReason    string     `json:"status_reason,omitempty"`
+	LatestJobID     string     `json:"latest_job_id,omitempty"`
+	JobStatus       string     `json:"job_status,omitempty"`
+	HeartbeatAt     *time.Time `json:"heartbeat_at,omitempty"`
+	LastProgressAt  *time.Time `json:"last_progress_at,omitempty"`
+	LatestError     string     `json:"latest_error,omitempty"`
+	RecoveryHint    string     `json:"recovery_hint,omitempty"`
+	RecoveryCommand string     `json:"recovery_command,omitempty"`
+}
+
+var failedPagePattern = regexp.MustCompile(`(?:page=|page\s+)(\d+)`)
+
+func failedPage(errorText string) (int, bool) {
+	match := failedPagePattern.FindStringSubmatch(strings.ToLower(errorText))
+	if len(match) != 2 {
+		return 0, false
+	}
+	page, err := strconv.Atoi(match[1])
+	return page, err == nil && page > 0
 }
 
 // RunSummaryEndpoint handles GET /api/run/summary.
@@ -85,13 +104,13 @@ func (e *RunSummaryEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	latestErr := map[string]string{}
+	latestRecords := map[string]*jobs.Record{}
 	if jm := svcctx.JobManagerFrom(r.Context()); jm != nil {
 		records, lerr := jm.List(r.Context(), jobs.ListFilter{JobType: "process-book", Limit: 10000})
 		if lerr == nil {
 			latestAt := map[string]time.Time{}
 			for _, rec := range records {
-				if rec.Status != jobs.StatusFailed || rec.Error == "" {
+				if rec == nil || rec.BookID == "" {
 					continue
 				}
 				at := rec.CreatedAt
@@ -100,7 +119,7 @@ func (e *RunSummaryEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 				}
 				if prev, ok := latestAt[rec.BookID]; !ok || at.After(prev) {
 					latestAt[rec.BookID] = at
-					latestErr[rec.BookID] = rec.Error
+					latestRecords[rec.BookID] = rec
 				}
 			}
 		}
@@ -119,13 +138,31 @@ func (e *RunSummaryEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 				Status:       getString(m, "status"),
 				StatusReason: getString(m, "status_reason"),
 			}
+			latest := latestRecords[book.ID]
+			if latest != nil {
+				book.LatestJobID = latest.ID
+				book.JobStatus = string(latest.Status)
+				book.HeartbeatAt = latest.HeartbeatAt
+				book.LastProgressAt = latest.LastProgressAt
+			}
 			// Only attach a prior failed-job error to books that are terminally
 			// failed; a processing/complete book's stale error would mislead.
-			if book.Status == "failed" {
-				book.LatestError = latestErr[book.ID]
+			if book.Status == "failed" && latest != nil && latest.Status == jobs.StatusFailed {
+				book.LatestError = latest.Error
 			}
 			if book.Status != "complete" {
-				book.RecoveryHint = recoveryHint(book.Status, book.StatusReason, book.LatestError)
+				if latest != nil && latest.Status == jobs.StatusWaitingProvider {
+					book.RecoveryHint = "provider unavailable; Shelf is waiting and will replay automatically when health recovers"
+				} else {
+					book.RecoveryHint = recoveryHint(book.Status, book.StatusReason, book.LatestError)
+				}
+				failureText := book.StatusReason + " " + book.LatestError
+				if page, ok := failedPage(failureText); ok {
+					book.RecoveryHint = fmt.Sprintf("page %d failed and remains incomplete; run the targeted OCR repair", page)
+					book.RecoveryCommand = fmt.Sprintf("shelf api books repair-ocr %s --pages %d --force", book.ID, page)
+				} else if latest != nil && latest.Status == jobs.StatusFailed {
+					book.RecoveryCommand = fmt.Sprintf("shelf api jobs retry %s", latest.ID)
+				}
 			}
 			out.Counts[book.Status]++
 			out.Books = append(out.Books, book)

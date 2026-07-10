@@ -54,6 +54,23 @@ func (j *stubStartJob) Start(context.Context) ([]WorkUnit, error) {
 
 func (j *stubStartJob) Done() bool { return j.done }
 
+type stubTransientStartJob struct {
+	stubFailJob
+	attempts int
+	done     bool
+}
+
+func (j *stubTransientStartJob) Start(context.Context) ([]WorkUnit, error) {
+	j.attempts++
+	if j.attempts == 1 {
+		return nil, fmt.Errorf("Defra load: context deadline exceeded")
+	}
+	j.done = true
+	return nil, nil
+}
+
+func (j *stubTransientStartJob) Done() bool { return j.done }
+
 func TestHandleResultFailsBookOnJobError(t *testing.T) {
 	s := NewScheduler(SchedulerConfig{Logger: slog.Default()})
 	stub := &stubFailJob{bookID: "book-1"}
@@ -90,6 +107,28 @@ func TestStartJobAsyncFailsBookOnStartError(t *testing.T) {
 
 	if !strings.Contains(stub.failedReason, "start boom") {
 		t.Fatalf("failedReason = %q, want start error", stub.failedReason)
+	}
+}
+
+func TestStartJobAsyncRetriesTransientStartFailure(t *testing.T) {
+	withFastResumeBackoff(t)
+	s := NewScheduler(SchedulerConfig{Logger: slog.Default()})
+	stub := &stubTransientStartJob{stubFailJob: stubFailJob{bookID: "book-1"}}
+	s.mu.Lock()
+	s.jobs[stub.ID()] = stub
+	s.pending[stub.ID()] = 0
+	s.mu.Unlock()
+
+	s.startJobAsync(stub)
+
+	if stub.attempts != 2 {
+		t.Fatalf("Start attempts = %d, want 2", stub.attempts)
+	}
+	if stub.failedReason != "" {
+		t.Fatalf("transient Start failed the book: %q", stub.failedReason)
+	}
+	if s.ActiveJobs() != 0 {
+		t.Fatal("synchronously completed retried job remained active")
 	}
 }
 

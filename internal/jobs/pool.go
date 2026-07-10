@@ -40,6 +40,13 @@ type WorkerPool interface {
 	init(results chan<- workerResult)
 }
 
+// JobWorkCanceller is implemented by pools that can discard queued/parked
+// units for a cancelled job. In-flight provider calls may finish, but no queued
+// unit should consume inference after cancellation.
+type JobWorkCanceller interface {
+	CancelJob(jobID string) int
+}
+
 // PoolStatus reports a pool's current state.
 type PoolStatus struct {
 	Name       string `json:"name"`

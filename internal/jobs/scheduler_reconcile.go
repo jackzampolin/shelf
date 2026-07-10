@@ -18,7 +18,7 @@ func bookIsStranded(hasActiveInMemoryJob bool, records []*Record) bool {
 	hasFailed := false
 	for _, r := range records {
 		switch r.Status {
-		case StatusRunning, StatusQueued:
+		case StatusRunning, StatusQueued, StatusWaitingProvider:
 			return false
 		case StatusFailed:
 			hasFailed = true
