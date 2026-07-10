@@ -52,6 +52,10 @@ func (e *GetBookEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 			author
 			page_count
 			status
+			status_reason
+			metadata_complete
+			structure_complete
+			structure_failed
 			created_at
 		}
 	}`, id)
@@ -80,10 +84,14 @@ func (e *GetBookEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	book := Book{
-		ID:     getString(m, "_docID"),
-		Title:  getString(m, "title"),
-		Author: getString(m, "author"),
-		Status: getString(m, "status"),
+		ID:                getString(m, "_docID"),
+		Title:             getString(m, "title"),
+		Author:            getString(m, "author"),
+		Status:            getString(m, "status"),
+		StatusReason:      getString(m, "status_reason"),
+		MetadataComplete:  getBool(m, "metadata_complete"),
+		StructureComplete: getBool(m, "structure_complete"),
+		StructureFailed:   getBool(m, "structure_failed"),
 	}
 	if pc, ok := m["page_count"].(float64); ok {
 		book.PageCount = int(pc)

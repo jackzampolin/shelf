@@ -16,12 +16,16 @@ type ListBooksResponse struct {
 
 // Book represents a book record.
 type Book struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	Author    string `json:"author,omitempty"`
-	PageCount int    `json:"page_count"`
-	Status    string `json:"status"`
-	CreatedAt string `json:"created_at"`
+	ID                string `json:"id"`
+	Title             string `json:"title"`
+	Author            string `json:"author,omitempty"`
+	PageCount         int    `json:"page_count"`
+	Status            string `json:"status"`
+	StatusReason      string `json:"status_reason,omitempty"`
+	MetadataComplete  bool   `json:"metadata_complete"`
+	StructureComplete bool   `json:"structure_complete"`
+	StructureFailed   bool   `json:"structure_failed"`
+	CreatedAt         string `json:"created_at"`
 }
 
 // ListBooksEndpoint handles GET /api/books.
@@ -57,6 +61,10 @@ func (e *ListBooksEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 			author
 			page_count
 			status
+			status_reason
+			metadata_complete
+			structure_complete
+			structure_failed
 			created_at
 		}
 	}`)
@@ -75,10 +83,14 @@ func (e *ListBooksEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		for _, item := range data {
 			if m, ok := item.(map[string]any); ok {
 				book := Book{
-					ID:     getString(m, "_docID"),
-					Title:  getString(m, "title"),
-					Author: getString(m, "author"),
-					Status: getString(m, "status"),
+					ID:                getString(m, "_docID"),
+					Title:             getString(m, "title"),
+					Author:            getString(m, "author"),
+					Status:            getString(m, "status"),
+					StatusReason:      getString(m, "status_reason"),
+					MetadataComplete:  getBool(m, "metadata_complete"),
+					StructureComplete: getBool(m, "structure_complete"),
+					StructureFailed:   getBool(m, "structure_failed"),
 				}
 				if pc, ok := m["page_count"].(float64); ok {
 					book.PageCount = int(pc)
