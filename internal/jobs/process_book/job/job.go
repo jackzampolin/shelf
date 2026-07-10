@@ -641,14 +641,7 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 			ocrQuarantined++
 			return
 		}
-		allOcr := true
-		for _, provider := range j.Book.OcrProviders {
-			if !state.OcrComplete(provider) {
-				allOcr = false
-				break
-			}
-		}
-		if allOcr {
+		if state.OcrResolved(j.Book.OcrProviders) {
 			ocrDone++
 		}
 	})

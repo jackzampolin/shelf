@@ -17,6 +17,9 @@ func (j *Job) GeneratePageWorkUnits(ctx context.Context, pageNum int, state *Pag
 
 	// Check if OCR is needed (only if enabled)
 	if j.Book.EnableOCR {
+		if state.IsOCRComplete() {
+			return units
+		}
 		if quarantined, _ := state.OCRQuarantine(); quarantined {
 			return units
 		}

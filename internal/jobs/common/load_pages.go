@@ -182,6 +182,7 @@ func loadPageState(book *BookState, raw any) {
 
 	// Load OCR markdown/headings if available (for pattern analysis on resume).
 	ocrComplete, _ := page["ocr_complete"].(bool)
+	state.SetOCRComplete(ocrComplete)
 	if ocrComplete {
 		state.PopulateFromDBResult(page)
 

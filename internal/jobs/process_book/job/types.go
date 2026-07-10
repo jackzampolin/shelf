@@ -228,15 +228,7 @@ func (j *Job) LiveStatus() *jobs.LiveStatus {
 			ocrQuarantined++
 			return
 		}
-		// OCR is complete when all providers are done
-		allOcr := true
-		for _, provider := range book.OcrProviders {
-			if !state.OcrComplete(provider) {
-				allOcr = false
-				break
-			}
-		}
-		if allOcr {
+		if state.OcrResolved(book.OcrProviders) {
 			ocrComplete++
 		}
 	})

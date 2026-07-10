@@ -104,6 +104,21 @@ func TestGeneratePageWorkUnitsSkipsExplicitQuarantine(t *testing.T) {
 	}
 }
 
+func TestGeneratePageWorkUnitsSkipsTextNativeCompletion(t *testing.T) {
+	j, book := newOcrSkipJob()
+	page := book.GetPage(12)
+	page.SetOCRComplete(true)
+	page.SetOcrMarkdown("real embedded PDF text")
+
+	units := j.GeneratePageWorkUnits(context.Background(), 12, page)
+	if len(units) != 0 {
+		t.Fatalf("text-native completed page emitted %d OCR work units, want 0", len(units))
+	}
+	if page.OcrComplete("chandra-local") {
+		t.Fatal("text-native completion must remain distinct from Chandra output")
+	}
+}
+
 func TestStartAfterOcrInfrastructureFailureReemitsOnlyIncompletePage(t *testing.T) {
 	store := common.NewMemoryStateStore()
 	store.SetDoc("Book", "book-1", map[string]any{})

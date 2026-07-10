@@ -24,6 +24,10 @@ type PageState struct {
 	// OCR state per provider.
 	// Key presence indicates completion; value is the OCR text (may be empty for blank pages).
 	ocrResults map[string]string // provider -> OCR text
+	// ocrComplete mirrors Page.ocr_complete. It allows successful text-native
+	// repairs (for example an embedded PDF text layer) to resolve a page without
+	// pretending that a configured image OCR provider produced the text.
+	ocrComplete bool
 
 	// OCR markdown (stored directly from OCR, no blend step)
 	ocrMarkdown         string
@@ -71,12 +75,27 @@ func (p *PageState) AllOcrDone(providers []string) bool {
 	return true
 }
 
+func (p *PageState) SetOCRComplete(complete bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.ocrComplete = complete
+}
+
+func (p *PageState) IsOCRComplete() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ocrComplete
+}
+
 // OcrResolved reports whether a page has either successful OCR from every
 // configured provider or an explicit operator quarantine. It is the terminal
 // page predicate used by downstream pipeline gates.
 func (p *PageState) OcrResolved(providers []string) bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
+	if p.ocrComplete {
+		return true
+	}
 	if p.ocrQuarantined {
 		return true
 	}
@@ -93,6 +112,7 @@ func (p *PageState) QuarantineOCR(reason string) {
 	defer p.mu.Unlock()
 	p.ocrQuarantined = true
 	p.ocrQuarantineReason = reason
+	p.ocrComplete = false
 }
 
 func (p *PageState) ClearOCRQuarantine() {
@@ -160,6 +180,7 @@ func (p *PageState) ResetOcrProviders(providers []string) {
 	for _, provider := range providers {
 		delete(p.ocrResults, provider)
 	}
+	p.ocrComplete = false
 	p.ocrMarkdown = ""
 	p.header = ""
 	p.footer = ""

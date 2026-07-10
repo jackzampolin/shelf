@@ -119,6 +119,7 @@ func PersistOCRResult(ctx context.Context, book *BookState, state *PageState, oc
 	allDone := state.AllOcrDone(ocrProviders)
 
 	if allDone {
+		state.SetOCRComplete(true)
 		// Mark page as OCR complete - async (in-memory state already updated)
 		sink.Send(defra.WriteOp{
 			Collection: "Page",
