@@ -177,6 +177,21 @@ func (c *circuit) removeJob(jobID string) int {
 	return removed
 }
 
+func (c *circuit) jobLen(jobID string) int {
+	if jobID == "" {
+		return 0
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	count := 0
+	for _, pu := range c.parked {
+		if pu.unit.JobID == jobID {
+			count++
+		}
+	}
+	return count
+}
+
 // isOpen reports the circuit state.
 func (c *circuit) isOpen() bool {
 	c.mu.Lock()

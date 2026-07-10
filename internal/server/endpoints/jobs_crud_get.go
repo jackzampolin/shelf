@@ -88,7 +88,7 @@ func (e *GetJobEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 			}
 
 			// Get worker status (queue depths, rate limiters)
-			resp.WorkerStatus = scheduler.WorkerStatus()
+			resp.WorkerStatus = scheduler.WorkerStatusForJob(id)
 		}
 	}
 

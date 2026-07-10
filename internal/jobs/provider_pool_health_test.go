@@ -22,6 +22,13 @@ type ctrlOCRProvider struct {
 	healthCalls int
 }
 
+type internallyRetryingOCRProvider struct {
+	*ctrlOCRProvider
+}
+
+func (p *internallyRetryingOCRProvider) MaxRetries() int      { return 3 }
+func (p *internallyRetryingOCRProvider) ManagesRetries() bool { return true }
+
 func (f *ctrlOCRProvider) setDown(down bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -130,6 +137,58 @@ func TestContentErrorsDoNotTripCircuit(t *testing.T) {
 	if h := pool.Status().Health; h != healthHealthy {
 		t.Fatalf("circuit tripped on content errors: health=%q", h)
 	}
+}
+
+func TestProviderManagedRetriesAreNotMultipliedByPool(t *testing.T) {
+	base := newCtrlProvider()
+	base.setDown(true)
+	prov := &internallyRetryingOCRProvider{ctrlOCRProvider: base}
+	pool, err := NewProviderWorkerPool(ProviderWorkerPoolConfig{
+		Name:        "internal-retry",
+		OCRProvider: prov,
+		WorkerCount: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool.circuit.cfg.TripThreshold = 99
+
+	result, parked := pool.process(context.Background(), ocrUnit("single-budget"))
+	if result.Success || parked {
+		t.Fatalf("result = success:%v parked:%v, want ordinary failure", result.Success, parked)
+	}
+	if got := base.callCount(); got != 1 {
+		t.Fatalf("provider calls = %d, want 1 outer call; provider owns its retry budget", got)
+	}
+}
+
+func TestProviderPoolReportsPerJobUnitLocation(t *testing.T) {
+	pool, err := NewProviderWorkerPool(ProviderWorkerPoolConfig{
+		Name:        "located",
+		OCRProvider: newCtrlProvider(),
+		WorkerCount: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool.init(make(chan workerResult, 8))
+	for _, id := range []string{"queued-a", "queued-b"} {
+		unit := ocrUnit(id)
+		unit.JobID = "job-located"
+		mustSubmit(t, pool, unit)
+	}
+	pool.claim("job-located")
+	parked := ocrUnit("parked")
+	parked.JobID = "job-located"
+	if err := pool.circuit.park(parked, errBackendDown); err != nil {
+		t.Fatal(err)
+	}
+
+	got := pool.JobWorkStatus("job-located")
+	if got.Queued != 2 || got.InFlight != 1 || got.Parked != 1 {
+		t.Fatalf("JobWorkStatus() = %+v, want queued=2 in_flight=1 parked=1", got)
+	}
+	pool.release("job-located")
 }
 
 func TestParkAndReplayOnRecovery(t *testing.T) {

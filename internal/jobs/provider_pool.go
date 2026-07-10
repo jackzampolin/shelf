@@ -43,7 +43,9 @@ type ProviderWorkerPool struct {
 	workerCount int
 
 	// In-flight tracking
-	inFlight atomic.Int32
+	inFlight      atomic.Int32
+	inFlightMu    sync.Mutex
+	inFlightByJob map[string]int
 
 	// Health circuit breaker (see provider_pool_health.go)
 	circuit *circuit
@@ -105,9 +107,10 @@ func NewProviderWorkerPool(cfg ProviderWorkerPoolConfig) (*ProviderWorkerPool, e
 	}
 
 	p := &ProviderWorkerPool{
-		name:        cfg.Name,
-		sink:        cfg.Sink,
-		waitingJobs: make(map[string]struct{}),
+		name:          cfg.Name,
+		sink:          cfg.Sink,
+		waitingJobs:   make(map[string]struct{}),
+		inFlightByJob: make(map[string]int),
 	}
 
 	// Determine type, RPS, and worker count from provider
@@ -227,6 +230,7 @@ func (p *ProviderWorkerPool) dispatcher(ctx context.Context) {
 		if p.jobCancelled(unit.JobID) {
 			continue
 		}
+		p.claim(unit.JobID)
 
 		// Pause while the provider circuit is open (see provider_pool_health.go).
 		if ch := p.circuit.openWait(); ch != nil {
@@ -235,6 +239,7 @@ func (p *ProviderWorkerPool) dispatcher(ctx context.Context) {
 			case <-ch:
 				// Circuit closed; proceed with this unit.
 			case <-ctx.Done():
+				p.release(unit.JobID)
 				p.results <- workerResult{
 					JobID: unit.JobID,
 					Unit:  unit,
@@ -250,6 +255,7 @@ func (p *ProviderWorkerPool) dispatcher(ctx context.Context) {
 
 		// Wait for rate limit token (only dispatcher does this)
 		if err := p.rateLimiter.Wait(ctx); err != nil {
+			p.release(unit.JobID)
 			// Context cancelled, send failure result
 			p.results <- workerResult{
 				JobID: unit.JobID,
@@ -264,12 +270,11 @@ func (p *ProviderWorkerPool) dispatcher(ctx context.Context) {
 		}
 
 		// Send to work channel for workers to pick up
-		p.inFlight.Add(1)
 		select {
 		case p.work <- unit:
 			// Sent successfully
 		case <-ctx.Done():
-			p.inFlight.Add(-1)
+			p.release(unit.JobID)
 			return
 		}
 	}
@@ -288,11 +293,11 @@ func (p *ProviderWorkerPool) worker(ctx context.Context, id int) {
 				return
 			}
 			if p.jobCancelled(unit.JobID) {
-				p.inFlight.Add(-1)
+				p.release(unit.JobID)
 				continue
 			}
 			result, parked := p.process(ctx, unit)
-			p.inFlight.Add(-1)
+			p.release(unit.JobID)
 			if parked {
 				// Unit is held by the circuit for replay; no result yet.
 				continue
@@ -312,6 +317,43 @@ func (p *ProviderWorkerPool) worker(ctx context.Context, id int) {
 			p.logger.Debug("worker result sent", "unit_id", unit.ID, "unit_type", unit.Type)
 		}
 	}
+}
+
+func (p *ProviderWorkerPool) claim(jobID string) {
+	p.inFlight.Add(1)
+	if jobID == "" {
+		return
+	}
+	p.inFlightMu.Lock()
+	p.inFlightByJob[jobID]++
+	p.inFlightMu.Unlock()
+}
+
+func (p *ProviderWorkerPool) release(jobID string) {
+	p.inFlight.Add(-1)
+	if jobID == "" {
+		return
+	}
+	p.inFlightMu.Lock()
+	if p.inFlightByJob[jobID] <= 1 {
+		delete(p.inFlightByJob, jobID)
+	} else {
+		p.inFlightByJob[jobID]--
+	}
+	p.inFlightMu.Unlock()
+}
+
+// JobWorkStatus reports where this job's pending provider units currently sit.
+func (p *ProviderWorkerPool) JobWorkStatus(jobID string) PoolJobWorkStatus {
+	status := PoolJobWorkStatus{}
+	if p.queue != nil {
+		status.Queued = p.queue.JobLen(jobID)
+	}
+	p.inFlightMu.Lock()
+	status.InFlight = p.inFlightByJob[jobID]
+	p.inFlightMu.Unlock()
+	status.Parked = p.circuit.jobLen(jobID)
+	return status
 }
 
 // Submit adds a work unit to the pool's priority queue.

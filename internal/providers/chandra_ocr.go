@@ -173,6 +173,10 @@ func (c *ChandraOCRClient) MaxConcurrency() int { return c.maxConcurrency }
 // MaxRetries returns the maximum retry attempts.
 func (c *ChandraOCRClient) MaxRetries() int { return c.maxRetries }
 
+// ManagesRetries reports that the wrapped OpenAI-compatible client consumes
+// the configured retry budget inside ProcessImage.
+func (c *ChandraOCRClient) ManagesRetries() bool { return true }
+
 // RetryDelayBase returns the base delay between retries.
 func (c *ChandraOCRClient) RetryDelayBase() time.Duration { return c.retryDelay }
 

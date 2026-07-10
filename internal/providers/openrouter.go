@@ -117,6 +117,9 @@ func (c *OpenAIChatClient) MaxRetries() int {
 	return c.maxRetries
 }
 
+// ManagesRetries reports that doRequest consumes the configured retry budget.
+func (c *OpenAIChatClient) ManagesRetries() bool { return true }
+
 // RetryDelayBase returns the base delay between retries.
 func (c *OpenAIChatClient) RetryDelayBase() time.Duration {
 	return c.retryDelay

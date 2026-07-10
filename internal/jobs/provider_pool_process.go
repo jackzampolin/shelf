@@ -206,14 +206,23 @@ func (p *ProviderWorkerPool) getMaxRetries() int {
 	switch p.poolType {
 	case PoolTypeLLM:
 		if p.llmClient != nil {
+			if managed, ok := p.llmClient.(providers.RetryManaged); ok && managed.ManagesRetries() {
+				return 0
+			}
 			return p.llmClient.MaxRetries()
 		}
 	case PoolTypeOCR:
 		if p.ocrProvider != nil {
+			if managed, ok := p.ocrProvider.(providers.RetryManaged); ok && managed.ManagesRetries() {
+				return 0
+			}
 			return p.ocrProvider.MaxRetries()
 		}
 	case PoolTypeTTS:
 		if p.ttsProvider != nil {
+			if managed, ok := p.ttsProvider.(providers.RetryManaged); ok && managed.ManagesRetries() {
+				return 0
+			}
 			return p.ttsProvider.MaxRetries()
 		}
 	}

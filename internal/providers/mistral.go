@@ -119,6 +119,9 @@ func (c *MistralOCRClient) MaxRetries() int {
 	return c.maxRetries
 }
 
+// ManagesRetries reports that doRequest consumes the configured retry budget.
+func (c *MistralOCRClient) ManagesRetries() bool { return true }
+
 // RetryDelayBase returns the base delay for exponential backoff.
 func (c *MistralOCRClient) RetryDelayBase() time.Duration {
 	return c.retryDelay

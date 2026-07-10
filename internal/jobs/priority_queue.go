@@ -213,6 +213,24 @@ func (pq *PriorityQueue) JobIDs() []string {
 	return ids
 }
 
+// JobLen returns the number of queued units owned by jobID.
+func (pq *PriorityQueue) JobLen(jobID string) int {
+	if jobID == "" {
+		return 0
+	}
+	pq.mu.Lock()
+	defer pq.mu.Unlock()
+	count := 0
+	for _, bq := range pq.books {
+		for _, item := range bq.items {
+			if item.unit.JobID == jobID {
+				count++
+			}
+		}
+	}
+	return count
+}
+
 func (pq *PriorityQueue) RemoveJob(jobID string) int {
 	if jobID == "" {
 		return 0

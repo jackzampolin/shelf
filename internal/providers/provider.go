@@ -52,6 +52,15 @@ type OCRProvider interface {
 	RetryDelayBase() time.Duration
 }
 
+// RetryManaged is implemented by providers that already apply their configured
+// retry budget inside a single Chat, ProcessImage, or Generate call. Worker
+// pools must not wrap those calls in the same retry budget again: doing so
+// multiplies attempts and can turn one timeout-bound unit into an hour-long
+// apparent stall.
+type RetryManaged interface {
+	ManagesRetries() bool
+}
+
 // DefaultMaxConcurrency is used when provider returns 0 for MaxConcurrency.
 const DefaultMaxConcurrency = 50
 

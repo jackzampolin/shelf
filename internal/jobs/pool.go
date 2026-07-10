@@ -47,6 +47,19 @@ type JobWorkCanceller interface {
 	CancelJob(jobID string) int
 }
 
+// PoolJobWorkStatus locates one job's units within a provider pool. It makes a
+// durable pending count operationally useful by distinguishing queued,
+// claimed/in-flight, and provider-parked work.
+type PoolJobWorkStatus struct {
+	Queued   int `json:"queued"`
+	InFlight int `json:"in_flight"`
+	Parked   int `json:"parked"`
+}
+
+type JobWorkStatusProvider interface {
+	JobWorkStatus(jobID string) PoolJobWorkStatus
+}
+
 // PoolStatus reports a pool's current state.
 type PoolStatus struct {
 	Name       string `json:"name"`
