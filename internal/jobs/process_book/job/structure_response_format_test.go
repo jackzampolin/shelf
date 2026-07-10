@@ -176,6 +176,31 @@ func TestPersistChapterSkeletonDocUpdatesExistingIdentityAfterDocIDCollision(t *
 	}
 }
 
+func TestAttachExistingChapterDocIDsUsesStableTocIdentity(t *testing.T) {
+	book := common.NewBookState("book-1")
+	chapter := &common.ChapterState{
+		EntryID:    "ch_001",
+		UniqueKey:  "book-1:toc-1",
+		TocEntryID: "toc-1",
+		SortOrder:  100,
+	}
+	book.SetStructureChapters([]*common.ChapterState{chapter})
+	j := NewFromLoadResult(&common.LoadBookResult{Book: book})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"data":{"Chapter":[{"_docID":"chapter-doc","unique_key":"old-key","entry_id":"ch_001","sort_order":100,"_toc_entryID":"toc-1"}]}}`))
+	}))
+	defer server.Close()
+
+	if err := j.attachExistingChapterDocIDs(context.Background(), defra.NewClient(server.URL), []*common.ChapterState{chapter}); err != nil {
+		t.Fatal(err)
+	}
+	if chapter.DocID != "chapter-doc" {
+		t.Fatalf("chapter DocID = %q, want existing chapter-doc", chapter.DocID)
+	}
+}
+
 func TestValidatePersistedStructureChaptersRejectsMissingPersistedFields(t *testing.T) {
 	book := common.NewBookState("book-1")
 	book.SetStructureChapters([]*common.ChapterState{

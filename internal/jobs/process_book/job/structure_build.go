@@ -134,6 +134,9 @@ func (j *Job) persistChapterSkeleton(ctx context.Context) error {
 	for _, chapter := range chapters {
 		chapter.UniqueKey = j.generateChapterUniqueKey(chapter)
 	}
+	if err := j.attachExistingChapterDocIDs(ctx, defraClient, chapters); err != nil {
+		return err
+	}
 
 	// Upsert chapters concurrently with bounded parallelism
 	var wg sync.WaitGroup
@@ -200,6 +203,16 @@ func (j *Job) persistChapterSkeleton(ctx context.Context) error {
 }
 
 func (j *Job) persistChapterSkeletonDoc(ctx context.Context, defraClient *defra.Client, ch *common.ChapterState, doc map[string]any) (defra.WriteResult, error) {
+	// A structure rerun commonly rebuilds the same stable chapter identities.
+	// Resolve those rows once before the concurrent write loop and update them
+	// directly: Defra can surface relation-key upsert collisions as an opaque 500,
+	// which prevents the more specific DocID-exists fallback below from firing.
+	if ch.DocID != "" {
+		return defraStructureWriteWithRetry(ctx, func() (defra.WriteResult, error) {
+			return defraClient.UpdateWithVersion(ctx, "Chapter", ch.DocID, doc)
+		})
+	}
+
 	filter := map[string]any{
 		"unique_key": map[string]any{"_eq": ch.UniqueKey},
 	}
@@ -235,6 +248,66 @@ func (j *Job) persistChapterSkeletonDoc(ctx context.Context, defraClient *defra.
 }
 
 func (j *Job) findExistingChapterByIdentity(ctx context.Context, defraClient *defra.Client, ch *common.ChapterState) (*chapterDocIdentity, error) {
+	rows, err := j.queryExistingChapterRows(ctx, defraClient)
+	if err != nil {
+		return nil, err
+	}
+
+	var matches []chapterDocIdentity
+	for _, data := range rows {
+		if !chapterIdentityMatches(data, ch) {
+			continue
+		}
+		docID, _ := data["_docID"].(string)
+		if docID == "" {
+			continue
+		}
+		uniqueKey, _ := data["unique_key"].(string)
+		matches = append(matches, chapterDocIdentity{
+			DocID:     docID,
+			UniqueKey: uniqueKey,
+		})
+	}
+
+	if len(matches) == 0 {
+		return nil, nil
+	}
+	if len(matches) > 1 {
+		return nil, fmt.Errorf("multiple existing Chapter records matched identity for %s (%s)", ch.EntryID, ch.UniqueKey)
+	}
+	return &matches[0], nil
+}
+
+func (j *Job) attachExistingChapterDocIDs(ctx context.Context, defraClient *defra.Client, chapters []*common.ChapterState) error {
+	rows, err := j.queryExistingChapterRows(ctx, defraClient)
+	if err != nil {
+		return err
+	}
+	for _, chapter := range chapters {
+		if chapter == nil || chapter.DocID != "" {
+			continue
+		}
+		var matches []string
+		for _, row := range rows {
+			if !chapterIdentityMatches(row, chapter) {
+				continue
+			}
+			if docID, _ := row["_docID"].(string); docID != "" {
+				matches = append(matches, docID)
+			}
+		}
+		if len(matches) > 1 {
+			return fmt.Errorf("multiple existing Chapter records matched identity for %s (%s)", chapter.EntryID, chapter.UniqueKey)
+		}
+		if len(matches) == 1 {
+			chapter.DocID = matches[0]
+			j.Book.UpdateChapter(chapter)
+		}
+	}
+	return nil
+}
+
+func (j *Job) queryExistingChapterRows(ctx context.Context, defraClient *defra.Client) ([]map[string]any, error) {
 	query := fmt.Sprintf(`{
 		Chapter(filter: {_bookID: {_eq: %s}}, order: {sort_order: ASC}, limit: 5000) {
 			_docID
@@ -258,30 +331,15 @@ func (j *Job) findExistingChapterByIdentity(ctx context.Context, defraClient *de
 		return nil, fmt.Errorf("unexpected Chapter identity query response: %+v", resp.Data)
 	}
 
-	var matches []chapterDocIdentity
+	var rows []map[string]any
 	for _, item := range raw {
 		data, ok := item.(map[string]any)
-		if !ok || !chapterIdentityMatches(data, ch) {
+		if !ok {
 			continue
 		}
-		docID, _ := data["_docID"].(string)
-		if docID == "" {
-			continue
-		}
-		uniqueKey, _ := data["unique_key"].(string)
-		matches = append(matches, chapterDocIdentity{
-			DocID:     docID,
-			UniqueKey: uniqueKey,
-		})
+		rows = append(rows, data)
 	}
-
-	if len(matches) == 0 {
-		return nil, nil
-	}
-	if len(matches) > 1 {
-		return nil, fmt.Errorf("multiple existing Chapter records matched identity for %s (%s)", ch.EntryID, ch.UniqueKey)
-	}
-	return &matches[0], nil
+	return rows, nil
 }
 
 func (j *Job) deleteStaleStructureChapters(ctx context.Context, defraClient *defra.Client, current []*common.ChapterState) error {
