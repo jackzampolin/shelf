@@ -47,6 +47,13 @@ type ProviderWorkerPool struct {
 	inFlightMu    sync.Mutex
 	inFlightByJob map[string]int
 
+	// Resume dispatch gate. Startup reconstructs durable jobs sequentially; if
+	// workers consume the first book while the rest are still loading, an
+	// otherwise fair queue starts with every worker occupied by that one book.
+	dispatchGateMu    sync.Mutex
+	dispatchPauseRefs int
+	dispatchResume    chan struct{}
+
 	// Health circuit breaker (see provider_pool_health.go)
 	circuit *circuit
 
@@ -231,6 +238,9 @@ func (p *ProviderWorkerPool) dispatcher(ctx context.Context) {
 			// Context cancelled
 			return
 		}
+		if !p.waitForDispatch(ctx) {
+			return
+		}
 		if p.jobCancelled(unit.JobID) {
 			continue
 		}
@@ -280,6 +290,46 @@ func (p *ProviderWorkerPool) dispatcher(ctx context.Context) {
 		case <-ctx.Done():
 			p.release(unit.JobID)
 			return
+		}
+	}
+}
+
+func (p *ProviderWorkerPool) pauseDispatch() {
+	p.dispatchGateMu.Lock()
+	defer p.dispatchGateMu.Unlock()
+	p.dispatchPauseRefs++
+	if p.dispatchPauseRefs == 1 {
+		p.dispatchResume = make(chan struct{})
+	}
+}
+
+func (p *ProviderWorkerPool) resumeDispatch() {
+	p.dispatchGateMu.Lock()
+	defer p.dispatchGateMu.Unlock()
+	if p.dispatchPauseRefs == 0 {
+		return
+	}
+	p.dispatchPauseRefs--
+	if p.dispatchPauseRefs == 0 {
+		close(p.dispatchResume)
+		p.dispatchResume = nil
+	}
+}
+
+func (p *ProviderWorkerPool) waitForDispatch(ctx context.Context) bool {
+	for {
+		p.dispatchGateMu.Lock()
+		if p.dispatchPauseRefs == 0 {
+			p.dispatchGateMu.Unlock()
+			return true
+		}
+		resume := p.dispatchResume
+		p.dispatchGateMu.Unlock()
+
+		select {
+		case <-resume:
+		case <-ctx.Done():
+			return false
 		}
 	}
 }

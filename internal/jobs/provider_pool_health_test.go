@@ -110,6 +110,29 @@ func TestCircuitTripsAndPausesDispatch(t *testing.T) {
 	drain(results)
 }
 
+func TestExplicitDispatchPauseHoldsWorkUntilResume(t *testing.T) {
+	prov := newCtrlProvider()
+	pool, _ := newTestPool(t, prov, circuitConfig{
+		TripThreshold: 3,
+		ProbeInterval: time.Second,
+		ParkMaxAge:    time.Hour,
+		ParkCapacity:  16,
+	})
+	pool.pauseDispatch()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go pool.Start(ctx)
+
+	mustSubmit(t, pool, ocrUnit("held"))
+	time.Sleep(50 * time.Millisecond)
+	if got := prov.callCount(); got != 0 {
+		t.Fatalf("provider called %d times while dispatch explicitly paused", got)
+	}
+
+	pool.resumeDispatch()
+	waitFor(t, time.Second, func() bool { return prov.callCount() == 1 })
+}
+
 func TestContentErrorsDoNotTripCircuit(t *testing.T) {
 	prov := newCtrlProvider()
 	prov.contentFail = true // non-retriable failures

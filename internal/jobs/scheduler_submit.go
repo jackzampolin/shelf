@@ -222,6 +222,13 @@ func (s *Scheduler) Resume(ctx context.Context) (int, error) {
 		return 0, ErrManagerRequired
 	}
 
+	// Build the complete durable fleet before provider workers dispatch it. The
+	// factories are intentionally resumed one at a time, which otherwise lets
+	// the first large book occupy every worker before later books enter the fair
+	// round-robin queue.
+	resumeDispatch := s.pauseProviderDispatch()
+	defer resumeDispatch()
+
 	// Find interrupted jobs. The list operation itself is retried so a DefraDB
 	// warm-up or restart cannot make the one startup resume pass disappear.
 	records, err := retryTransientOperation(ctx, s.logger, "list running jobs", "", func() ([]*Record, error) {
@@ -350,6 +357,32 @@ func (s *Scheduler) Resume(ctx context.Context) (int, error) {
 	}
 
 	return resumed, nil
+}
+
+func (s *Scheduler) pauseProviderDispatch() func() {
+	s.mu.RLock()
+	pausables := make([]interface {
+		pauseDispatch()
+		resumeDispatch()
+	}, 0, len(s.pools))
+	for _, pool := range s.pools {
+		if pausable, ok := pool.(interface {
+			pauseDispatch()
+			resumeDispatch()
+		}); ok {
+			pausables = append(pausables, pausable)
+		}
+	}
+	s.mu.RUnlock()
+
+	for _, pausable := range pausables {
+		pausable.pauseDispatch()
+	}
+	return func() {
+		for _, pausable := range pausables {
+			pausable.resumeDispatch()
+		}
+	}
 }
 
 func (s *Scheduler) dedupeRunningRecords(ctx context.Context, records []*Record) []*Record {
