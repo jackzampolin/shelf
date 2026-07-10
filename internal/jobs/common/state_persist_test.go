@@ -339,3 +339,26 @@ func TestBookState_PersistFinalizePhase(t *testing.T) {
 		t.Errorf("GetFinalizePhase() = %v, want 'discover'", book.GetFinalizePhase())
 	}
 }
+
+func TestPersistAgentStateScopesStableIDToBook(t *testing.T) {
+	store := NewMemoryStateStore()
+	bookA := NewBookState("book-a")
+	bookA.Store = store
+	bookB := NewBookState("book-b")
+	bookB.Store = store
+
+	stateA := &AgentState{AgentID: "chapter--1", AgentType: AgentTypeChapterFinder, EntryDocID: "entry-a"}
+	stateB := &AgentState{AgentID: "chapter--1", AgentType: AgentTypeChapterFinder, EntryDocID: "entry-b"}
+	if err := PersistAgentState(context.Background(), bookA, stateA); err != nil {
+		t.Fatal(err)
+	}
+	if err := PersistAgentState(context.Background(), bookB, stateB); err != nil {
+		t.Fatal(err)
+	}
+	if stateA.DocID == stateB.DocID {
+		t.Fatalf("cross-book agent states shared DocID %q", stateA.DocID)
+	}
+	if got := len(store.docs["AgentState"]); got != 2 {
+		t.Fatalf("AgentState count = %d, want 2", got)
+	}
+}

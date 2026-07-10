@@ -33,8 +33,9 @@ func NewGapInvestigatorAgent(ctx context.Context, cfg GapInvestigatorConfig) *ag
 
 	userPrompt := gap_investigator.BuildUserPrompt(cfg.Gap, cfg.Book.GetBodyStart(), cfg.Book.GetBodyEnd(), cfg.Book.TotalPages)
 
-	// Build agent ID from gap info for tracing
-	agentID := fmt.Sprintf("gap-%d-%d", cfg.Gap.StartPage, cfg.Gap.EndPage)
+	// Page ranges repeat across books; include the book identity so durable agent
+	// state remains stable without becoming globally ambiguous.
+	agentID := fmt.Sprintf("gap-%s-%d-%d", cfg.Book.BookID, cfg.Gap.StartPage, cfg.Gap.EndPage)
 
 	return agent.New(ctx, agent.Config{
 		ID:    agentID,

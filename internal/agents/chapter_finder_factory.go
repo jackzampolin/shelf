@@ -33,8 +33,10 @@ func NewChapterFinderAgent(ctx context.Context, cfg ChapterFinderConfig) *agent.
 
 	userPrompt := chapter_finder.BuildUserPrompt(cfg.Entry, cfg.Book.TotalPages, cfg.ExcludedRanges)
 
-	// Build agent ID from entry info for tracing
-	agentID := fmt.Sprintf("chapter-%s-%s", cfg.Entry.LevelName, cfg.Entry.Identifier)
+	// Keep the deterministic ID stable for crash recovery but scope it to the
+	// book. Entry labels repeat across nearly every book (for example
+	// "chapter--1"), so an unscoped ID aliases durable AgentState records.
+	agentID := fmt.Sprintf("chapter-%s-%s-%s", cfg.Book.BookID, cfg.Entry.LevelName, cfg.Entry.Identifier)
 
 	return agent.New(ctx, agent.Config{
 		ID:    agentID,

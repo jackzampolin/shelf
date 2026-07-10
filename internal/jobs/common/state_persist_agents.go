@@ -7,10 +7,10 @@ import (
 	"github.com/jackzampolin/shelf/internal/defra"
 )
 
-// PersistNewAgentState idempotently upserts an agent state record (keyed on the
-// agent's UUID agent_id) and adds it to b.agentStates. Using an upsert keeps the
-// call safe to re-run: an existing record is updated instead of colliding on
-// DefraDB's stable docID.
+// PersistNewAgentState idempotently upserts an agent state record (keyed on its
+// owning book and stable agent ID) and adds it to b.agentStates. Using an
+// upsert keeps the call safe to re-run: an existing record is updated instead
+// of colliding on DefraDB's stable docID.
 func (b *BookState) PersistNewAgentState(ctx context.Context, state *AgentState) error {
 	store := b.getStore(ctx)
 	if store == nil {
@@ -30,7 +30,7 @@ func (b *BookState) PersistNewAgentState(ctx context.Context, state *AgentState)
 		"_bookID":            b.BookID,
 	}
 
-	filter := map[string]any{"agent_id": state.AgentID}
+	filter := map[string]any{"_bookID": b.BookID, "agent_id": state.AgentID}
 	result, err := store.UpsertWithVersion(ctx, "AgentState", filter, doc, doc)
 	if err != nil {
 		return fmt.Errorf("failed to upsert agent state: %w", err)
@@ -47,7 +47,7 @@ func (b *BookState) PersistNewAgentState(ctx context.Context, state *AgentState)
 }
 
 // PersistNewAgentStates idempotently upserts agent state records (each keyed on
-// its own agent_id UUID) and adds them all to b.agentStates. Each state is
+// its owning book and stable agent ID) and adds them all to b.agentStates. Each state is
 // upserted individually so re-runs update existing records instead of colliding
 // on DefraDB's stable docID.
 func (b *BookState) PersistNewAgentStates(ctx context.Context, states []*AgentState) error {
@@ -74,7 +74,7 @@ func (b *BookState) PersistNewAgentStates(ctx context.Context, states []*AgentSt
 			"_bookID":            b.BookID,
 		}
 
-		filter := map[string]any{"agent_id": state.AgentID}
+		filter := map[string]any{"_bookID": b.BookID, "agent_id": state.AgentID}
 		result, err := store.UpsertWithVersion(ctx, "AgentState", filter, doc, doc)
 		if err != nil {
 			return fmt.Errorf("failed to upsert agent state %s: %w", state.AgentID, err)

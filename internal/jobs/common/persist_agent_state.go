@@ -13,7 +13,7 @@ import (
 // --- Agent State Persistence ---
 
 // PersistAgentState idempotently upserts an agent state record in DefraDB,
-// keyed on the agent's UUID (agent_id). This is synchronous to capture
+// keyed on the book and agent ID. This is synchronous to capture
 // DocID/CID for tracking. Because it is an upsert, re-entering the link stage
 // or re-saving the same agent's state updates the existing record instead of
 // colliding on DefraDB's stable docID ("a document with the given ID already
@@ -41,9 +41,11 @@ func PersistAgentState(ctx context.Context, book *BookState, state *AgentState) 
 		"_bookID":            book.BookID,
 	}
 
-	// Idempotent upsert keyed on agent_id (UUID unique per agent).
+	// Agent IDs are stable tracing keys, not globally unique UUIDs. Scope the
+	// filter to the owning book so one book can never resume or overwrite another
+	// book's agent state.
 	// createInput and updateInput are both the full agent-state doc.
-	filter := map[string]any{"agent_id": state.AgentID}
+	filter := map[string]any{"_bookID": book.BookID, "agent_id": state.AgentID}
 	result, err := store.UpsertWithVersion(ctx, "AgentState", filter, doc, doc)
 	if err != nil {
 		return err
@@ -60,7 +62,7 @@ func PersistAgentState(ctx context.Context, book *BookState, state *AgentState) 
 }
 
 // PersistAgentStates idempotently upserts multiple agent state records in
-// DefraDB, each keyed on its own agent_id (UUID unique per agent). Like
+// DefraDB, each keyed on its owning book and agent ID. Like
 // PersistAgentState this is safe to re-run: existing records are updated
 // instead of colliding on DefraDB's stable docID. Upserts run with bounded
 // concurrency (mirroring PersistTocEntries) since each upsert is a
@@ -120,7 +122,7 @@ func PersistAgentStates(ctx context.Context, book *BookState, states []*AgentSta
 				"_bookID":            book.BookID,
 			}
 
-			filter := map[string]any{"agent_id": st.AgentID}
+			filter := map[string]any{"_bookID": book.BookID, "agent_id": st.AgentID}
 			res, err := store.UpsertWithVersion(ctx, "AgentState", filter, doc, doc)
 			if err != nil {
 				results <- upsertResult{index: idx, err: fmt.Errorf("agent state %d (%s): %w", idx, st.AgentID, err)}
