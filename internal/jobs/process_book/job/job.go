@@ -41,48 +41,38 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 	// Set book status to processing
 	j.PersistBookStatus(ctx, BookStatusProcessing)
 
-	// Crash recovery: if operations were started but not done, check if we can resume
-	// via saved agent state. If no saved state, fail/retry the operation.
+	// Crash recovery: an interrupted process is not a semantic stage failure.
+	// Reopen operations without incrementing their retry budgets; actual provider
+	// or result failures consume those budgets in OnComplete.
 	if j.Book.MetadataIsStarted() {
-		j.Book.MetadataFail(MaxBookOpRetries)
-		j.PersistMetadataState(ctx)
+		j.reopenInterruptedOperation(ctx, common.OpMetadata)
 	}
-	// ToC finder: check for saved agent state before failing
+	// ToC finder: prefer its saved agent state, otherwise reopen it fresh.
 	if j.Book.TocFinderIsStarted() && j.TocAgent == nil {
 		savedState := j.Book.GetAgentState(AgentTypeTocFinder, "")
 		if savedState == nil || savedState.Complete {
-			// No saved state or agent already completed - fail/retry
-			j.Book.TocFinderFail(MaxBookOpRetries)
-			j.PersistTocFinderState(ctx)
+			j.reopenInterruptedOperation(ctx, common.OpTocFinder)
 		} else if unit := j.CreateTocFinderWorkUnit(ctx); unit != nil {
 			resumeUnits = append(resumeUnits, *unit)
 		} else {
-			// A resumable agent state existed, but it could not emit work. Reset
-			// through the normal retry path so MaybeStartBookOperations can try
-			// a fresh ToC finder below instead of leaving the job stuck started.
-			j.Book.TocFinderFail(MaxBookOpRetries)
-			j.PersistTocFinderState(ctx)
+			// A saved state that cannot emit work should be replaced, but a process
+			// restart still must not spend the provider/result retry budget.
+			j.reopenInterruptedOperation(ctx, common.OpTocFinder)
 		}
 	}
 	if j.Book.TocExtractIsStarted() && j.TocAgent == nil {
-		j.Book.TocExtractFail(MaxBookOpRetries)
-		j.PersistTocExtractState(ctx)
+		j.reopenInterruptedOperation(ctx, common.OpTocExtract)
 	}
 	if err := j.reconcileTocLinkRecovery(ctx); err != nil {
 		return nil, fmt.Errorf("failed to reconcile ToC link recovery: %w", err)
 	}
-	// TocFinalize: fail/retry if started but not done. Pattern analysis results
-	// are preserved in pattern_analysis_json and will be reused on retry.
+	// Pattern analysis and structure chapter state are durable and reused after
+	// reopening these interrupted stages.
 	if j.Book.TocFinalizeIsStarted() {
-		j.Book.TocFinalizeFail(MaxBookOpRetries)
-		// Persist async - memory is authoritative during execution
-		common.PersistOpStateAsync(ctx, j.Book, common.OpTocFinalize)
+		j.reopenInterruptedOperation(ctx, common.OpTocFinalize)
 	}
-	// Structure: fail/retry if started but not done.
 	if j.Book.StructureIsStarted() {
-		j.Book.StructureFail(MaxBookOpRetries)
-		// Persist async - memory is authoritative during execution
-		common.PersistOpStateAsync(ctx, j.Book, common.OpStructure)
+		j.reopenInterruptedOperation(ctx, common.OpStructure)
 	}
 
 	// Create any missing page records in DB
@@ -135,6 +125,18 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 	}
 
 	return units, nil
+}
+
+func (j *Job) reopenInterruptedOperation(ctx context.Context, op common.OpType) {
+	before := j.Book.OpGetState(op)
+	j.Book.OpReset(op) // Reset status only; preserve real prior failure count.
+	j.Book.PersistOpStateAsync(ctx, op)
+	if logger := svcctx.LoggerFrom(ctx); logger != nil {
+		logger.Info("reopened interrupted operation after restart",
+			"book_id", j.Book.BookID,
+			"operation", op,
+			"retries", before.GetRetries())
+	}
 }
 
 // reconcileTocLinkRecovery repairs ToC link operation state after restart.

@@ -244,6 +244,44 @@ func TestStartResumesStartedTocFinderWithSavedAgentState(t *testing.T) {
 	}
 }
 
+func TestInterruptedOperationReopensWithoutConsumingRetry(t *testing.T) {
+	store := common.NewMemoryStateStore()
+	store.SetDoc("Book", "book-1", map[string]any{})
+	store.SetDoc("ToC", "toc-1", map[string]any{})
+	book := common.NewBookState("book-1")
+	book.Store = store
+	book.SetTocDocID("toc-1")
+	j := NewFromLoadResult(&common.LoadBookResult{Book: book, TocDocID: "toc-1"})
+
+	for _, op := range []common.OpType{
+		common.OpMetadata,
+		common.OpTocFinder,
+		common.OpTocExtract,
+		common.OpTocFinalize,
+		common.OpStructure,
+	} {
+		book.SetOpState(op, true, false, false, 2)
+		j.reopenInterruptedOperation(context.Background(), op)
+		state := book.OpGetState(op)
+		if !state.CanStart() || state.IsFailed() || state.GetRetries() != 2 {
+			t.Fatalf("%s recovery = canStart:%v failed:%v retries:%d, want reopened with retries preserved",
+				op, state.CanStart(), state.IsFailed(), state.GetRetries())
+		}
+	}
+
+	bookDoc := store.GetDoc("Book", "book-1")
+	if bookDoc["metadata_started"] != false || bookDoc["metadata_retries"] != 2 ||
+		bookDoc["structure_started"] != false || bookDoc["structure_retries"] != 2 {
+		t.Fatalf("persisted Book recovery state = %#v", bookDoc)
+	}
+	tocDoc := store.GetDoc("ToC", "toc-1")
+	for _, prefix := range []string{"finder", "extract", "finalize"} {
+		if tocDoc[prefix+"_started"] != false || tocDoc[prefix+"_retries"] != 2 {
+			t.Fatalf("persisted ToC %s recovery state = %#v", prefix, tocDoc)
+		}
+	}
+}
+
 func TestStartMarksNoWorkCompleteJobDone(t *testing.T) {
 	store := common.NewMemoryStateStore()
 	store.SetDoc("Book", "book-1", map[string]any{})
