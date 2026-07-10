@@ -506,6 +506,13 @@ func (a *Agent) RestoreState(state *StateExport) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	// The durable AgentID is the identity used to upsert AgentState. Keeping the
+	// fresh constructor UUID here creates a second row on every process restart
+	// even when the conversation itself restores successfully.
+	if state.AgentID != "" {
+		a.id = state.AgentID
+	}
+
 	// Restore iteration and completion state
 	a.iteration = state.Iteration
 	a.complete = state.Complete

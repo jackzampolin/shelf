@@ -222,6 +222,9 @@ func TestAgent_ExportState_RestoreState_RoundTrip(t *testing.T) {
 
 		// Verify restored state
 		agent2.mu.Lock()
+		if agent2.id != "test-agent-1" {
+			t.Errorf("restored agent ID = %s, want test-agent-1", agent2.id)
+		}
 		if agent2.iteration != 3 {
 			t.Errorf("restored iteration = %d, want 3", agent2.iteration)
 		}
