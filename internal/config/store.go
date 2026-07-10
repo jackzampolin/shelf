@@ -316,6 +316,8 @@ func StoreToProviderRegistryConfig(ctx context.Context, store Store) (providers.
 			Enabled:        getBool(fields, "enabled"),
 			BaseURLs:       resolveEnvVarsSlice(getStringSlice(fields, "base_urls")),
 			MaxConcurrency: getInt(fields, "max_concurrency"),
+			TimeoutSeconds: getInt(fields, "timeout_seconds"),
+			MaxRetries:     getInt(fields, "max_retries"),
 		}
 	}
 

@@ -279,6 +279,8 @@ func DefaultEntriesFromConfig(cfg *Config) []Entry {
 		upsert(prefix+"enabled", llm.Enabled, "Whether LLM provider is enabled")
 		upsert(prefix+"base_urls", llm.BaseURLs, "LLM provider base URLs")
 		upsert(prefix+"max_concurrency", llm.MaxConcurrency, "Maximum concurrent LLM requests")
+		upsert(prefix+"timeout_seconds", llm.TimeoutSeconds, "LLM HTTP timeout in seconds")
+		upsert(prefix+"max_retries", llm.MaxRetries, "Maximum provider-level LLM attempts")
 	}
 
 	for name, tts := range cfg.TTSProviders {

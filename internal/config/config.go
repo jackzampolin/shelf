@@ -189,6 +189,8 @@ func (c *Config) ToProviderRegistryConfig() providers.RegistryConfig {
 			Enabled:        llm.Enabled,
 			BaseURLs:       resolveEnvVarsSlice(llm.BaseURLs),
 			MaxConcurrency: llm.MaxConcurrency,
+			TimeoutSeconds: llm.TimeoutSeconds,
+			MaxRetries:     llm.MaxRetries,
 		}
 	}
 

@@ -181,6 +181,8 @@ func TestSeedDefaultsFromConfig(t *testing.T) {
 		BaseURLs:       []string{"http://spark-1:8000/v1", "http://spark-2:8000/v1"},
 		RateLimit:      200,
 		MaxConcurrency: 32,
+		TimeoutSeconds: 900,
+		MaxRetries:     1,
 		Enabled:        true,
 	}
 	cfg.Defaults.OCRProviders = []string{"chandra-local"}
@@ -207,6 +209,12 @@ func TestSeedDefaultsFromConfig(t *testing.T) {
 	}
 	if got := store.data["providers.ocr.chandra-local.max_retries"].Value; got != 1 {
 		t.Fatalf("chandra max_retries = %#v, want 1", got)
+	}
+	if got := store.data["providers.llm.qwen-local.timeout_seconds"].Value; got != 900 {
+		t.Fatalf("qwen timeout_seconds = %#v, want 900", got)
+	}
+	if got := store.data["providers.llm.qwen-local.max_retries"].Value; got != 1 {
+		t.Fatalf("qwen max_retries = %#v, want 1", got)
 	}
 }
 

@@ -46,6 +46,8 @@ type LLMProviderConfig struct {
 	Enabled        bool
 	BaseURLs       []string // Optional self-hosted endpoints
 	MaxConcurrency int      // Max concurrent in-flight requests (0 = provider default)
+	TimeoutSeconds int      // HTTP timeout in seconds (0 = provider default)
+	MaxRetries     int      // Provider attempts per request (0 = provider default)
 }
 
 // TTSProviderConfig matches config.TTSProviderCfg with resolved API key.
@@ -224,12 +226,15 @@ func (r *Registry) applyConfig(cfg RegistryConfig) {
 
 // createLLMClient creates an LLM client based on provider type.
 func createLLMClient(cfg LLMProviderConfig) LLMClient {
+	timeout := time.Duration(cfg.TimeoutSeconds) * time.Second
 	switch cfg.Type {
 	case "openrouter":
 		orc := OpenRouterConfig{
 			APIKey:       cfg.APIKey,
 			DefaultModel: cfg.Model,
 			RPS:          cfg.RateLimit, // Pass RPS from config
+			Timeout:      timeout,
+			MaxRetries:   cfg.MaxRetries,
 		}
 		if len(cfg.BaseURLs) > 0 {
 			orc.BaseURL = cfg.BaseURLs[0]
@@ -243,6 +248,8 @@ func createLLMClient(cfg LLMProviderConfig) LLMClient {
 			DefaultModel:   cfg.Model,
 			RPS:            cfg.RateLimit,
 			MaxConcurrency: cfg.MaxConcurrency,
+			Timeout:        timeout,
+			MaxRetries:     cfg.MaxRetries,
 		})
 	default:
 		return nil

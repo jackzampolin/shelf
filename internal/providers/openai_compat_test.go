@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // chatCompletionStub returns a minimal OpenAI-compatible chat completion response
@@ -212,6 +213,23 @@ func TestOpenAICompat_MaxConcurrencyConfigurable(t *testing.T) {
 	or := NewOpenRouterClient(OpenRouterConfig{APIKey: "k"})
 	if or.MaxConcurrency() != 0 {
 		t.Fatalf("openrouter MaxConcurrency = %d, want 0", or.MaxConcurrency())
+	}
+}
+
+func TestOpenAICompat_LLMRetryBudgetConfigurable(t *testing.T) {
+	llm := createLLMClient(LLMProviderConfig{
+		Type: "openai-compat", BaseURLs: []string{"http://x:8000/v1"},
+		TimeoutSeconds: 900, MaxRetries: 1,
+	})
+	client, ok := llm.(*OpenAIChatClient)
+	if !ok {
+		t.Fatalf("client type = %T", llm)
+	}
+	if got := client.MaxRetries(); got != 1 {
+		t.Fatalf("MaxRetries = %d, want 1", got)
+	}
+	if got := client.client.Timeout; got != 900*time.Second {
+		t.Fatalf("HTTP timeout = %s, want 15m", got)
 	}
 }
 

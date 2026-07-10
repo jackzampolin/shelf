@@ -36,6 +36,8 @@ type LLMProviderCfg struct {
 	Enabled        bool     `mapstructure:"enabled" yaml:"enabled"`
 	BaseURLs       []string `mapstructure:"base_urls" yaml:"base_urls"`             // Optional self-hosted endpoints (supports ${ENV_VAR})
 	MaxConcurrency int      `mapstructure:"max_concurrency" yaml:"max_concurrency"` // Max concurrent in-flight requests (0 = provider default)
+	TimeoutSeconds int      `mapstructure:"timeout_seconds" yaml:"timeout_seconds"` // HTTP timeout in seconds (0 = provider default)
+	MaxRetries     int      `mapstructure:"max_retries" yaml:"max_retries"`         // Provider attempts per request (0 = provider default)
 }
 
 // TTSProviderCfg configures a TTS provider.
@@ -88,11 +90,13 @@ func DefaultConfig() *Config {
 		},
 		LLMProviders: map[string]LLMProviderCfg{
 			"openrouter": {
-				Type:      "openrouter",
-				Model:     "anthropic/claude-opus-4.6",
-				APIKey:    "${OPENROUTER_API_KEY}",
-				RateLimit: 150.0, // 150 RPS
-				Enabled:   true,
+				Type:           "openrouter",
+				Model:          "anthropic/claude-opus-4.6",
+				APIKey:         "${OPENROUTER_API_KEY}",
+				RateLimit:      150.0, // 150 RPS
+				TimeoutSeconds: 500,
+				MaxRetries:     7,
+				Enabled:        true,
 			},
 		},
 		TTSProviders: map[string]TTSProviderCfg{

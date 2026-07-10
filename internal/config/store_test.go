@@ -224,6 +224,8 @@ func TestStoreToProviderRegistryConfig_ResolvesBaseURLs(t *testing.T) {
 				map[string]any{"name": "providers.llm.local.type", "value": `"openrouter"`},
 				map[string]any{"name": "providers.llm.local.enabled", "value": `true`},
 				map[string]any{"name": "providers.llm.local.base_urls", "value": `["${SPARK1}","http://100.86.62.91:8000/v1"]`},
+				map[string]any{"name": "providers.llm.local.timeout_seconds", "value": `900`},
+				map[string]any{"name": "providers.llm.local.max_retries", "value": `1`},
 			},
 		}
 	})
@@ -242,6 +244,12 @@ func TestStoreToProviderRegistryConfig_ResolvesBaseURLs(t *testing.T) {
 	llmURLs := cfg.LLMProviders["local"].BaseURLs
 	if len(llmURLs) != 2 || llmURLs[0] != "http://100.74.68.88:8000/v1" || llmURLs[1] != "http://100.86.62.91:8000/v1" {
 		t.Fatalf("LLM BaseURLs = %v, want resolved spark URLs", llmURLs)
+	}
+	if got := cfg.LLMProviders["local"].TimeoutSeconds; got != 900 {
+		t.Fatalf("LLM TimeoutSeconds = %d, want 900", got)
+	}
+	if got := cfg.LLMProviders["local"].MaxRetries; got != 1 {
+		t.Fatalf("LLM MaxRetries = %d, want 1", got)
 	}
 }
 

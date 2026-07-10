@@ -356,10 +356,12 @@ func TestToProviderRegistryConfig_ResolvesBaseURLs(t *testing.T) {
 	c := &Config{
 		LLMProviders: map[string]LLMProviderCfg{
 			"local-llm": {
-				Type:     "openai-compat",
-				Model:    "nvidia/Qwen3.6-35B-A3B-NVFP4",
-				BaseURLs: []string{"${SPARK1}", "${SPARK_MISSING}", "http://100.86.62.91:8000/v1"},
-				Enabled:  true,
+				Type:           "openai-compat",
+				Model:          "nvidia/Qwen3.6-35B-A3B-NVFP4",
+				BaseURLs:       []string{"${SPARK1}", "${SPARK_MISSING}", "http://100.86.62.91:8000/v1"},
+				TimeoutSeconds: 900,
+				MaxRetries:     1,
+				Enabled:        true,
 			},
 		},
 		OCRProviders: map[string]OCRProviderCfg{
@@ -372,6 +374,12 @@ func TestToProviderRegistryConfig_ResolvesBaseURLs(t *testing.T) {
 	llm := rc.LLMProviders["local-llm"].BaseURLs
 	if len(llm) != 2 || llm[0] != "http://100.74.68.88:8000/v1" || llm[1] != "http://100.86.62.91:8000/v1" {
 		t.Fatalf("LLM BaseURLs = %v, want resolved spark URLs", llm)
+	}
+	if got := rc.LLMProviders["local-llm"].TimeoutSeconds; got != 900 {
+		t.Fatalf("LLM TimeoutSeconds = %d, want 900", got)
+	}
+	if got := rc.LLMProviders["local-llm"].MaxRetries; got != 1 {
+		t.Fatalf("LLM MaxRetries = %d, want 1", got)
 	}
 	ocr := rc.OCRProviders["local-ocr"].BaseURLs
 	if len(ocr) != 1 || ocr[0] != "http://100.74.68.88:8000/v1" {
