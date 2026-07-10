@@ -221,6 +221,19 @@ func TestClient_Create(t *testing.T) {
 	}
 }
 
+func TestClient_DeleteIsIdempotentForTombstone(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"errors":[{"message":"a document with the given ID has been deleted. DocID: bae-old"}]}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL)
+	if err := client.Delete(context.Background(), "AgentState", "bae-old"); err != nil {
+		t.Fatalf("Delete tombstone: %v", err)
+	}
+}
+
 func TestClient_URLNormalization(t *testing.T) {
 	// URL with trailing slash should be normalized
 	client := NewClient("http://localhost:9181/")

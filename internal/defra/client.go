@@ -288,6 +288,12 @@ func (c *Client) Delete(ctx context.Context, collection string, docID string) er
 		return err
 	}
 	if errMsg := resp.Error(); errMsg != "" {
+		// DefraDB retains tombstones in some filtered query results. Cleanup and
+		// reset operations are intentionally idempotent, so deleting a document
+		// whose tombstone says it was already deleted is success.
+		if strings.Contains(strings.ToLower(errMsg), "has been deleted") {
+			return nil
+		}
 		return fmt.Errorf("delete error: %s", errMsg)
 	}
 	return nil
