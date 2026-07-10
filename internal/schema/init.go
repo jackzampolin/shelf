@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 
 	"github.com/jackzampolin/shelf/internal/defra"
@@ -88,9 +89,14 @@ func ensureAdditiveFields(ctx context.Context, client *defra.Client, logger *slo
 	type patchOperation struct {
 		Op    string `json:"op"`
 		Path  string `json:"path"`
-		Value any    `json:"value"`
+		Value any    `json:"value,omitempty"`
 	}
-	operations := make([]patchOperation, 0, len(requiredAdditiveFields))
+	type malformedField struct {
+		Required additiveField
+		Index    int
+	}
+	var malformed []malformedField
+	var additions []patchOperation
 	var added []string
 	for _, required := range requiredAdditiveFields {
 		fields, collectionExists := existing[required.Collection]
@@ -99,16 +105,12 @@ func ensureAdditiveFields(ctx context.Context, client *defra.Client, logger *slo
 		}
 		if field, fieldExists := fields[required.Name]; fieldExists {
 			if field.Typ != required.Typ {
-				operations = append(operations, patchOperation{
-					Op:    "replace",
-					Path:  fmt.Sprintf("/%s/Fields/%d/Typ", required.Collection, field.Index),
-					Value: required.Typ,
-				})
+				malformed = append(malformed, malformedField{Required: required, Index: field.Index})
 				added = append(added, required.Collection+"."+required.Name+".Typ")
 			}
 			continue
 		}
-		operations = append(operations, patchOperation{
+		additions = append(additions, patchOperation{
 			Op:   "add",
 			Path: "/" + required.Collection + "/Fields/-",
 			Value: patchValue{
@@ -119,6 +121,36 @@ func ensureAdditiveFields(ctx context.Context, client *defra.Client, logger *slo
 		})
 		added = append(added, required.Collection+"."+required.Name)
 	}
+
+	// DefraDB rejects in-place field mutations. A Typ=0 additive field cannot
+	// have stored values, so repair it by removing the malformed definition and
+	// adding it back with the scalar CRDT type. Remove descending indexes first
+	// so earlier removals do not shift later JSON Patch paths.
+	sort.Slice(malformed, func(i, j int) bool {
+		if malformed[i].Required.Collection == malformed[j].Required.Collection {
+			return malformed[i].Index > malformed[j].Index
+		}
+		return malformed[i].Required.Collection < malformed[j].Required.Collection
+	})
+	operations := make([]patchOperation, 0, len(malformed)*2+len(additions))
+	for _, field := range malformed {
+		operations = append(operations, patchOperation{
+			Op:   "remove",
+			Path: fmt.Sprintf("/%s/Fields/%d", field.Required.Collection, field.Index),
+		})
+	}
+	for _, field := range malformed {
+		operations = append(operations, patchOperation{
+			Op:   "add",
+			Path: "/" + field.Required.Collection + "/Fields/-",
+			Value: patchValue{
+				Name: field.Required.Name,
+				Kind: field.Required.Kind,
+				Typ:  field.Required.Typ,
+			},
+		})
+	}
+	operations = append(operations, additions...)
 	if len(operations) == 0 {
 		return nil
 	}

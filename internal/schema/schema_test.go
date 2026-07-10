@@ -149,7 +149,7 @@ func TestInitialize(t *testing.T) {
 		if err := Initialize(context.Background(), defra.NewClient(server.URL), slog.Default()); err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(patchBody, `replace`) || !strings.Contains(patchBody, `/Page/Fields/0/Typ`) || !strings.Contains(patchBody, `/Page/Fields/1/Typ`) {
+		if !strings.Contains(patchBody, `remove`) || !strings.Contains(patchBody, `/Page/Fields/1`) || !strings.Contains(patchBody, `/Page/Fields/0`) || !strings.Contains(patchBody, `\"Typ\":1`) {
 			t.Fatalf("missing CRDT type repair operations: %s", patchBody)
 		}
 	})
