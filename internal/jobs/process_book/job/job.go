@@ -340,6 +340,21 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 					return []jobs.WorkUnit{*retryUnit}, nil
 				}
 			}
+			// Never turn an exhausted infrastructure failure into a successful blank
+			// page. The provider circuit already parks transient outages for automatic
+			// replay. If that recovery window and the page retries are both exhausted,
+			// fail the job visibly while leaving this page incomplete. A normal
+			// process-book retry can then resume only the incomplete durable work.
+			if jobs.IsRetriableError(result.Error) {
+				if logger != nil {
+					logger.Error("OCR infrastructure failure after retries; failing book without resolving page",
+						"page_num", info.PageNum,
+						"provider", info.Provider,
+						"retry_count", info.RetryCount,
+						"error", result.Error)
+				}
+				break
+			}
 			// Retries exhausted: skip this (likely pathological) page rather than
 			// failing the whole book. The page is recorded resolved with no text,
 			// like a blank page, so it is not re-emitted and downstream stages run.

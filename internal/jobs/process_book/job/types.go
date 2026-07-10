@@ -57,8 +57,9 @@ const MaxPageOpRetries = 10
 // units after the provider worker has already applied its HTTP retry policy.
 // Self-hosted inference endpoints drop connections and time out under load, so a
 // few job-level retries (each re-reading the image and round-robining to a
-// healthy endpoint) absorb transient failures. A page that still fails after
-// these retries is skipped rather than failing the whole book.
+// healthy endpoint) absorb transient failures. If infrastructure retries remain
+// exhausted, the job fails visibly and a durable retry re-emits the incomplete
+// page. Only deterministic page-content failures are skipped after this limit.
 const MaxOCRPageRetries = 3
 
 // WorkUnitType constants for type-safe work unit handling.

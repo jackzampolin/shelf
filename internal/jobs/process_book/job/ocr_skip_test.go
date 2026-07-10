@@ -3,8 +3,10 @@ package job
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 
+	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
 )
@@ -23,11 +25,10 @@ func newOcrSkipJob() (*Job, *common.BookState) {
 	return NewFromLoadResult(&common.LoadBookResult{Book: book}), book
 }
 
-// A pathological page that exhausts its OCR retries must be skipped (recorded as
-// resolved with no text, like a blank page) so the rest of the book still
-// processes. It must NOT return a fatal error, which the scheduler treats as
-// "kill the whole book".
-func TestOnCompleteOcrFailureAfterRetriesSkipsPageAndContinues(t *testing.T) {
+// An exhausted infrastructure failure must fail visibly without resolving the
+// page. Persisting it as a blank page silently corrupts the book and prevents a
+// durable retry from re-emitting the failed page.
+func TestOnCompleteOcrInfrastructureFailureAfterRetriesFailsWithoutResolvingPage(t *testing.T) {
 	j, book := newOcrSkipJob()
 
 	const unitID = "wu-ocr-12"
@@ -44,19 +45,121 @@ func TestOnCompleteOcrFailureAfterRetriesSkipsPageAndContinues(t *testing.T) {
 		Error:      fmt.Errorf("context deadline exceeded"),
 	})
 
-	if err != nil {
-		t.Fatalf("OnComplete returned a fatal error for a page that exhausted OCR retries; want nil so the book continues: %v", err)
+	if err == nil {
+		t.Fatal("OnComplete error = nil, want infrastructure failure to fail the job visibly")
 	}
 	if len(units) != 0 {
-		t.Fatalf("expected no new work units after giving up on the page, got %d", len(units))
+		t.Fatalf("expected no new work units after fatal infrastructure failure, got %d", len(units))
 	}
 
 	page := book.GetPage(12)
-	if page == nil || !page.OcrComplete("chandra-local") {
-		t.Fatal("page 12 should be marked OCR-resolved after giving up, so the book is not blocked on it")
+	if page == nil {
+		t.Fatal("page 12 is missing")
+	}
+	if page.OcrComplete("chandra-local") {
+		t.Fatal("page 12 must remain incomplete so a durable retry re-emits it")
 	}
 	if _, ok := j.GetWorkUnit(unitID); ok {
-		t.Fatal("failed OCR work unit should be removed after giving up on it")
+		t.Fatal("failed OCR work unit should be removed when the job fails")
+	}
+}
+
+func TestStartAfterOcrInfrastructureFailureReemitsOnlyIncompletePage(t *testing.T) {
+	store := common.NewMemoryStateStore()
+	store.SetDoc("Book", "book-1", map[string]any{})
+
+	homeDir, err := home.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := homeDir.EnsureSourceImagesDir("book-1"); err != nil {
+		t.Fatal(err)
+	}
+	for pageNum := 1; pageNum <= 2; pageNum++ {
+		if err := os.WriteFile(homeDir.SourceImagePath("book-1", pageNum), []byte("png"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	book := common.NewBookState("book-1")
+	book.Store = store
+	book.HomeDir = homeDir
+	book.EnableOCR = true
+	book.OcrProviders = []string{"chandra-local"}
+	book.TotalPages = 2
+
+	complete := book.GetOrCreatePage(1)
+	complete.SetPageDocID("page-1")
+	complete.SetExtractDone(true)
+	complete.MarkOcrComplete("chandra-local", "good OCR")
+	incomplete := book.GetOrCreatePage(2)
+	incomplete.SetPageDocID("page-2")
+	incomplete.SetExtractDone(true)
+
+	failedJob := NewFromLoadResult(&common.LoadBookResult{Book: book})
+	const unitID = "wu-ocr-infra-page-2"
+	failedJob.RegisterWorkUnit(unitID, WorkUnitInfo{
+		UnitType:   WorkUnitTypeOCR,
+		PageNum:    2,
+		Provider:   "chandra-local",
+		RetryCount: MaxOCRPageRetries,
+	})
+	if _, err := failedJob.OnComplete(context.Background(), jobs.WorkResult{
+		WorkUnitID: unitID,
+		Success:    false,
+		Error:      fmt.Errorf("Client.Timeout exceeded while awaiting headers"),
+	}); err == nil {
+		t.Fatal("infrastructure exhaustion should fail the first job")
+	}
+
+	resumedJob := NewFromLoadResult(&common.LoadBookResult{Book: book})
+	units, err := resumedJob.Start(context.Background())
+	if err != nil {
+		t.Fatalf("Start after infrastructure failure: %v", err)
+	}
+	if len(units) != 1 {
+		t.Fatalf("Start emitted %d work units, want only the incomplete page", len(units))
+	}
+	info, ok := resumedJob.GetWorkUnit(units[0].ID)
+	if !ok {
+		t.Fatal("resumed OCR unit was not registered")
+	}
+	if info.UnitType != WorkUnitTypeOCR || info.PageNum != 2 || info.Provider != "chandra-local" {
+		t.Fatalf("resumed work = %#v, want OCR for page 2 via chandra-local", info)
+	}
+}
+
+// A deterministic page-content failure may still be skipped after retries. It
+// is unlikely to recover when replayed, and must not prevent the other pages in
+// a large book from completing.
+func TestOnCompleteOcrDeterministicFailureAfterRetriesSkipsPageAndContinues(t *testing.T) {
+	j, book := newOcrSkipJob()
+
+	const unitID = "wu-ocr-pathological-12"
+	j.RegisterWorkUnit(unitID, WorkUnitInfo{
+		UnitType:   WorkUnitTypeOCR,
+		PageNum:    12,
+		Provider:   "chandra-local",
+		RetryCount: MaxOCRPageRetries,
+	})
+
+	units, err := j.OnComplete(context.Background(), jobs.WorkResult{
+		WorkUnitID: unitID,
+		Success:    false,
+		Error:      fmt.Errorf("OCR failed: invalid image content"),
+	})
+
+	if err != nil {
+		t.Fatalf("OnComplete returned a fatal error for deterministic page failure; want skip: %v", err)
+	}
+	if len(units) != 0 {
+		t.Fatalf("expected no new work units after skipping the page, got %d", len(units))
+	}
+	if page := book.GetPage(12); page == nil || !page.OcrComplete("chandra-local") {
+		t.Fatal("deterministically failing page should be marked OCR-resolved after retries")
+	}
+	if _, ok := j.GetWorkUnit(unitID); ok {
+		t.Fatal("failed OCR work unit should be removed after skipping the page")
 	}
 }
 
@@ -145,7 +248,7 @@ func TestOnCompleteOcrSkipTriggersDownstreamBookOperations(t *testing.T) {
 	units, err := j.OnComplete(context.Background(), jobs.WorkResult{
 		WorkUnitID: unitID,
 		Success:    false,
-		Error:      fmt.Errorf("context deadline exceeded"),
+		Error:      fmt.Errorf("OCR failed: invalid image content"),
 	})
 	if err != nil {
 		t.Fatalf("OnComplete returned a fatal error skipping the page: %v", err)
