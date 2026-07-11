@@ -294,6 +294,33 @@ func TestScheduler_RegisterFactory(t *testing.T) {
 	// No direct way to verify registration, but it shouldn't panic
 }
 
+type durableMetadataJob struct {
+	*CountingJob
+}
+
+func (j *durableMetadataJob) JobMetadata() map[string]any {
+	return map[string]any{
+		"variant": "ocr-only",
+		"book_id": "wrong-book",
+	}
+}
+
+func (j *durableMetadataJob) MetricsFor() *WorkUnitMetrics {
+	return &WorkUnitMetrics{BookID: "book-1"}
+}
+
+func TestSubmissionMetadataPreservesJobInputs(t *testing.T) {
+	job := &durableMetadataJob{CountingJob: NewCountingJob(1)}
+	metadata := submissionMetadata(job)
+
+	if got := metadata["variant"]; got != "ocr-only" {
+		t.Fatalf("variant = %v, want ocr-only", got)
+	}
+	if got := metadata["book_id"]; got != "book-1" {
+		t.Fatalf("book_id = %v, want authoritative metrics book-1", got)
+	}
+}
+
 // TestScheduler_GetPool tests pool lookup.
 func TestScheduler_GetPool(t *testing.T) {
 	scheduler := NewScheduler(SchedulerConfig{})

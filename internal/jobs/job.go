@@ -198,6 +198,13 @@ type BookIDProvider interface {
 	BookID() string
 }
 
+// JobMetadataProvider is implemented by jobs that need additional durable
+// metadata to reconstruct the same execution plan after a process restart.
+// Values are persisted with the Job record and passed back to its factory.
+type JobMetadataProvider interface {
+	JobMetadata() map[string]any
+}
+
 // BookFailer is an optional interface for jobs that can mark their book
 // terminally failed with a reason. The scheduler calls this when a job dies so
 // the book does not remain stuck in "processing".

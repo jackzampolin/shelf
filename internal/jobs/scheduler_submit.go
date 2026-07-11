@@ -64,13 +64,7 @@ func retryTransientOperation[T any](ctx context.Context, logger *slog.Logger, op
 // Creates a persistent record in DefraDB via Manager.
 // The job.Start() call runs asynchronously so the HTTP request returns immediately.
 func (s *Scheduler) Submit(ctx context.Context, job Job) error {
-	// Only store minimal metadata needed for job resumption.
-	// Full status is available via job.Status() on the live job.
-	metricsFor := job.MetricsFor()
-	metadataMap := make(map[string]any)
-	if metricsFor != nil && metricsFor.BookID != "" {
-		metadataMap["book_id"] = metricsFor.BookID
-	}
+	metadataMap := submissionMetadata(job)
 
 	record := NewRecord(job.Type(), metadataMap)
 	bookSeq := record.CreatedAt.UnixNano()
@@ -115,6 +109,23 @@ func (s *Scheduler) Submit(ctx context.Context, job Job) error {
 	go s.startJobAsync(job)
 
 	return nil
+}
+
+func submissionMetadata(job Job) map[string]any {
+	// Store only metadata needed to reconstruct the same job after a restart.
+	// Full status remains available via job.Status() on the live job.
+	metadataMap := make(map[string]any)
+	if provider, ok := job.(JobMetadataProvider); ok {
+		for key, value := range provider.JobMetadata() {
+			metadataMap[key] = value
+		}
+	}
+	metricsFor := job.MetricsFor()
+	if metricsFor != nil && metricsFor.BookID != "" {
+		// Metrics attribution is authoritative for the durable book identity.
+		metadataMap["book_id"] = metricsFor.BookID
+	}
+	return metadataMap
 }
 
 // startJobAsync runs job.Start() in a background goroutine.

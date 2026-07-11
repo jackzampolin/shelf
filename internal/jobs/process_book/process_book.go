@@ -23,6 +23,10 @@ const (
 
 // Config configures the process pages job.
 type Config struct {
+	// Variant identifies the durable execution plan. It is persisted with the
+	// job so a resumed job cannot silently expand into the standard pipeline.
+	Variant PipelineVariant
+
 	// Provider settings
 	OcrProviders     []string
 	MetadataProvider string
@@ -76,6 +80,11 @@ func (v PipelineVariant) IsValid() bool {
 // ApplyVariant applies predefined settings for a pipeline variant.
 // This sets the Enable* flags appropriately for the variant.
 func (c *Config) ApplyVariant(variant PipelineVariant) {
+	if !variant.IsValid() {
+		variant = VariantStandard
+	}
+	c.Variant = variant
+
 	switch variant {
 	case VariantPhotoBook:
 		// Photo books: OCR + metadata only, no ToC or structure
@@ -317,5 +326,7 @@ func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
 			"ocr_providers", cfg.OcrProviders)
 	}
 
-	return pjob.NewFromLoadResult(result), nil
+	job := pjob.NewFromLoadResult(result)
+	job.PipelineVariant = string(cfg.Variant)
+	return job, nil
 }

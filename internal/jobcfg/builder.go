@@ -197,14 +197,48 @@ func toInt(v any, key string) (int, error) {
 
 // ProcessBookJobFactory returns a JobFactory that reads config from the store.
 func ProcessBookJobFactory(store config.Store) jobs.JobFactory {
-	return common.MakeJobFactory(func(ctx context.Context, bookID string) (jobs.Job, error) {
+	return func(ctx context.Context, id string, metadata map[string]any) (jobs.Job, error) {
+		bookID, ok := metadata["book_id"].(string)
+		if !ok || bookID == "" {
+			return nil, fmt.Errorf("missing book_id in job metadata")
+		}
+
 		builder := NewBuilder(store)
 		cfg, err := builder.ProcessBookConfig(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to build config: %w", err)
 		}
-		return process_book.NewJob(ctx, cfg, bookID)
-	})
+		if err := applyProcessBookResumeMetadata(&cfg, metadata); err != nil {
+			return nil, err
+		}
+
+		job, err := process_book.NewJob(ctx, cfg, bookID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create job: %w", err)
+		}
+		job.SetRecordID(id)
+		return job, nil
+	}
+}
+
+func applyProcessBookResumeMetadata(cfg *process_book.Config, metadata map[string]any) error {
+	value, exists := metadata["variant"]
+	if !exists {
+		// Legacy records predate durable variants and always represented the
+		// standard pipeline.
+		cfg.ApplyVariant(process_book.VariantStandard)
+		return nil
+	}
+	variantString, ok := value.(string)
+	if !ok || variantString == "" {
+		return fmt.Errorf("invalid process-book variant in job metadata: %v", value)
+	}
+	variant := process_book.PipelineVariant(variantString)
+	if !variant.IsValid() {
+		return fmt.Errorf("invalid process-book variant in job metadata: %q", variantString)
+	}
+	cfg.ApplyVariant(variant)
+	return nil
 }
 
 // TTSConfig builds a tts_generate.Config from the store.

@@ -138,6 +138,10 @@ type PDFInfo = common.PDFInfo
 type Job struct {
 	common.TrackedBaseJob[WorkUnitInfo]
 
+	// PipelineVariant is the execution plan selected when this job was
+	// submitted. It is durable job metadata, not mutable processing state.
+	PipelineVariant string
+
 	// noWorkFailure records a synchronous phase-transition failure. Some book
 	// phases do their setup inline after the preceding unit completes; if setup
 	// cannot emit downstream work, the scheduler needs the stage-specific reason
@@ -184,6 +188,15 @@ func (j *Job) Type() string {
 // MetricsFor returns base metrics attribution for this job.
 func (j *Job) MetricsFor() *jobs.WorkUnitMetrics {
 	return j.BaseJob.MetricsFor(j.Type())
+}
+
+// JobMetadata returns the durable inputs needed to reconstruct this job after
+// a Shelf restart.
+func (j *Job) JobMetadata() map[string]any {
+	if j.PipelineVariant == "" {
+		return nil
+	}
+	return map[string]any{"variant": j.PipelineVariant}
 }
 
 // CountOcrPages returns the number of pages that have completed OCR.
