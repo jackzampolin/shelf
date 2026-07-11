@@ -298,6 +298,27 @@ func TestBackMatterContextUsesPatternAnalysisAndTocSequence(t *testing.T) {
 	}
 }
 
+func TestUnsafePatternExclusionsCannotMoveBackMatterIntoBody(t *testing.T) {
+	pattern := &common.FinalizePatternResult{
+		Excluded: []common.ExcludedRange{
+			{StartPage: 8, EndPage: 413, Reason: "Prefaces and Abbreviations at the front matter"},
+			{StartPage: 16, EndPage: 413, Reason: "Contents/Table of Contents page"},
+			{StartPage: 23, EndPage: 411, Reason: "Main text ends at p409, Appendix starts p412"},
+			{StartPage: 412, EndPage: 413, Reason: "Appendix section"},
+			{StartPage: 414, EndPage: 491, Reason: "Notes and Bibliography section"},
+			{StartPage: 492, EndPage: 503, Reason: "Index section"},
+		},
+	}
+
+	sanitized := sanitizeExcludedRanges(503, pattern.Excluded)
+	if len(sanitized) != 3 {
+		t.Fatalf("sanitizeExcludedRanges retained %d ranges, want 3: %#v", len(sanitized), sanitized)
+	}
+	if got := deriveBackMatterStart(503, pattern); got != 412 {
+		t.Fatalf("deriveBackMatterStart = %d, want 412", got)
+	}
+}
+
 func TestCreateLinkTocWorkUnitsCapsActiveEntries(t *testing.T) {
 	entries := make([]*toc_entry_finder.TocEntry, maxConcurrentLinkTocEntries+3)
 	for i := range entries {

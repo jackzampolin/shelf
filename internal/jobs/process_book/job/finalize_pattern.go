@@ -193,13 +193,24 @@ func (j *Job) processFinalizePatternResult(ctx context.Context, result jobs.Work
 		})
 	}
 
-	// Convert excluded ranges
+	// Convert model-produced exclusions, then enforce deterministic safety
+	// boundaries before they can suppress discovery or influence link prompts.
+	var proposedExcluded []common.ExcludedRange
 	for _, e := range response.ExcludedRanges {
-		patternResult.Excluded = append(patternResult.Excluded, common.ExcludedRange{
+		proposedExcluded = append(proposedExcluded, common.ExcludedRange{
 			StartPage: e.StartPage,
 			EndPage:   e.EndPage,
 			Reason:    e.Reason,
 		})
+	}
+	patternResult.Excluded = sanitizeExcludedRanges(j.Book.TotalPages, proposedExcluded)
+	if len(patternResult.Excluded) != len(proposedExcluded) {
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Warn("discarded unsafe pattern exclusions",
+				"book_id", j.Book.BookID,
+				"received", len(proposedExcluded),
+				"accepted", len(patternResult.Excluded))
+		}
 	}
 
 	// Store in BookState atomically

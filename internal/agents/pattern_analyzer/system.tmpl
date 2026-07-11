@@ -64,6 +64,10 @@ Page ranges to skip during discovery. Always exclude:
 - Acknowledgments section
 - Photo/Image sections (if clearly separate from text)
 
+Do not exclude front matter or main-text ranges. Exclusions are only for late
+material that begins in the latter half of the scan; the application rejects
+earlier ranges even when their explanation mentions a later appendix or index.
+
 **IMPORTANT: start_page and end_page must be ACTUAL scan page numbers (integers), not 0**
 - Look at ToC entries to find the actual_page for each back matter section
 - If ToC shows "Notes" linked to page 379, use start_page: 379

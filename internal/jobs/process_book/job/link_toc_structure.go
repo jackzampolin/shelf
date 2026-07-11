@@ -94,16 +94,7 @@ func (j *Job) loadTocEntriesForStructure(ctx context.Context) []*toc_entry_finde
 func deriveBackMatterStart(totalPages int, pattern *common.FinalizePatternResult) int {
 	if pattern != nil {
 		start := 0
-		for _, excluded := range pattern.Excluded {
-			if excluded.StartPage < 1 {
-				continue
-			}
-			if totalPages > 0 && excluded.StartPage > totalPages {
-				continue
-			}
-			if !excludedRangeLooksBackMatter(excluded, totalPages) {
-				continue
-			}
+		for _, excluded := range sanitizeExcludedRanges(totalPages, pattern.Excluded) {
 			if start == 0 || excluded.StartPage < start {
 				start = excluded.StartPage
 			}
@@ -121,16 +112,6 @@ func deriveBackMatterStart(totalPages int, pattern *common.FinalizePatternResult
 		return 1
 	}
 	return start
-}
-
-func excludedRangeLooksBackMatter(excluded common.ExcludedRange, totalPages int) bool {
-	if _, ok := backMatterLabelFromText(excluded.Reason); ok {
-		return true
-	}
-	if totalPages <= 0 {
-		return false
-	}
-	return excluded.StartPage >= int(float64(totalPages)*0.85)
 }
 
 func deriveBackMatterTypes(pattern *common.FinalizePatternResult, entries []*toc_entry_finder.TocEntry) string {
@@ -204,6 +185,8 @@ func backMatterLabelFromText(text string) (string, bool) {
 		return "references", true
 	case strings.Contains(lower, "index"):
 		return "index", true
+	case strings.Contains(lower, "photo") || strings.Contains(lower, "illustration") || strings.Contains(lower, "image section"):
+		return "photo/image sections", true
 	case strings.Contains(lower, "back matter"):
 		return "back matter", true
 	default:

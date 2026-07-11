@@ -78,9 +78,16 @@ func (j *Job) loadExistingPatternResults(ctx context.Context) bool {
 		return false
 	}
 
+	sanitizedExcluded := sanitizeExcludedRanges(j.Book.TotalPages, data.Excluded)
+	if len(sanitizedExcluded) != len(data.Excluded) && logger != nil {
+		logger.Warn("discarded unsafe persisted pattern exclusions",
+			"book_id", j.Book.BookID,
+			"received", len(data.Excluded),
+			"accepted", len(sanitizedExcluded))
+	}
 	j.Book.SetFinalizePatternResult(&common.FinalizePatternResult{
 		Patterns:  data.Patterns,
-		Excluded:  data.Excluded,
+		Excluded:  sanitizedExcluded,
 		Reasoning: data.Reasoning,
 	})
 	j.Book.SetEntriesToFind(data.EntriesToFind)
@@ -93,6 +100,28 @@ func (j *Job) loadExistingPatternResults(ctx context.Context) bool {
 	}
 
 	return true
+}
+
+// sanitizeExcludedRanges treats model-produced exclusion ranges as untrusted
+// control data. Discovery only needs late/back-matter exclusions; accepting an
+// early or unlabeled range can suppress chapter discovery across most of a
+// book. Front matter is already outside the derived body range.
+func sanitizeExcludedRanges(totalPages int, ranges []common.ExcludedRange) []common.ExcludedRange {
+	if totalPages <= 0 {
+		return nil
+	}
+	lateFloor := (totalPages + 1) / 2
+	result := make([]common.ExcludedRange, 0, len(ranges))
+	for _, excluded := range ranges {
+		if excluded.StartPage < lateFloor || excluded.StartPage > excluded.EndPage || excluded.EndPage > totalPages {
+			continue
+		}
+		if _, ok := backMatterLabelFromText(excluded.Reason); !ok {
+			continue
+		}
+		result = append(result, excluded)
+	}
+	return result
 }
 
 // Helper functions
