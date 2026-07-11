@@ -66,10 +66,9 @@ func (j *Job) loadExistingPatternResults(ctx context.Context) bool {
 	}
 
 	var data struct {
-		Patterns      []common.DiscoveredPattern `json:"patterns"`
-		Excluded      []common.ExcludedRange     `json:"excluded_ranges"`
-		EntriesToFind []*common.EntryToFind      `json:"entries_to_find"`
-		Reasoning     string                     `json:"reasoning"`
+		Patterns  []common.DiscoveredPattern `json:"patterns"`
+		Excluded  []common.ExcludedRange     `json:"excluded_ranges"`
+		Reasoning string                     `json:"reasoning"`
 	}
 	if err := json.Unmarshal([]byte(paJSON), &data); err != nil {
 		if logger != nil {
@@ -78,7 +77,14 @@ func (j *Job) loadExistingPatternResults(ctx context.Context) bool {
 		return false
 	}
 
+	sanitizedPatterns := sanitizeDiscoveredPatterns(data.Patterns)
 	sanitizedExcluded := sanitizeExcludedRanges(j.Book.TotalPages, data.Excluded)
+	if len(sanitizedPatterns) != len(data.Patterns) && logger != nil {
+		logger.Warn("discarded malformed persisted discovered patterns",
+			"book_id", j.Book.BookID,
+			"received", len(data.Patterns),
+			"accepted", len(sanitizedPatterns))
+	}
 	if len(sanitizedExcluded) != len(data.Excluded) && logger != nil {
 		logger.Warn("discarded unsafe persisted pattern exclusions",
 			"book_id", j.Book.BookID,
@@ -86,17 +92,19 @@ func (j *Job) loadExistingPatternResults(ctx context.Context) bool {
 			"accepted", len(sanitizedExcluded))
 	}
 	j.Book.SetFinalizePatternResult(&common.FinalizePatternResult{
-		Patterns:  data.Patterns,
+		Patterns:  sanitizedPatterns,
 		Excluded:  sanitizedExcluded,
 		Reasoning: data.Reasoning,
 	})
-	j.Book.SetEntriesToFind(data.EntriesToFind)
+	// Recompute rather than trusting persisted model-derived entries. This
+	// reapplies current validation and identifier normalization during resume.
+	j.generateEntriesToFind(ctx)
 
 	if logger != nil {
 		logger.Debug("loadExistingPatternResults reusing saved pattern analysis",
 			"book_id", j.Book.BookID,
-			"patterns", len(data.Patterns),
-			"entries_to_find", len(data.EntriesToFind))
+			"patterns", len(sanitizedPatterns),
+			"entries_to_find", j.Book.GetEntriesToFindCount())
 	}
 
 	return true
@@ -120,6 +128,44 @@ func sanitizeExcludedRanges(totalPages int, ranges []common.ExcludedRange) []com
 			continue
 		}
 		result = append(result, excluded)
+	}
+	return result
+}
+
+// sanitizeDiscoveredPatterns treats model-produced discovery plans as
+// untrusted control data. The downstream finder requires a complete, globally
+// addressable numeric/Roman sequence; partial fields otherwise become a junk
+// empty entry key and plausible-looking structure corruption.
+func sanitizeDiscoveredPatterns(patterns []common.DiscoveredPattern) []common.DiscoveredPattern {
+	result := make([]common.DiscoveredPattern, 0, len(patterns))
+	for _, pattern := range patterns {
+		pattern.PatternType = strings.TrimSpace(pattern.PatternType)
+		pattern.LevelName = strings.TrimSpace(pattern.LevelName)
+		pattern.HeadingFormat = strings.TrimSpace(pattern.HeadingFormat)
+		pattern.RangeStart = strings.TrimSpace(pattern.RangeStart)
+		pattern.RangeEnd = strings.TrimSpace(pattern.RangeEnd)
+		pattern.Reasoning = strings.TrimSpace(pattern.Reasoning)
+		if pattern.PatternType != "sequential" ||
+			pattern.LevelName == "" ||
+			pattern.HeadingFormat == "" ||
+			!strings.Contains(pattern.HeadingFormat, "{n}") ||
+			pattern.RangeStart == "" ||
+			pattern.RangeEnd == "" ||
+			pattern.Level < 1 || pattern.Level > 6 ||
+			pattern.Reasoning == "" {
+			continue
+		}
+		start := normalizeSequenceIdentifier(pattern.RangeStart)
+		end := normalizeSequenceIdentifier(pattern.RangeEnd)
+		if start == "" || end == "" {
+			continue
+		}
+		sequence := generateSequence(pattern.RangeStart, pattern.RangeEnd)
+		if len(sequence) == 0 || len(sequence) > 500 ||
+			(len(sequence) == 1 && start != end) {
+			continue
+		}
+		result = append(result, pattern)
 	}
 	return result
 }

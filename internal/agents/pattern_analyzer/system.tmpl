@@ -29,6 +29,11 @@ Example - DO output pattern:
 
 Each pattern represents a structural element type that should be searched for.
 
+Only report a globally unique sequence that this pipeline can represent. Do
+NOT report subsection numbering that restarts inside every chapter (for
+example, sections I, II, III repeated in chapters 1 through 12); those entries
+need parent-scoped identities and are not a single missing ToC sequence.
+
 ### sequential patterns
 Numbered sequences like chapters, parts, appendices:
 - pattern_type: "sequential"
@@ -49,6 +54,8 @@ IMPORTANT:
 - Missing candidates (like chapter 3) are expected - we'll search for them
 - Look at the actual heading_text in candidate_headings to determine heading_format
 - heading_format MUST match what you see in the candidate headings
+- Every pattern field is required. If a complete level name, range, depth, and
+  heading format cannot be stated, omit the pattern instead of emitting blanks.
 
 Look at:
 - The ToC structure (does it have Parts I-V suggesting chapters within?)

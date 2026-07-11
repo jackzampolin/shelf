@@ -180,9 +180,11 @@ func (j *Job) processFinalizePatternResult(ctx context.Context, result jobs.Work
 		Reasoning: response.Reasoning,
 	}
 
-	// Convert patterns
+	// Convert patterns, then fail closed on malformed model control data before
+	// it can synthesize discovery agents or durable TocEntry records.
+	var proposedPatterns []common.DiscoveredPattern
 	for _, p := range response.DiscoveredPatterns {
-		patternResult.Patterns = append(patternResult.Patterns, common.DiscoveredPattern{
+		proposedPatterns = append(proposedPatterns, common.DiscoveredPattern{
 			PatternType:   p.PatternType,
 			LevelName:     p.LevelName,
 			HeadingFormat: p.HeadingFormat,
@@ -191,6 +193,15 @@ func (j *Job) processFinalizePatternResult(ctx context.Context, result jobs.Work
 			Level:         p.Level,
 			Reasoning:     p.Reasoning,
 		})
+	}
+	patternResult.Patterns = sanitizeDiscoveredPatterns(proposedPatterns)
+	if len(patternResult.Patterns) != len(proposedPatterns) {
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Warn("discarded malformed discovered patterns",
+				"book_id", j.Book.BookID,
+				"received", len(proposedPatterns),
+				"accepted", len(patternResult.Patterns))
+		}
 	}
 
 	// Convert model-produced exclusions, then enforce deterministic safety
@@ -275,6 +286,9 @@ func (j *Job) generateEntriesToFind(ctx context.Context) {
 
 		for i, identifier := range identifiers {
 			normalizedIdentifier := normalizeSequenceIdentifier(identifier)
+			if normalizedIdentifier == "" {
+				continue
+			}
 			key := level + "_" + normalizedIdentifier
 
 			if existingIdentifiers[key] || (level == "" && existingAnyLevel[normalizedIdentifier]) {

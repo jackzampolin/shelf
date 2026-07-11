@@ -63,6 +63,55 @@ func TestGenerateEntriesToFindSkipsAmbiguousEmptyLevelDuplicate(t *testing.T) {
 	}
 }
 
+func TestGenerateEntriesToFindSkipsEmptyIdentifier(t *testing.T) {
+	book := common.NewBookState("book-1")
+	book.SetBodyRange(1, 100)
+	book.SetFinalizePatternResult(&common.FinalizePatternResult{
+		Patterns: []common.DiscoveredPattern{
+			{PatternType: "sequential", RangeStart: "", RangeEnd: ""},
+		},
+	})
+	job := NewFromLoadResult(&common.LoadBookResult{Book: book, TocDocID: "toc-1"})
+
+	job.generateEntriesToFind(context.Background())
+
+	if entries := book.GetEntriesToFind(); len(entries) != 0 {
+		t.Fatalf("entries to find = %#v, want no empty discovery key", entries)
+	}
+}
+
+func TestSanitizeDiscoveredPatternsRejectsMalformedControlData(t *testing.T) {
+	valid := common.DiscoveredPattern{
+		PatternType: "sequential", LevelName: "chapter", HeadingFormat: "CHAPTER {n}",
+		RangeStart: "1", RangeEnd: "3", Level: 2, Reasoning: "observed global sequence",
+	}
+	patterns := []common.DiscoveredPattern{
+		valid,
+		{PatternType: "sequential", RangeStart: "1", Reasoning: "model emitted partial fields"},
+		{PatternType: "named", LevelName: "chapter", HeadingFormat: "{n}", RangeStart: "A", RangeEnd: "F", Level: 2, Reasoning: "unsupported plan"},
+		{PatternType: "sequential", LevelName: "chapter", HeadingFormat: "CHAPTER", RangeStart: "1", RangeEnd: "3", Level: 2, Reasoning: "missing placeholder"},
+		{PatternType: "sequential", LevelName: "chapter", HeadingFormat: "CHAPTER {n}", RangeStart: "3", RangeEnd: "1", Level: 2, Reasoning: "reversed"},
+		{PatternType: "sequential", LevelName: "chapter", HeadingFormat: "CHAPTER {n}", RangeStart: "1", RangeEnd: "501", Level: 2, Reasoning: "unbounded"},
+	}
+
+	got := sanitizeDiscoveredPatterns(patterns)
+	if len(got) != 1 || got[0] != valid {
+		t.Fatalf("sanitized patterns = %#v, want only valid pattern", got)
+	}
+}
+
+func TestSanitizeDiscoveredPatternsAcceptsRomanSequence(t *testing.T) {
+	pattern := common.DiscoveredPattern{
+		PatternType: " sequential ", LevelName: " part ", HeadingFormat: "PART {n} ",
+		RangeStart: " I ", RangeEnd: " VI ", Level: 1, Reasoning: " observed ",
+	}
+
+	got := sanitizeDiscoveredPatterns([]common.DiscoveredPattern{pattern})
+	if len(got) != 1 || got[0].RangeStart != "I" || got[0].RangeEnd != "VI" || got[0].LevelName != "part" {
+		t.Fatalf("sanitized Roman pattern = %#v", got)
+	}
+}
+
 func TestDiscoveredEntryAlreadyLinked(t *testing.T) {
 	page22 := 22
 	existing := []*common.LinkedTocEntry{
