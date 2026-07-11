@@ -66,6 +66,43 @@ func TestAnalyzePageEvidence_FormalSectionHeader(t *testing.T) {
 	}
 }
 
+func TestAnalyzePageEvidence_NumberedPartTitlePage(t *testing.T) {
+	book := common.NewBookState("book-1")
+	book.TotalPages = 200
+	tools := New(Config{
+		Book: book,
+		Entry: &toc_entry_finder.TocEntry{
+			Title:             "One GATHERING",
+			LevelName:         "part",
+			PrintedPageNumber: "37",
+		},
+	})
+
+	ocr := "PART ONE\n\n# GATHERING\n\nI am sure you will catch on."
+	evidence := tools.AnalyzePageEvidence(ocr, 26, false)
+	if !evidence.TitleInSectionHeader {
+		t.Fatalf("expected split numbered-part title evidence: %#v", evidence)
+	}
+
+	withoutLevelMarker := tools.AnalyzePageEvidence("# GATHERING\n\nAn incidental heading.", 27, false)
+	if withoutLevelMarker.TitleInSectionHeader {
+		t.Fatalf("generic heading matched without PART ONE marker: %#v", withoutLevelMarker)
+	}
+
+	romanTools := New(Config{
+		Book: book,
+		Entry: &toc_entry_finder.TocEntry{
+			Title:             "I GATHERING",
+			LevelName:         "part",
+			PrintedPageNumber: "37",
+		},
+	})
+	incidentalPhrase := romanTools.AnalyzePageEvidence("# GATHERING\n\nTaking part in the meeting.", 27, false)
+	if incidentalPhrase.TitleInSectionHeader {
+		t.Fatalf("PART I matched inside incidental 'part in' text: %#v", incidentalPhrase)
+	}
+}
+
 func TestAnalyzePageEvidence_AppendixTitlePrefixSectionHeader(t *testing.T) {
 	book := common.NewBookState("book-1")
 	book.TotalPages = 615

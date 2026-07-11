@@ -46,6 +46,7 @@ func (t *TocEntryFinderTools) AnalyzePageEvidence(ocrText string, pageNum int, i
 	sectionHeaderText := strings.Join(sectionHeaders, " ")
 	plainText := stripOCRMarkup(ocrText)
 	bodyText := stripOCRMarkup(removeLabeledBlocks(removeLabeledBlocks(removeLabeledBlocks(ocrText, "Page-Header"), "Page-Footer"), "Section-Header"))
+	numberedLevelTitleMatch := sectionHeaderMatchesNumberedLevelTitle(sectionHeaders, title, t.entryLevelName(), plainText)
 
 	evidence := PageEvidence{
 		TargetTitle:                title,
@@ -54,7 +55,7 @@ func (t *TocEntryFinderTools) AnalyzePageEvidence(ocrText string, pageNum int, i
 		PrintedPageNumber:          printedPageNumberFromHeaders(pageHeaders),
 		VisibleLead:                truncateRunes(plainText, 260),
 		TitleInPageHeader:          normalizedContains(pageHeaderText, title),
-		TitleInSectionHeader:       normalizedContains(sectionHeaderText, title),
+		TitleInSectionHeader:       normalizedContains(sectionHeaderText, title) || numberedLevelTitleMatch,
 		TitlePrefixInSectionHeader: sectionHeaderMatchesTitlePrefix(sectionHeaders, title, t.entryNumber()),
 		TitleInBody:                normalizedContains(bodyText, title),
 		EntryNumberFound:           t.entryNumberFound(plainText),
@@ -195,6 +196,13 @@ func (t *TocEntryFinderTools) entryNumber() string {
 		return ""
 	}
 	return strings.TrimSpace(t.entry.EntryNumber)
+}
+
+func (t *TocEntryFinderTools) entryLevelName() string {
+	if t == nil || t.entry == nil {
+		return ""
+	}
+	return strings.TrimSpace(t.entry.LevelName)
 }
 
 func (t *TocEntryFinderTools) entryNumberPrefixInSectionHeader(headers []string) bool {

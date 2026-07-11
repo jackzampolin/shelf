@@ -39,6 +39,46 @@ func sectionHeaderMatchesTitlePrefix(headers []string, title, entryNumber string
 	return false
 }
 
+// sectionHeaderMatchesNumberedLevelTitle recognizes dedicated opener pages where
+// OCR splits a ToC title such as "One GATHERING" into a plain-text level marker
+// ("PART ONE") and a Markdown section heading ("# GATHERING"). Requiring both
+// pieces on the same page keeps a generic one-word heading from matching on its
+// own while allowing the source's visual hierarchy to differ from the ToC.
+func sectionHeaderMatchesNumberedLevelTitle(headers []string, title, levelName, plainText string) bool {
+	target := normalizeForEvidence(title)
+	level := normalizeForEvidence(levelName)
+	pageText := normalizeForEvidence(plainText)
+	if target == "" || level == "" || pageText == "" {
+		return false
+	}
+
+	for n := 1; n <= 39; n++ {
+		variants := []string{strconv.Itoa(n), numberWord(n), romanNumeral(n)}
+		for _, number := range variants {
+			number = strings.TrimSpace(number)
+			if number == "" || !strings.HasPrefix(target, number+" ") {
+				continue
+			}
+			titleRemainder := strings.TrimSpace(strings.TrimPrefix(target, number+" "))
+			if len(titleRemainder) < 4 || !containsNormalizedWordSequence(pageText, level+" "+number) {
+				continue
+			}
+			for _, header := range headers {
+				if normalizeForEvidence(header) == titleRemainder {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func containsNormalizedWordSequence(text, phrase string) bool {
+	haystack := " " + normalizeForEvidence(text) + " "
+	needle := " " + normalizeForEvidence(phrase) + " "
+	return needle != "  " && strings.Contains(haystack, needle)
+}
+
 func stripEntryNumberPrefixForEvidence(header, entryNumber string) string {
 	normalizedHeader := normalizeForEvidence(header)
 	normalizedEntry := normalizeForEvidence(entryNumber)
