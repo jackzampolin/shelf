@@ -14,6 +14,13 @@ import (
 // completeStructurePhase finalizes the structure job.
 func (j *Job) completeStructurePhase(ctx context.Context) ([]jobs.WorkUnit, error) {
 	logger := svcctx.LoggerFrom(ctx)
+	_, _, _, polishFailed := j.Book.GetStructureProgress()
+	if polishFailed > 0 {
+		return nil, fmt.Errorf(
+			"structure polish failed for %d chapter(s); mechanical fallback is not certifiable",
+			polishFailed,
+		)
+	}
 
 	if err := j.validatePersistedStructureChapters(ctx); err != nil {
 		if logger != nil {

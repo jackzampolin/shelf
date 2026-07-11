@@ -58,3 +58,16 @@ func TestCheckCompletionMarksQuarantinedBookDegraded(t *testing.T) {
 		t.Fatalf("status_reason = %q, want actionable quarantined page", reason)
 	}
 }
+
+func TestCompleteStructureRejectsPolishFallback(t *testing.T) {
+	book := common.NewBookState("book-1")
+	book.IncrementStructurePolishFailed()
+	j := NewFromLoadResult(&common.LoadBookResult{Book: book})
+
+	if _, err := j.completeStructurePhase(context.Background()); err == nil || !strings.Contains(err.Error(), "not certifiable") {
+		t.Fatalf("completeStructurePhase() error = %v, want non-certifiable polish failure", err)
+	}
+	if book.StructureIsComplete() {
+		t.Fatal("structure completed despite a failed chapter polish")
+	}
+}
