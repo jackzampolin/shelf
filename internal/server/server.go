@@ -41,18 +41,20 @@ import (
 // It manages the DefraDB container lifecycle - starting it on server start
 // and stopping it on server shutdown.
 type Server struct {
-	httpServer     *http.Server
-	defraManager   *defra.DockerManager
-	defraClient    *defra.Client
-	defraSink      *defra.Sink
-	jobManager     *jobs.Manager
-	scheduler      *jobs.Scheduler
-	registry       *providers.Registry
-	configMgr      *config.Manager
-	configStore    config.Store
-	promptResolver *prompts.Resolver
-	logger         *slog.Logger
-	home           *home.Dir
+	httpServer      *http.Server
+	defraManager    *defra.DockerManager
+	defraClient     *defra.Client
+	defraSink       *defra.Sink
+	jobManager      *jobs.Manager
+	scheduler       *jobs.Scheduler
+	registry        *providers.Registry
+	configMgr       *config.Manager
+	configStore     config.Store
+	promptResolver  *prompts.Resolver
+	logger          *slog.Logger
+	home            *home.Dir
+	schedulerDone   chan struct{}
+	schedulerCancel context.CancelFunc
 
 	// services holds all core services for context enrichment
 	services *svcctx.Services
@@ -360,8 +362,18 @@ func (s *Server) Start(ctx context.Context) (retErr error) {
 	s.scheduler.RegisterFactory(tts_generate.JobTypeElevenLabs, jobcfg.TTSJobFactory(s.configStore))
 	s.scheduler.RegisterFactory(tts_generate.JobTypeOpenAI, jobcfg.OpenAITTSJobFactory(s.configStore))
 
-	// Start scheduler in background
-	go s.scheduler.Start(ctx)
+	// Start scheduler in background and retain a completion signal so shutdown
+	// keeps the Defra sink alive until in-flight workers have unwound.
+	schedulerDone := make(chan struct{})
+	schedulerCtx, schedulerCancel := context.WithCancel(ctx)
+	s.mu.Lock()
+	s.schedulerDone = schedulerDone
+	s.schedulerCancel = schedulerCancel
+	s.mu.Unlock()
+	go func() {
+		defer close(schedulerDone)
+		s.scheduler.Start(schedulerCtx)
+	}()
 
 	// Create services struct for context enrichment
 	s.services = &svcctx.Services{
@@ -397,7 +409,7 @@ func (s *Server) Start(ctx context.Context) (retErr error) {
 	// Resume any interrupted jobs from previous run after binding HTTP so
 	// health checks and operator controls stay available during large resumes.
 	go func() {
-		if resumed, err := s.scheduler.Resume(ctx); err != nil {
+		if resumed, err := s.scheduler.Resume(schedulerCtx); err != nil {
 			s.logger.Warn("failed to resume jobs", "error", err)
 		} else if resumed > 0 {
 			s.logger.Info("resumed interrupted jobs", "count", resumed)
@@ -428,6 +440,27 @@ func (s *Server) shutdown() error {
 
 	if err := s.httpServer.Shutdown(shutdownCtx); err != nil {
 		s.logger.Error("HTTP server shutdown error", "error", err)
+	}
+
+	// Context cancellation stops dispatch and provider calls. Wait for their
+	// handlers to return before closing the write sink, otherwise a successful
+	// result already being persisted races a closed channel and is recomputed on
+	// the next start. The outer shutdown deadline keeps a misbehaving provider
+	// from hanging process exit forever.
+	s.mu.RLock()
+	schedulerDone := s.schedulerDone
+	schedulerCancel := s.schedulerCancel
+	s.mu.RUnlock()
+	if schedulerCancel != nil {
+		schedulerCancel()
+	}
+	if schedulerDone != nil {
+		select {
+		case <-schedulerDone:
+			s.logger.Info("scheduler quiesced before sink shutdown")
+		case <-shutdownCtx.Done():
+			s.logger.Warn("timed out waiting for scheduler shutdown", "error", shutdownCtx.Err())
+		}
 	}
 
 	// Stop write sink (flushes remaining writes)

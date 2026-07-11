@@ -100,14 +100,21 @@ func (p *CPUWorkerPool) init(results chan<- workerResult) {
 // Start begins the pool's processing. Blocks until ctx cancelled.
 func (p *CPUWorkerPool) Start(ctx context.Context) {
 	p.logger.Debug("cpu pool started")
+	var wg sync.WaitGroup
 
 	// Start worker goroutines - all pull from same queue
 	for i := 0; i < p.workerCount; i++ {
-		go p.worker(ctx, i)
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			p.worker(ctx, workerID)
+		}(i)
 	}
 
-	// Block until context cancelled
+	// A CPU handler may already be persisting output when cancellation arrives.
+	// Wait for workers to return so the server cannot close Defra's sink under it.
 	<-ctx.Done()
+	wg.Wait()
 	p.logger.Debug("cpu pool stopping")
 }
 
@@ -115,11 +122,19 @@ func (p *CPUWorkerPool) Start(ctx context.Context) {
 func (p *CPUWorkerPool) worker(ctx context.Context, id int) {
 	p.logger.Debug("cpu worker started", "worker_id", id)
 	for {
+		// Prefer shutdown over buffered work. A plain select can repeatedly choose
+		// a ready queue after ctx cancellation and execute arbitrary queued tasks.
+		if ctx.Err() != nil {
+			return
+		}
 		select {
 		case <-ctx.Done():
 			return
 
 		case unit := <-p.queue:
+			if ctx.Err() != nil {
+				return
+			}
 			if p.jobCancelled(unit.JobID) {
 				continue
 			}

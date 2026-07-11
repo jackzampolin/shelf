@@ -26,6 +26,23 @@ type internallyRetryingOCRProvider struct {
 	*ctrlOCRProvider
 }
 
+type shutdownBlockingOCRProvider struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (p *shutdownBlockingOCRProvider) ProcessImage(context.Context, []byte, int) (*providers.OCRResult, error) {
+	close(p.started)
+	<-p.release
+	return nil, context.Canceled
+}
+func (p *shutdownBlockingOCRProvider) Name() string                      { return "shutdown-blocking" }
+func (p *shutdownBlockingOCRProvider) HealthCheck(context.Context) error { return nil }
+func (p *shutdownBlockingOCRProvider) RequestsPerSecond() float64        { return 1000 }
+func (p *shutdownBlockingOCRProvider) MaxConcurrency() int               { return 1 }
+func (p *shutdownBlockingOCRProvider) MaxRetries() int                   { return 0 }
+func (p *shutdownBlockingOCRProvider) RetryDelayBase() time.Duration     { return time.Millisecond }
+
 func (p *internallyRetryingOCRProvider) MaxRetries() int      { return 3 }
 func (p *internallyRetryingOCRProvider) ManagesRetries() bool { return true }
 
@@ -46,6 +63,44 @@ func newCtrlProvider() *ctrlOCRProvider { return &ctrlOCRProvider{} }
 
 // errBackendDown matches IsRetriableError's transport class ("connection refused").
 var errBackendDown = errors.New("dial tcp 100.74.68.88:8001: connect: connection refused")
+
+func TestProviderPoolStartWaitsForInFlightWorkerShutdown(t *testing.T) {
+	prov := &shutdownBlockingOCRProvider{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	pool, err := NewProviderWorkerPool(ProviderWorkerPoolConfig{
+		Name: "shutdown-blocking", OCRProvider: prov, RPS: 1000, WorkerCount: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool.init(make(chan workerResult, 4))
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		pool.Start(ctx)
+		close(done)
+	}()
+	mustSubmit(t, pool, ocrUnit("shutdown-in-flight"))
+	select {
+	case <-prov.started:
+	case <-time.After(time.Second):
+		t.Fatal("provider call did not start")
+	}
+	cancel()
+	select {
+	case <-done:
+		t.Fatal("pool returned while its provider worker was still running")
+	case <-time.After(25 * time.Millisecond):
+	}
+	close(prov.release)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("pool did not return after its provider worker stopped")
+	}
+}
 
 func (f *ctrlOCRProvider) ProcessImage(ctx context.Context, image []byte, pageNum int) (*providers.OCRResult, error) {
 	f.mu.Lock()

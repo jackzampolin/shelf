@@ -410,6 +410,12 @@ func (s *Scheduler) CancelActiveJobsByBookIDAndType(ctx context.Context, bookID,
 // Blocks until context is cancelled.
 func (s *Scheduler) Start(ctx context.Context) {
 	s.logger.Debug("scheduler start called")
+	var poolWG sync.WaitGroup
+	// A result already selected before shutdown must be allowed to finish its
+	// durable checkpoint. Provider/dispatch work still uses ctx and cancels
+	// promptly; only the synchronous completion handler gets a non-cancelled
+	// derivative, bounded by the Defra client's own request timeout.
+	handlerCtx := context.WithoutCancel(ctx)
 
 	s.mu.Lock()
 	if s.running {
@@ -423,7 +429,11 @@ func (s *Scheduler) Start(ctx context.Context) {
 	// Start all pools
 	for name, p := range s.pools {
 		s.logger.Debug("starting pool from scheduler", "name", name, "type", p.Type())
-		go p.Start(ctx)
+		poolWG.Add(1)
+		go func(pool WorkerPool) {
+			defer poolWG.Done()
+			pool.Start(ctx)
+		}(p)
 	}
 	s.mu.Unlock()
 
@@ -438,10 +448,12 @@ func (s *Scheduler) Start(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			s.logger.Info("scheduler stopping")
+			s.logger.Info("scheduler stopping; waiting for worker pools")
+			poolWG.Wait()
 			s.mu.Lock()
 			s.running = false
 			s.mu.Unlock()
+			s.logger.Info("scheduler stopped")
 			return
 
 		case wr := <-s.results:
@@ -485,7 +497,7 @@ func (s *Scheduler) Start(ctx context.Context) {
 				"received_tts", s.receivedTTS,
 			)
 			handleStart := time.Now()
-			s.handleResult(ctx, wr)
+			s.handleResult(handlerCtx, wr)
 			s.logger.Debug("handleResult completed", "duration_ms", time.Since(handleStart).Milliseconds())
 		}
 	}

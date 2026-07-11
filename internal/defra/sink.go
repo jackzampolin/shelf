@@ -103,7 +103,10 @@ func NewSink(cfg SinkConfig) *Sink {
 
 // Start begins processing write operations.
 func (s *Sink) Start(ctx context.Context) {
-	s.ctx, s.cancel = context.WithCancel(ctx)
+	// Sink.Stop owns this lifecycle. Preserve caller values but not caller
+	// cancellation so a server shutdown can still flush writes that were queued
+	// before workers quiesced; Stop cancels only after that flush completes.
+	s.ctx, s.cancel = context.WithCancel(context.WithoutCancel(ctx))
 
 	// Start the batcher goroutine
 	s.wg.Add(1)

@@ -259,17 +259,29 @@ func (p *ProviderWorkerPool) init(results chan<- workerResult) {
 // Start begins the pool's processing. Blocks until ctx cancelled.
 func (p *ProviderWorkerPool) Start(ctx context.Context) {
 	p.logger.Debug("provider pool started")
+	var wg sync.WaitGroup
 
 	// Start dispatcher (owns rate limiter)
-	go p.dispatcher(ctx)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		p.dispatcher(ctx)
+	}()
 
 	// Start worker goroutines
 	for i := 0; i < p.workerCount; i++ {
-		go p.worker(ctx, i)
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			p.worker(ctx, workerID)
+		}(i)
 	}
 
-	// Block until context cancelled
+	// Stop dispatch, cancel in-flight calls, and do not report the pool stopped
+	// until every worker has unwound. The server keeps Defra's sink open while
+	// Scheduler.Start waits for this return.
 	<-ctx.Done()
+	wg.Wait()
 	p.logger.Debug("provider pool stopping")
 }
 

@@ -11,6 +11,51 @@ import (
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
+type shutdownBlockingPool struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (p *shutdownBlockingPool) Name() string   { return "shutdown-blocking" }
+func (p *shutdownBlockingPool) Type() PoolType { return PoolTypeCPU }
+func (p *shutdownBlockingPool) Start(ctx context.Context) {
+	close(p.started)
+	<-ctx.Done()
+	<-p.release
+}
+func (p *shutdownBlockingPool) Submit(*WorkUnit) error   { return nil }
+func (p *shutdownBlockingPool) Status() PoolStatus       { return PoolStatus{} }
+func (p *shutdownBlockingPool) init(chan<- workerResult) {}
+
+func TestSchedulerStartWaitsForWorkerPools(t *testing.T) {
+	pool := &shutdownBlockingPool{started: make(chan struct{}), release: make(chan struct{})}
+	scheduler := NewScheduler(SchedulerConfig{Logger: slog.Default()})
+	scheduler.RegisterPool(pool)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		scheduler.Start(ctx)
+		close(done)
+	}()
+	select {
+	case <-pool.started:
+	case <-time.After(time.Second):
+		t.Fatal("worker pool did not start")
+	}
+	cancel()
+	select {
+	case <-done:
+		t.Fatal("scheduler returned while a worker pool was still running")
+	case <-time.After(25 * time.Millisecond):
+	}
+	close(pool.release)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("scheduler did not return after worker pools stopped")
+	}
+}
+
 // TestScheduler_NoPoolForType tests error handling when no pool available.
 func TestScheduler_NoPoolForType(t *testing.T) {
 	scheduler := NewScheduler(SchedulerConfig{
