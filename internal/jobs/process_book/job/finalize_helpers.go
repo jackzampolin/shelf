@@ -79,6 +79,8 @@ func (j *Job) loadExistingPatternResults(ctx context.Context) bool {
 
 	sanitizedPatterns := sanitizeDiscoveredPatterns(data.Patterns)
 	sanitizedExcluded := sanitizeExcludedRanges(j.Book.TotalPages, data.Excluded)
+	controlDataChanged := len(sanitizedPatterns) != len(data.Patterns) ||
+		len(sanitizedExcluded) != len(data.Excluded)
 	if len(sanitizedPatterns) != len(data.Patterns) && logger != nil {
 		logger.Warn("discarded malformed persisted discovered patterns",
 			"book_id", j.Book.BookID,
@@ -99,6 +101,16 @@ func (j *Job) loadExistingPatternResults(ctx context.Context) bool {
 	// Recompute rather than trusting persisted model-derived entries. This
 	// reapplies current validation and identifier normalization during resume.
 	j.generateEntriesToFind(ctx)
+	// Keep durable status and the next restart aligned with the sanitized state.
+	// Otherwise the running job is safe but /detailed continues to advertise
+	// phantom discovery work from the rejected persisted plan.
+	if controlDataChanged {
+		if _, err := j.persistFinalizePatternResults(ctx); err != nil && logger != nil {
+			logger.Warn("failed to persist sanitized pattern analysis",
+				"book_id", j.Book.BookID,
+				"error", err)
+		}
+	}
 
 	if logger != nil {
 		logger.Debug("loadExistingPatternResults reusing saved pattern analysis",
