@@ -245,8 +245,20 @@ func (s *Server) Start(ctx context.Context) (retErr error) {
 		return fmt.Errorf("schema initialization failed: %w", err)
 	}
 
-	// Create config store and seed defaults
+	// Bind this Defra endpoint to the canonical Shelf home before any config
+	// seeding or job resumption writes. A transient cross-home Docker/Defra
+	// attachment must fail closed instead of materializing another corpus.
 	s.configStore = config.NewStore(s.defraClient)
+	if s.home != nil {
+		claimed, identityErr := ensureDatastoreIdentity(ctx, s.configStore, s.defraClient, s.home.Path())
+		if identityErr != nil {
+			_ = s.shutdown()
+			return fmt.Errorf("Defra datastore identity check failed: %w", identityErr)
+		}
+		s.logger.Info("verified Defra datastore identity", "claimed", claimed)
+	}
+
+	// Seed defaults only after datastore identity is verified.
 	s.logger.Info("seeding config defaults")
 	var seedErr error
 	if s.configMgr != nil {
