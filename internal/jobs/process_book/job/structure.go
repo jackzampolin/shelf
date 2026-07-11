@@ -112,7 +112,7 @@ func (j *Job) StartStructurePhase(ctx context.Context) []jobs.WorkUnit {
 	// Phase 2: Extract text (synchronous)
 	j.Book.SetStructurePhase(StructPhaseExtract)
 	chaptersExtracted := j.extractAllChapters(ctx)
-	chaptersPolished := reuseUnchangedPolish(j.Book.GetStructureChapters(), priorChapters)
+	chaptersPolished := reuseUnchangedPolishOnBook(j.Book, priorChapters)
 	if chaptersPolished > 0 && logger != nil {
 		logger.Info("reused unchanged polished chapters",
 			"book_id", j.Book.BookID,

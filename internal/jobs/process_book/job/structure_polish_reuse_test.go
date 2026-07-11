@@ -40,6 +40,32 @@ func TestReuseUnchangedPolishByStableTocIdentity(t *testing.T) {
 	}
 }
 
+func TestReuseUnchangedPolishUpdatesBookState(t *testing.T) {
+	book := common.NewBookState("book-1")
+	book.SetStructureChapters([]*common.ChapterState{
+		{TocEntryID: "toc-1", MechanicalText: "same source", ExtractDone: true},
+	})
+	prior := []*common.ChapterState{
+		{
+			TocEntryID:     "toc-1",
+			MechanicalText: "same source",
+			PolishedText:   "Same source.",
+			WordCount:      2,
+			ExtractDone:    true,
+			PolishDone:     true,
+			AudioInclude:   true,
+		},
+	}
+
+	if got := reuseUnchangedPolishOnBook(book, prior); got != 1 {
+		t.Fatalf("reused = %d, want 1", got)
+	}
+	stored := book.GetStructureChapters()[0]
+	if !stored.PolishDone || stored.PolishedText != "Same source." {
+		t.Fatalf("reused polish was not written back to BookState: %+v", stored)
+	}
+}
+
 func TestReuseUnchangedPolishFailsClosed(t *testing.T) {
 	tests := []struct {
 		name   string

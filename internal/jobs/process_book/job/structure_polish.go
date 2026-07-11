@@ -61,6 +61,20 @@ func reuseUnchangedPolish(chapters, prior []*common.ChapterState) int {
 	return reused
 }
 
+func reuseUnchangedPolishOnBook(book *common.BookState, prior []*common.ChapterState) int {
+	chapters := book.GetStructureChapters()
+	reused := reuseUnchangedPolish(chapters, prior)
+	if reused == 0 {
+		return 0
+	}
+	for _, chapter := range chapters {
+		if chapter.PolishDone {
+			book.UpdateChapter(chapter)
+		}
+	}
+	return reused
+}
+
 func structureChapterReuseKey(chapter *common.ChapterState) string {
 	if chapter == nil {
 		return ""
