@@ -263,9 +263,10 @@ type PageStatus struct {
 
 // OcrResult represents a single OCR provider's output.
 type OcrResult struct {
-	Provider   string  `json:"provider"`
-	Text       string  `json:"text"`
-	Confidence float64 `json:"confidence"`
+	Provider         string         `json:"provider"`
+	Text             string         `json:"text"`
+	Confidence       float64        `json:"confidence"`
+	ProviderMetadata map[string]any `json:"provider_metadata,omitempty"`
 }
 
 // GetPageResponse is the response for getting a single page.
@@ -334,6 +335,7 @@ func (e *GetPageEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 				provider
 				text
 				confidence
+				provider_metadata
 			}
 		}
 	}`, bookID, pageNum)
@@ -397,6 +399,9 @@ func (e *GetPageEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 				}
 				if c, ok := orm["confidence"].(float64); ok {
 					result.Confidence = c
+				}
+				if metadata, ok := orm["provider_metadata"].(map[string]any); ok {
+					result.ProviderMetadata = metadata
 				}
 				response.OcrResults = append(response.OcrResults, result)
 			}

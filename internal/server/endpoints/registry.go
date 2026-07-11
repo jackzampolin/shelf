@@ -36,6 +36,7 @@ func All(cfg Config) []api.Endpoint {
 		&GetBookChaptersEndpoint{},
 		&RerunTocEndpoint{},
 		&RepairOCREndpoint{},
+		&RepairOCRTextEndpoint{},
 		&RepairPDFTextEndpoint{},
 		&RepairTocRangeEndpoint{},
 		&RepairTocEntryEndpoint{},

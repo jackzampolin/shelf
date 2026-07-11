@@ -78,6 +78,7 @@ func init() {
 	jobsCmd.AddCommand((&endpoints.DeleteJobEndpoint{}).Command(getServerURL))
 	jobsCmd.AddCommand((&endpoints.StartJobEndpoint{}).Command(getServerURL))
 	jobsCmd.AddCommand((&endpoints.JobStatusEndpoint{}).Command(getServerURL))
+	jobsCmd.AddCommand((&endpoints.DetailedJobStatusEndpoint{}).Command(getServerURL))
 
 	// Books as subcommand group
 	booksCmd.AddCommand((&endpoints.IngestEndpoint{}).Command(getServerURL))
@@ -86,6 +87,7 @@ func init() {
 	booksCmd.AddCommand((&endpoints.GetBookEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.GetBookChaptersEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.RepairOCREndpoint{}).Command(getServerURL))
+	booksCmd.AddCommand((&endpoints.RepairOCRTextEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.RepairPDFTextEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.RepairTocRangeEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.RepairTocEntryEndpoint{}).Command(getServerURL))
