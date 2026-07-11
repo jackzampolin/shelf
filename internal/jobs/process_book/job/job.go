@@ -493,6 +493,14 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 	// per-entry ToC linking. Link retries need a fresh agent because the
 	// existing one may have completed with unusable state.
 	if handlerErr != nil {
+		// A durable checkpoint failure is infrastructure failure, not evidence that
+		// the agent's semantic answer was bad. Fail this job attempt visibly so it
+		// can be kicked after Defra recovers, but never spend the entry's bounded
+		// semantic retry budget or replace its in-memory conversation here.
+		if isAgentCheckpointError(handlerErr) {
+			j.RemoveWorkUnit(result.WorkUnitID)
+			return nil, handlerErr
+		}
 		isPageOp := info.UnitType == "extract" || info.UnitType == "ocr"
 
 		if isRetriableBookOpHandlerError(info.UnitType) && info.RetryCount < MaxBookOpRetries {

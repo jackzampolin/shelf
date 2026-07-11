@@ -53,7 +53,22 @@ func PersistAgentState(ctx context.Context, book *BookState, state *AgentState) 
 	// book's agent state.
 	// createInput and updateInput are both the full agent-state doc.
 	filter := map[string]any{"_bookID": book.BookID, "agent_id": state.AgentID}
-	result, err := upsertAgentStateWithRetry(ctx, store, filter, doc)
+	// DefraDB v1.0.0-rc1's generic upsert planner can return an empty HTTP 500
+	// when updating a large existing String field. Agent checkpoints normally
+	// have the prior row in BookState, so use the stable docID update mutation
+	// for multi-turn updates and reserve upsert for initial creation/recovery.
+	existing := book.GetAgentState(state.AgentType, state.EntryDocID)
+	existingDocID := state.DocID
+	if existingDocID == "" && existing != nil && existing.AgentID == state.AgentID {
+		existingDocID = existing.DocID
+	}
+	var result defra.WriteResult
+	var err error
+	if existingDocID != "" {
+		result, err = updateAgentStateWithRetry(ctx, store, existingDocID, filter, doc)
+	} else {
+		result, err = upsertAgentStateWithRetry(ctx, store, filter, doc)
+	}
 	if err != nil {
 		return err
 	}
@@ -173,9 +188,26 @@ func PersistAgentStates(ctx context.Context, book *BookState, states []*AgentSta
 }
 
 func upsertAgentStateWithRetry(ctx context.Context, store StateStore, filter, doc map[string]any) (defra.WriteResult, error) {
+	return writeAgentStateWithRetry(ctx, store, "", filter, doc)
+}
+
+func updateAgentStateWithRetry(ctx context.Context, store StateStore, docID string, filter, doc map[string]any) (defra.WriteResult, error) {
+	if docID == "" {
+		return defra.WriteResult{}, fmt.Errorf("agent state update requires docID")
+	}
+	return writeAgentStateWithRetry(ctx, store, docID, filter, doc)
+}
+
+func writeAgentStateWithRetry(ctx context.Context, store StateStore, docID string, filter, doc map[string]any) (defra.WriteResult, error) {
 	var lastErr error
 	for attempt := 1; attempt <= maxAgentStateWriteAttempts; attempt++ {
-		result, err := store.UpsertWithVersion(ctx, "AgentState", filter, doc, doc)
+		var result defra.WriteResult
+		var err error
+		if docID == "" {
+			result, err = store.UpsertWithVersion(ctx, "AgentState", filter, doc, doc)
+		} else {
+			result, err = store.UpdateWithVersion(ctx, "AgentState", docID, doc)
+		}
 		if err == nil {
 			return result, nil
 		}
@@ -202,7 +234,11 @@ func upsertAgentStateWithRetry(ctx context.Context, store StateStore, filter, do
 		case <-timer.C:
 		}
 	}
-	return defra.WriteResult{}, fmt.Errorf("agent state upsert failed after %d attempts: %w", maxAgentStateWriteAttempts, lastErr)
+	operation := "upsert"
+	if docID != "" {
+		operation = "update"
+	}
+	return defra.WriteResult{}, fmt.Errorf("agent state %s failed after %d attempts: %w", operation, maxAgentStateWriteAttempts, lastErr)
 }
 
 func verifyAgentStateWrite(ctx context.Context, store StateStore, filter, wanted map[string]any) (defra.WriteResult, bool) {

@@ -2,11 +2,24 @@ package job
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackzampolin/shelf/internal/agent"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
 )
+
+type agentCheckpointError struct {
+	err error
+}
+
+func (e *agentCheckpointError) Error() string { return e.err.Error() }
+func (e *agentCheckpointError) Unwrap() error { return e.err }
+
+func isAgentCheckpointError(err error) bool {
+	var checkpointErr *agentCheckpointError
+	return errors.As(err, &checkpointErr)
+}
 
 // checkpointAgentState durably records a multi-turn agent immediately after an
 // LLM response is incorporated. Persisting before the synchronous tool loop is
@@ -33,7 +46,7 @@ func (j *Job) checkpointAgentState(ctx context.Context, ag *agent.Agent, agentTy
 		ResultJSON:       exported.ResultJSON,
 	}
 	if err := common.PersistAgentState(ctx, j.Book, state); err != nil {
-		return fmt.Errorf("persist %s agent checkpoint at iteration %d: %w", agentType, exported.Iteration, err)
+		return &agentCheckpointError{err: fmt.Errorf("persist %s agent checkpoint at iteration %d: %w", agentType, exported.Iteration, err)}
 	}
 	return nil
 }

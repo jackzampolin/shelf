@@ -395,6 +395,48 @@ func TestPersistAgentStateScopesStableIDToBook(t *testing.T) {
 	}
 }
 
+func TestPersistAgentStateUpdatesKnownCheckpointByDocID(t *testing.T) {
+	store := NewMemoryStateStore()
+	store.SetDoc("Book", "book-1", map[string]any{})
+	store.SetDoc("AgentState", "state-1", map[string]any{
+		"_bookID":      "book-1",
+		"agent_id":     "agent-1",
+		"agent_type":   AgentTypeTocEntryFinder,
+		"entry_doc_id": "entry-1",
+		"iteration":    0,
+	})
+	book := NewBookState("book-1")
+	book.Store = store
+	book.SetAgentState(&AgentState{
+		DocID:      "state-1",
+		AgentID:    "agent-1",
+		AgentType:  AgentTypeTocEntryFinder,
+		EntryDocID: "entry-1",
+		Iteration:  0,
+	})
+	// If PersistAgentState accidentally uses upsert for a known checkpoint, this
+	// injected error makes the regression deterministic.
+	store.UpsertErr = fmt.Errorf("upsert update path must not be used")
+
+	checkpoint := &AgentState{
+		AgentID:      "agent-1",
+		AgentType:    AgentTypeTocEntryFinder,
+		EntryDocID:   "entry-1",
+		Iteration:    2,
+		MessagesJSON: `[{"role":"assistant","content":"checkpointed"}]`,
+	}
+	if err := PersistAgentState(context.Background(), book, checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	if checkpoint.DocID != "state-1" {
+		t.Fatalf("checkpoint docID = %q, want state-1", checkpoint.DocID)
+	}
+	stored := store.GetDoc("AgentState", "state-1")
+	if stored["iteration"] != 2 || stored["messages_json"] != checkpoint.MessagesJSON {
+		t.Fatalf("stored checkpoint = %#v", stored)
+	}
+}
+
 func TestPersistAgentStateRetriesTransientDefraWrite(t *testing.T) {
 	store := &flakyAgentStateStore{
 		MemoryStateStore:  NewMemoryStateStore(),

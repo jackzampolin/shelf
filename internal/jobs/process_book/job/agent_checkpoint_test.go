@@ -2,6 +2,7 @@ package job
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/jackzampolin/shelf/internal/agent"
@@ -72,5 +73,15 @@ func TestCheckpointAgentStatePersistsConversationForNextIteration(t *testing.T) 
 	}
 	if units := resumed.NextWorkUnits(); len(units) != 1 || units[0].Iteration != 2 {
 		t.Fatalf("resumed work units = %#v, want iteration 2", units)
+	}
+}
+
+func TestAgentCheckpointErrorClassificationSurvivesWrapping(t *testing.T) {
+	err := &agentCheckpointError{err: fmt.Errorf("defra unavailable")}
+	if !isAgentCheckpointError(fmt.Errorf("handler failed: %w", err)) {
+		t.Fatal("wrapped checkpoint error was not classified")
+	}
+	if isAgentCheckpointError(fmt.Errorf("semantic result rejected")) {
+		t.Fatal("semantic error was classified as checkpoint infrastructure failure")
 	}
 }
