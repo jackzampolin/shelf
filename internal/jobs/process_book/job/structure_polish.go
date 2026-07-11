@@ -189,7 +189,7 @@ func (j *Job) createChapterPolishWorkUnit(ctx context.Context, chapter *common.C
 			{Role: "system", Content: systemPrompt},
 			{Role: "user", Content: userPrompt},
 		},
-		MaxTokens:      common.MaxPolishOutputTokens,
+		MaxTokens:      common.PolishMaxOutputTokens(chapter.MechanicalText),
 		ResponseFormat: responseFormat,
 	}
 

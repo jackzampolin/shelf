@@ -20,7 +20,10 @@ const (
 	// succeeding on retry, so retain the same bounded schema with enough room
 	// to finish while staying below the 65K context window alongside the
 	// 120K-character prompt bound. Truncated edit JSON must still fail closed.
-	MaxPolishOutputTokens = 24576
+	MaxPolishOutputTokens           = 24576
+	minPolishOutputTokens           = 4096
+	polishOutputBaseTokens          = 2048
+	polishSourceCharsPerOutputToken = 2
 
 	// Classification emits four compact entry-keyed maps. Scale the allowance
 	// for unusually granular ToCs while keeping normal books from requesting an
@@ -31,6 +34,26 @@ const (
 
 	maxClassifySnippetChars = 1000
 )
+
+// PolishMaxOutputTokens sizes the strict edit-list allowance to the source
+// chapter. A short section cannot legitimately need the same 24K-token JSON
+// budget as a 120K-character chapter; scaling the bound makes pathological
+// generations fail and retry promptly while retaining a generous fixed
+// overhead and the proven long-form ceiling.
+func PolishMaxOutputTokens(text string) int {
+	chars := len(text)
+	if chars > MaxPolishPromptChars {
+		chars = MaxPolishPromptChars
+	}
+	tokens := polishOutputBaseTokens + chars/polishSourceCharsPerOutputToken
+	if tokens < minPolishOutputTokens {
+		return minPolishOutputTokens
+	}
+	if tokens > MaxPolishOutputTokens {
+		return MaxPolishOutputTokens
+	}
+	return tokens
+}
 
 // ClassifyMaxOutputTokens returns a bounded output allowance sized to the
 // number of entries being classified.
