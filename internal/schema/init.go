@@ -32,6 +32,15 @@ var requiredAdditiveFields = []additiveField{
 	{Collection: "Book", Name: "source_imported_at", Kind: 10, Typ: 1},
 	{Collection: "Page", Name: "ocr_quarantined", Kind: 2, Typ: 1},
 	{Collection: "Page", Name: "ocr_quarantine_reason", Kind: 11, Typ: 1},
+	{Collection: "ToC", Name: "finder_override", Kind: 2, Typ: 1},
+	{Collection: "ToC", Name: "finder_override_reason", Kind: 11, Typ: 1},
+	{Collection: "ToC", Name: "finder_override_at", Kind: 10, Typ: 1},
+	{Collection: "TocEntry", Name: "link_retries", Kind: 4, Typ: 1},
+	{Collection: "TocEntry", Name: "link_failed", Kind: 2, Typ: 1},
+	{Collection: "TocEntry", Name: "link_failure_reason", Kind: 11, Typ: 1},
+	{Collection: "TocEntry", Name: "link_failed_at", Kind: 10, Typ: 1},
+	{Collection: "TocEntry", Name: "link_repair_reason", Kind: 11, Typ: 1},
+	{Collection: "TocEntry", Name: "link_repaired_at", Kind: 10, Typ: 1},
 }
 
 // Initialize applies all schemas to DefraDB.

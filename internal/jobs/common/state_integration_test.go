@@ -135,9 +135,15 @@ type ToC {
 type TocEntry {
 	# Many-to-one: TocEntry belongs to ToC (generates _tocID)
 	toc: ToC
+	entry_number: String
 	title: String
 	level: Int
+	level_name: String
+	printed_page_number: String
 	sort_order: Int
+	link_retries: Int
+	link_failed: Boolean
+	link_failure_reason: String
 	# Optional link to actual Page (generates _actual_pageID)
 	actual_page: Page
 }

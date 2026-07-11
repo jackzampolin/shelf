@@ -58,6 +58,9 @@ func LoadTocEntries(ctx context.Context, tocDocID string) ([]*toc_entry_finder.T
 		}
 		return nil, err
 	}
+	if errMsg := resp.Error(); errMsg != "" {
+		return nil, fmt.Errorf("ToC entry query failed: %s", errMsg)
+	}
 	if logger != nil {
 		logger.Debug("ToC entry query response received",
 			"response_fields", len(resp.Data),
@@ -156,6 +159,9 @@ func loadTocEntriesViaStore(ctx context.Context, store StateStore, tocDocID stri
 	resp, err := store.Execute(ctx, query, nil)
 	if err != nil {
 		return nil, err
+	}
+	if errMsg := resp.Error(); errMsg != "" {
+		return nil, fmt.Errorf("ToC entry query failed: %s", errMsg)
 	}
 
 	rawEntries, ok := resp.Data["TocEntry"].([]any)
