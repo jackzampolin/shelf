@@ -365,11 +365,11 @@ func (m *DockerManager) getContainerStatus(ctx context.Context) (ContainerStatus
 		return "", "", fmt.Errorf("failed to list containers: %w", err)
 	}
 
-	if len(containers) == 0 {
+	c, ok := findContainerByExactName(containers, m.containerName)
+	if !ok {
 		return StatusNotFound, "", nil
 	}
 
-	c := containers[0]
 	switch c.State {
 	case "running":
 		return StatusRunning, c.ID, nil
@@ -380,6 +380,20 @@ func (m *DockerManager) getContainerStatus(ctx context.Context) (ContainerStatus
 	default:
 		return ContainerStatus(c.State), c.ID, nil
 	}
+}
+
+// findContainerByExactName filters Docker's substring-based name results.
+// Without this check, "shelf-defra" also matches "shelf-defra-am-hist" and
+// one Shelf home can validate, start, or stop another home's database.
+func findContainerByExactName(containers []container.Summary, name string) (container.Summary, bool) {
+	for _, c := range containers {
+		for _, candidate := range c.Names {
+			if candidate == name || candidate == "/"+name {
+				return c, true
+			}
+		}
+	}
+	return container.Summary{}, false
 }
 
 // waitForReady polls DefraDB's health endpoint until ready.

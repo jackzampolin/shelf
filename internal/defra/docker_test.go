@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/docker/docker/api/types/container"
+
 	"github.com/jackzampolin/shelf/internal/testutil"
 )
 
@@ -86,6 +88,25 @@ func TestGenerateContainerName_UniquePerPath(t *testing.T) {
 
 	if name1 == name2 {
 		t.Errorf("GenerateContainerName() should produce unique names: %q == %q", name1, name2)
+	}
+}
+
+func TestFindContainerByExactName(t *testing.T) {
+	containers := []container.Summary{
+		{ID: "benchmark", Names: []string{"/shelf-defra-am-hist"}},
+		{ID: "primary", Names: []string{"/shelf-defra"}},
+	}
+
+	got, ok := findContainerByExactName(containers, "shelf-defra")
+	if !ok || got.ID != "primary" {
+		t.Fatalf("find exact primary = %#v,%v, want primary", got, ok)
+	}
+	got, ok = findContainerByExactName(containers, "shelf-defra-am-hist")
+	if !ok || got.ID != "benchmark" {
+		t.Fatalf("find exact benchmark = %#v,%v, want benchmark", got, ok)
+	}
+	if got, ok := findContainerByExactName(containers, "shelf"); ok {
+		t.Fatalf("substring lookup unexpectedly matched %#v", got)
 	}
 }
 
