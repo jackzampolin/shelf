@@ -170,6 +170,11 @@ func (c *ChandraOCRClient) RequestsPerSecond() float64 { return c.rateLimit }
 // MaxConcurrency returns the max concurrent in-flight OCR requests.
 func (c *ChandraOCRClient) MaxConcurrency() int { return c.maxConcurrency }
 
+// EndpointStatuses reports live per-URL reservations from the wrapped client.
+func (c *ChandraOCRClient) EndpointStatuses() []EndpointStatus {
+	return c.llm.EndpointStatuses()
+}
+
 // MaxRetries returns the maximum retry attempts.
 func (c *ChandraOCRClient) MaxRetries() int { return c.maxRetries }
 

@@ -3,6 +3,8 @@ package jobs
 import (
 	"context"
 	"fmt"
+
+	"github.com/jackzampolin/shelf/internal/providers"
 )
 
 // JobStatus returns the status of a specific job.
@@ -71,6 +73,7 @@ func (s *Scheduler) WorkerStatusForJob(jobID string) map[string]WorkerStatusInfo
 			QueueDepth:  ps.QueueDepth,
 			Health:      ps.Health,
 			ParkedUnits: ps.ParkedUnits,
+			Endpoints:   ps.Endpoints,
 			RateLimiter: ps.RateLimiter,
 		}
 		if perJob, ok := p.(JobWorkStatusProvider); ok && jobID != "" {
@@ -88,16 +91,17 @@ func (s *Scheduler) WorkerStatusForJob(jobID string) map[string]WorkerStatusInfo
 // WorkerStatusInfo reports a worker's current state.
 // Deprecated: Use PoolStatus instead.
 type WorkerStatusInfo struct {
-	Type        string             `json:"type"`
-	Workers     int                `json:"workers"`
-	InFlight    int                `json:"in_flight"`
-	QueueDepth  int                `json:"queue_depth"`
-	Health      string             `json:"health,omitempty"`
-	ParkedUnits int                `json:"parked_units,omitempty"`
-	JobQueued   int                `json:"job_queued"`
-	JobInFlight int                `json:"job_in_flight"`
-	JobParked   int                `json:"job_parked"`
-	RateLimiter *RateLimiterStatus `json:"rate_limiter,omitempty"`
+	Type        string                     `json:"type"`
+	Workers     int                        `json:"workers"`
+	InFlight    int                        `json:"in_flight"`
+	QueueDepth  int                        `json:"queue_depth"`
+	Health      string                     `json:"health,omitempty"`
+	ParkedUnits int                        `json:"parked_units,omitempty"`
+	JobQueued   int                        `json:"job_queued"`
+	JobInFlight int                        `json:"job_in_flight"`
+	JobParked   int                        `json:"job_parked"`
+	Endpoints   []providers.EndpointStatus `json:"endpoints,omitempty"`
+	RateLimiter *RateLimiterStatus         `json:"rate_limiter,omitempty"`
 }
 
 // JobProgress returns the per-provider progress for a specific job.

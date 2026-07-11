@@ -61,6 +61,12 @@ type RetryManaged interface {
 	ManagesRetries() bool
 }
 
+// EndpointStatusReporter is implemented by multi-endpoint providers that can
+// expose their live client-side request distribution for operations.
+type EndpointStatusReporter interface {
+	EndpointStatuses() []EndpointStatus
+}
+
 // DefaultMaxConcurrency is used when provider returns 0 for MaxConcurrency.
 const DefaultMaxConcurrency = 50
 

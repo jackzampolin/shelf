@@ -15,6 +15,15 @@ type EndpointPool struct {
 	counter       atomic.Uint64
 }
 
+// EndpointStatus is the live client-side load and cooldown state for one base
+// URL. It reflects requests owned by this Shelf process, not unrelated traffic
+// hitting the same server.
+type EndpointStatus struct {
+	BaseURL       string    `json:"base_url"`
+	InFlight      int64     `json:"in_flight"`
+	CooldownUntil time.Time `json:"cooldown_until,omitempty"`
+}
+
 // NewEndpointPool creates a pool over a copy of the given base URLs.
 // An empty or nil slice yields a pool whose Next returns "".
 func NewEndpointPool(urls []string) *EndpointPool {
@@ -37,6 +46,22 @@ func NewEndpointPool(urls []string) *EndpointPool {
 // Len returns the number of endpoints.
 func (p *EndpointPool) Len() int {
 	return len(p.urls)
+}
+
+// Status returns a stable-order snapshot of every configured endpoint.
+func (p *EndpointPool) Status() []EndpointStatus {
+	status := make([]EndpointStatus, len(p.urls))
+	now := time.Now().UnixNano()
+	for i, url := range p.urls {
+		status[i] = EndpointStatus{
+			BaseURL:  url,
+			InFlight: p.inFlight[i].Load(),
+		}
+		if until := p.cooldownUntil[i].Load(); until > now {
+			status[i].CooldownUntil = time.Unix(0, until)
+		}
+	}
+	return status
 }
 
 // Next returns the next base URL in round-robin order, or "" if the pool is empty.

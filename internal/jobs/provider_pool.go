@@ -463,7 +463,25 @@ func (p *ProviderWorkerPool) Status() PoolStatus {
 		RateLimiter:     toRateLimiterStatus(rlStatus),
 		Health:          health,
 		ParkedUnits:     parkedCount,
+		Endpoints:       p.endpointStatuses(),
 	}
+}
+
+func (p *ProviderWorkerPool) endpointStatuses() []providers.EndpointStatus {
+	var provider any
+	switch {
+	case p.llmClient != nil:
+		provider = p.llmClient
+	case p.ocrProvider != nil:
+		provider = p.ocrProvider
+	case p.ttsProvider != nil:
+		provider = p.ttsProvider
+	}
+	reporter, ok := provider.(providers.EndpointStatusReporter)
+	if !ok {
+		return nil
+	}
+	return reporter.EndpointStatuses()
 }
 
 func toRateLimiterStatus(status providers.RateLimiterStatus) *RateLimiterStatus {

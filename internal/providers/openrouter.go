@@ -125,6 +125,14 @@ func (c *OpenAIChatClient) MaxConcurrency() int {
 	return c.maxConcurrency
 }
 
+// EndpointStatuses reports live per-URL reservations for self-hosted clients.
+func (c *OpenAIChatClient) EndpointStatuses() []EndpointStatus {
+	if c.endpoints == nil {
+		return nil
+	}
+	return c.endpoints.Status()
+}
+
 // MaxRetries returns the maximum retry attempts.
 func (c *OpenAIChatClient) MaxRetries() int {
 	return c.maxRetries

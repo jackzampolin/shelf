@@ -3,6 +3,8 @@ package jobs
 import (
 	"context"
 	"time"
+
+	"github.com/jackzampolin/shelf/internal/providers"
 )
 
 // PoolType indicates what kind of work this pool handles.
@@ -75,8 +77,9 @@ type PoolStatus struct {
 	RateLimiter *RateLimiterStatus `json:"rate_limiter,omitempty"`
 
 	// Provider health circuit (provider pools only)
-	Health      string `json:"health,omitempty"`
-	ParkedUnits int    `json:"parked_units,omitempty"`
+	Health      string                     `json:"health,omitempty"`
+	ParkedUnits int                        `json:"parked_units,omitempty"`
+	Endpoints   []providers.EndpointStatus `json:"endpoints,omitempty"`
 }
 
 // RateLimiterStatus mirrors providers.RateLimiterStatus for API responses.

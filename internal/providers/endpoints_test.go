@@ -82,6 +82,28 @@ func TestEndpointPool_AcquireSkipsCooldown(t *testing.T) {
 	p.Release(second)
 }
 
+func TestEndpointPool_Status(t *testing.T) {
+	p := NewEndpointPool([]string{"a", "b"})
+	acquired := p.Acquire()
+	p.MarkFailure("b", time.Hour)
+
+	status := p.Status()
+	if len(status) != 2 || status[0].BaseURL != "a" || status[1].BaseURL != "b" {
+		t.Fatalf("Status() = %#v, want stable [a b] order", status)
+	}
+	if acquired != "a" || status[0].InFlight != 1 {
+		t.Fatalf("a status = %#v after acquiring %q, want one in flight", status[0], acquired)
+	}
+	if status[1].CooldownUntil.IsZero() {
+		t.Fatalf("b status = %#v, want active cooldown", status[1])
+	}
+
+	p.Release(acquired)
+	if got := p.Status()[0].InFlight; got != 0 {
+		t.Fatalf("a in_flight after release = %d, want 0", got)
+	}
+}
+
 func TestEndpointPool_SkipsFailedEndpointDuringCooldown(t *testing.T) {
 	p := NewEndpointPool([]string{"a", "b"})
 	p.MarkFailure("a", time.Hour)
