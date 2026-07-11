@@ -72,6 +72,7 @@ Common issues to fix:
 6. Repeated headers/footers that weren't fully removed
 
 Rules:
+- Return compact JSON with no indentation or repeated whitespace
 - ONLY return edits for actual problems
 - Keep edits minimal and precise
 - Return at most 50 edits; prefer the highest-confidence OCR fixes

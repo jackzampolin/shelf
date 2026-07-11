@@ -292,6 +292,7 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		j.Book.AddCost(info.UnitType, cost)
 	}
 
+	deferFailedToHandler := false
 	if !result.Success {
 		// Handle failures with retry logic
 		switch info.UnitType {
@@ -391,6 +392,11 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 					"error", result.Error)
 			}
 			break
+		case WorkUnitTypeStructureClassify, WorkUnitTypeStructurePolish:
+			// Structure owns semantic retries and fail-closed polish fallback.
+			// Let its handler see provider failures instead of turning the first
+			// malformed/truncated generation into an immediate book failure.
+			deferFailedToHandler = true
 		default:
 			// Any other work type - retry if under limit, else fall through to fatal.
 			if info.RetryCount < maxRetriesForPageWorkUnit(info.UnitType) {
@@ -408,8 +414,10 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 					"error", result.Error)
 			}
 		}
-		j.RemoveWorkUnit(result.WorkUnitID)
-		return nil, failedWorkUnitError(info, result.Error)
+		if !deferFailedToHandler {
+			j.RemoveWorkUnit(result.WorkUnitID)
+			return nil, failedWorkUnitError(info, result.Error)
+		}
 	}
 
 	var newUnits []jobs.WorkUnit

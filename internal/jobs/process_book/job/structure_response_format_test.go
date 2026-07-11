@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/jackzampolin/shelf/internal/defra"
+	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
@@ -69,6 +70,43 @@ func TestFailedStructurePolishErrorNamesChapter(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q missing %q", err, want)
 		}
+	}
+}
+
+func TestStructurePolishRetriesFailedGenerationBeforeFailingClosed(t *testing.T) {
+	j := newStructureResponseFormatJob()
+	result := jobs.WorkResult{
+		WorkUnitID: "failed-polish",
+		Success:    false,
+		Error:      errors.New("model output reached token limit"),
+	}
+	info := WorkUnitInfo{
+		UnitType:       WorkUnitTypeStructurePolish,
+		StructurePhase: StructPhasePolish,
+		ChapterID:      "ch_001",
+	}
+
+	units, err := j.HandleStructurePolishComplete(context.Background(), result, info)
+	if err != nil || len(units) != 1 {
+		t.Fatalf("first failure returned units=%d err=%v, want one retry", len(units), err)
+	}
+	retryInfo, ok := j.Tracker.Get(units[0].ID)
+	if !ok || retryInfo.RetryCount != 1 || retryInfo.ChapterID != "ch_001" {
+		t.Fatalf("retry info = %+v, ok=%v", retryInfo, ok)
+	}
+	chapter := j.Book.GetChapterByEntryID("ch_001")
+	if chapter.PolishDone || chapter.PolishFailed {
+		t.Fatalf("chapter was degraded before retries exhausted: %+v", chapter)
+	}
+
+	info.RetryCount = MaxStructureRetries
+	_, err = j.HandleStructurePolishComplete(context.Background(), result, info)
+	if err == nil {
+		t.Fatal("exhausted failure unexpectedly completed")
+	}
+	chapter = j.Book.GetChapterByEntryID("ch_001")
+	if !chapter.PolishDone || !chapter.PolishFailed {
+		t.Fatalf("chapter fallback state = %+v", chapter)
 	}
 }
 

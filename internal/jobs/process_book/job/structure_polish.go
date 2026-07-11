@@ -124,6 +124,28 @@ func (j *Job) createChapterPolishWorkUnit(ctx context.Context, chapter *common.C
 // HandleStructurePolishComplete processes polish result for a chapter.
 func (j *Job) HandleStructurePolishComplete(ctx context.Context, result jobs.WorkResult, info WorkUnitInfo) ([]jobs.WorkUnit, error) {
 	logger := svcctx.LoggerFrom(ctx)
+	if !result.Success && info.RetryCount < MaxStructureRetries {
+		j.RemoveWorkUnit(result.WorkUnitID)
+		chapter := j.Book.GetChapterByEntryID(info.ChapterID)
+		if chapter != nil {
+			if unit := j.createChapterPolishWorkUnit(ctx, chapter); unit != nil {
+				j.Tracker.Register(unit.ID, WorkUnitInfo{
+					UnitType:       WorkUnitTypeStructurePolish,
+					StructurePhase: StructPhasePolish,
+					ChapterID:      info.ChapterID,
+					RetryCount:     info.RetryCount + 1,
+				})
+				if logger != nil {
+					logger.Warn("chapter polish failed, retrying",
+						"chapter_id", info.ChapterID,
+						"retry_count", info.RetryCount+1,
+						"max_retries", MaxStructureRetries,
+						"error", result.Error)
+				}
+				return []jobs.WorkUnit{*unit}, nil
+			}
+		}
+	}
 
 	// Process polish result
 	if err := j.processStructurePolishResult(ctx, result, info); err != nil {
