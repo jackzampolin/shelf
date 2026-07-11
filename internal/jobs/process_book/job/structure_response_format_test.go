@@ -14,6 +14,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
+	"github.com/jackzampolin/shelf/internal/providers"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
@@ -101,6 +102,58 @@ func TestStructureClassificationFailureFailsClosed(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "classification chunk 0-1 failed") {
 		t.Fatalf("error = %v, want fail-closed chunk error", err)
+	}
+}
+
+func TestStructureClassificationIncompleteCoverageRetries(t *testing.T) {
+	j := newStructureResponseFormatJob()
+	result := jobs.WorkResult{
+		WorkUnitID: "classify-incomplete",
+		Success:    true,
+		ChatResult: &providers.ChatResult{ParsedJSON: []byte(`{
+			"classifications":{"ch_001":"body"},
+			"content_types":{},
+			"audio_include":{"ch_001":true},
+			"reasoning":{"ch_001":"narrative body"}
+		}`)},
+	}
+	units, err := j.HandleStructureClassifyComplete(context.Background(), result, WorkUnitInfo{
+		UnitType: WorkUnitTypeStructureClassify, StructurePhase: StructPhaseClassify,
+		RetryCount: 0, ClassifyStart: 0, ClassifyEnd: 1,
+	})
+	if err != nil {
+		t.Fatalf("incomplete chunk should retry: %v", err)
+	}
+	if len(units) != 1 {
+		t.Fatalf("retry units = %d, want 1", len(units))
+	}
+	info, ok := j.Tracker.Get(units[0].ID)
+	if !ok || info.RetryCount != 1 || info.ClassifyStart != 0 || info.ClassifyEnd != 1 {
+		t.Fatalf("retry tracker info = %+v, ok=%v", info, ok)
+	}
+	if got := j.Book.GetStructureChapters()[0].MatterType; got != "" {
+		t.Fatalf("partial classification mutated book state: %q", got)
+	}
+}
+
+func TestStructureClassificationIncompleteCoverageFailsClosedAtLimit(t *testing.T) {
+	j := newStructureResponseFormatJob()
+	result := jobs.WorkResult{
+		WorkUnitID: "classify-incomplete",
+		Success:    true,
+		ChatResult: &providers.ChatResult{ParsedJSON: []byte(`{
+			"classifications":{"ch_001":"body"},
+			"content_types":{},
+			"audio_include":{"ch_001":true},
+			"reasoning":{"ch_001":"narrative body"}
+		}`)},
+	}
+	_, err := j.HandleStructureClassifyComplete(context.Background(), result, WorkUnitInfo{
+		UnitType: WorkUnitTypeStructureClassify, StructurePhase: StructPhaseClassify,
+		RetryCount: MaxStructureRetries, ClassifyStart: 0, ClassifyEnd: 1,
+	})
+	if err == nil || !strings.Contains(err.Error(), "content_types missing ch_001") {
+		t.Fatalf("error = %v, want missing-key failure", err)
 	}
 }
 

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 
 	"github.com/google/uuid"
@@ -120,37 +122,27 @@ func (j *Job) createStructureClassifyChunkWorkUnit(ctx context.Context, chapters
 func (j *Job) HandleStructureClassifyComplete(ctx context.Context, result jobs.WorkResult, info WorkUnitInfo) ([]jobs.WorkUnit, error) {
 	j.RemoveWorkUnit(result.WorkUnitID)
 	logger := svcctx.LoggerFrom(ctx)
+	chapters := j.Book.GetStructureChapters()
+	if info.ClassifyStart < 0 || info.ClassifyEnd > len(chapters) || info.ClassifyStart >= info.ClassifyEnd {
+		return nil, fmt.Errorf("invalid structure classification chunk %d-%d", info.ClassifyStart, info.ClassifyEnd)
+	}
+	chunk := chapters[info.ClassifyStart:info.ClassifyEnd]
 
 	if !result.Success {
-		if info.RetryCount < MaxStructureRetries {
-			if logger != nil {
-				logger.Warn("classification failed, retrying",
-					"retry_count", info.RetryCount,
-					"error", result.Error)
-			}
-			chapters := j.Book.GetStructureChapters()
-			if info.ClassifyStart < 0 || info.ClassifyEnd > len(chapters) || info.ClassifyStart >= info.ClassifyEnd {
-				return nil, fmt.Errorf("invalid structure classification chunk %d-%d", info.ClassifyStart, info.ClassifyEnd)
-			}
-			unit, err := j.createStructureClassifyChunkWorkUnit(ctx, chapters[info.ClassifyStart:info.ClassifyEnd], info.ClassifyStart, info.ClassifyEnd, info.RetryCount+1)
-			if err != nil {
-				return nil, fmt.Errorf("recreate structure classification chunk %d-%d: %w", info.ClassifyStart, info.ClassifyEnd, err)
-			}
-			return []jobs.WorkUnit{*unit}, nil
-		}
-		if logger != nil {
-			logger.Error("classification permanently failed",
-				"start", info.ClassifyStart, "end", info.ClassifyEnd, "error", result.Error)
-		}
-		return nil, fmt.Errorf("structure classification chunk %d-%d failed after %d attempts: %w", info.ClassifyStart, info.ClassifyEnd, info.RetryCount+1, result.Error)
+		return j.retryStructureClassifyChunk(ctx, info, chunk, result.Error)
 	}
 
-	// Process classification result
-	if err := j.processStructureClassifyResult(ctx, result); err != nil {
+	// Parse and validate complete per-entry coverage before mutating the merged
+	// classification. A schema-valid object may still omit arbitrary map keys.
+	if err := j.processStructureClassifyResult(ctx, result, chunk); err != nil {
 		if logger != nil {
-			logger.Warn("failed to process classification result", "error", err)
+			logger.Warn("invalid classification chunk result, retrying",
+				"start", info.ClassifyStart,
+				"end", info.ClassifyEnd,
+				"retry_count", info.RetryCount,
+				"error", err)
 		}
-		return nil, err
+		return j.retryStructureClassifyChunk(ctx, info, chunk, err)
 	}
 
 	if j.PendingWorkUnits() > 0 {
@@ -168,8 +160,32 @@ func (j *Job) HandleStructureClassifyComplete(ctx context.Context, result jobs.W
 	return j.transitionToStructurePolish(ctx), nil
 }
 
+func (j *Job) retryStructureClassifyChunk(ctx context.Context, info WorkUnitInfo, chunk []*common.ChapterState, cause error) ([]jobs.WorkUnit, error) {
+	logger := svcctx.LoggerFrom(ctx)
+	if info.RetryCount < MaxStructureRetries {
+		unit, err := j.createStructureClassifyChunkWorkUnit(ctx, chunk, info.ClassifyStart, info.ClassifyEnd, info.RetryCount+1)
+		if err != nil {
+			return nil, fmt.Errorf("recreate structure classification chunk %d-%d: %w", info.ClassifyStart, info.ClassifyEnd, err)
+		}
+		if logger != nil {
+			logger.Warn("classification chunk failed, retrying",
+				"start", info.ClassifyStart,
+				"end", info.ClassifyEnd,
+				"retry_count", info.RetryCount+1,
+				"max_retries", MaxStructureRetries,
+				"error", cause)
+		}
+		return []jobs.WorkUnit{*unit}, nil
+	}
+	if logger != nil {
+		logger.Error("classification chunk permanently failed",
+			"start", info.ClassifyStart, "end", info.ClassifyEnd, "error", cause)
+	}
+	return nil, fmt.Errorf("structure classification chunk %d-%d failed after %d attempts: %w", info.ClassifyStart, info.ClassifyEnd, info.RetryCount+1, cause)
+}
+
 // processStructureClassifyResult parses and applies classification results.
-func (j *Job) processStructureClassifyResult(ctx context.Context, result jobs.WorkResult) error {
+func (j *Job) processStructureClassifyResult(ctx context.Context, result jobs.WorkResult, expected []*common.ChapterState) error {
 	logger := svcctx.LoggerFrom(ctx)
 
 	if result.ChatResult == nil {
@@ -189,6 +205,9 @@ func (j *Job) processStructureClassifyResult(ctx context.Context, result jobs.Wo
 	if err := json.Unmarshal(content, &classifyResult); err != nil {
 		return fmt.Errorf("failed to parse classification result: %w", err)
 	}
+	if err := validateStructureClassifyCoverage(classifyResult, expected); err != nil {
+		return err
+	}
 
 	j.Book.ApplyStructureClassifyResult(classifyResult)
 
@@ -196,6 +215,68 @@ func (j *Job) processStructureClassifyResult(ctx context.Context, result jobs.Wo
 		logger.Debug("applied matter classifications",
 			"book_id", j.Book.BookID,
 			"classifications", len(classifyResult.Classifications))
+	}
+	return nil
+}
+
+func validateStructureClassifyCoverage(result common.ClassifyResult, expected []*common.ChapterState) error {
+	want := make(map[string]struct{}, len(expected))
+	for _, chapter := range expected {
+		if chapter == nil || chapter.EntryID == "" {
+			return fmt.Errorf("classification chunk contains chapter without entry_id")
+		}
+		if _, duplicate := want[chapter.EntryID]; duplicate {
+			return fmt.Errorf("classification chunk contains duplicate entry_id %s", chapter.EntryID)
+		}
+		want[chapter.EntryID] = struct{}{}
+	}
+
+	problems := make([]string, 0)
+	check := func(name string, keys []string) {
+		got := make(map[string]struct{}, len(keys))
+		for _, key := range keys {
+			got[key] = struct{}{}
+		}
+		var missing, extra []string
+		for key := range want {
+			if _, ok := got[key]; !ok {
+				missing = append(missing, key)
+			}
+		}
+		for key := range got {
+			if _, ok := want[key]; !ok {
+				extra = append(extra, key)
+			}
+		}
+		sort.Strings(missing)
+		sort.Strings(extra)
+		if len(missing) > 0 {
+			problems = append(problems, fmt.Sprintf("%s missing %s", name, strings.Join(missing, ",")))
+		}
+		if len(extra) > 0 {
+			problems = append(problems, fmt.Sprintf("%s unexpected %s", name, strings.Join(extra, ",")))
+		}
+	}
+	stringKeys := func(values map[string]string) []string {
+		keys := make([]string, 0, len(values))
+		for key := range values {
+			keys = append(keys, key)
+		}
+		return keys
+	}
+	boolKeys := func(values map[string]bool) []string {
+		keys := make([]string, 0, len(values))
+		for key := range values {
+			keys = append(keys, key)
+		}
+		return keys
+	}
+	check("classifications", stringKeys(result.Classifications))
+	check("content_types", stringKeys(result.ContentTypes))
+	check("audio_include", boolKeys(result.AudioInclude))
+	check("reasoning", stringKeys(result.Reasoning))
+	if len(problems) > 0 {
+		return fmt.Errorf("incomplete structure classification: %s", strings.Join(problems, "; "))
 	}
 	return nil
 }
