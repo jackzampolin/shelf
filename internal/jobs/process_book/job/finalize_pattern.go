@@ -249,12 +249,19 @@ func (j *Job) generateEntriesToFind(ctx context.Context) {
 	// Get linked entries for comparison
 	entries, _ := common.GetOrLoadLinkedEntries(ctx, j.Book, j.TocDocID)
 
-	// Build a set of existing entry identifiers
+	// Build sets of normalized existing identifiers. Models commonly mix Arabic,
+	// Roman, and spelled-out numbers ("1", "I", "ONE"); exact strings would
+	// rediscover an entry that is already present in the extracted ToC.
 	existingIdentifiers := make(map[string]bool)
+	existingAnyLevel := make(map[string]bool)
 	for _, entry := range entries {
-		if entry.LevelName != "" && entry.EntryNumber != "" {
-			key := strings.ToLower(entry.LevelName + "_" + entry.EntryNumber)
-			existingIdentifiers[key] = true
+		identifier := normalizeSequenceIdentifier(entry.EntryNumber)
+		if identifier == "" {
+			continue
+		}
+		existingAnyLevel[identifier] = true
+		if level := strings.ToLower(strings.TrimSpace(entry.LevelName)); level != "" {
+			existingIdentifiers[level+"_"+identifier] = true
 		}
 	}
 
@@ -264,11 +271,13 @@ func (j *Job) generateEntriesToFind(ctx context.Context) {
 	// Generate entries from patterns
 	for _, pattern := range j.Book.GetFinalizePatternResult().Patterns {
 		identifiers := generateSequence(pattern.RangeStart, pattern.RangeEnd)
+		level := strings.ToLower(strings.TrimSpace(pattern.LevelName))
 
 		for i, identifier := range identifiers {
-			key := strings.ToLower(pattern.LevelName + "_" + identifier)
+			normalizedIdentifier := normalizeSequenceIdentifier(identifier)
+			key := level + "_" + normalizedIdentifier
 
-			if existingIdentifiers[key] {
+			if existingIdentifiers[key] || (level == "" && existingAnyLevel[normalizedIdentifier]) {
 				continue
 			}
 

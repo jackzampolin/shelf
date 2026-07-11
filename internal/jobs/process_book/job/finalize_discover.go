@@ -354,6 +354,16 @@ func (j *Job) saveDiscoveredEntry(ctx context.Context, entryKey string, result *
 	if entry == nil {
 		return defra.WriteResult{}, fmt.Errorf("entry not found: %s", entryKey)
 	}
+	if discoveredEntryAlreadyLinked(j.Book.GetLinkedEntries(), entry, *result.ScanPage) {
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Info("skipping duplicate discovered ToC entry",
+				"book_id", j.Book.BookID,
+				"entry_key", entryKey,
+				"identifier", entry.Identifier,
+				"scan_page", *result.ScanPage)
+		}
+		return defra.WriteResult{}, nil
+	}
 
 	pageDocID := j.getPageDocID(*result.ScanPage)
 	sortOrder := *result.ScanPage * 1000

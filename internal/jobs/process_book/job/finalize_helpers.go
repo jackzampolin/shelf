@@ -192,6 +192,54 @@ func compareIdentifiers(a, b string) int {
 	return strings.Compare(strings.ToLower(a), strings.ToLower(b))
 }
 
+func normalizeSequenceIdentifier(identifier string) string {
+	value := strings.ToLower(strings.TrimSpace(identifier))
+	value = strings.Join(strings.Fields(strings.ReplaceAll(value, "-", " ")), " ")
+	if value == "" {
+		return ""
+	}
+	if number, err := strconv.Atoi(value); err == nil && number > 0 {
+		return strconv.Itoa(number)
+	}
+	numberWords := map[string]int{
+		"one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+		"six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+		"eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+		"sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20,
+		"twenty one": 21, "twenty two": 22, "twenty three": 23, "twenty four": 24,
+		"twenty five": 25, "twenty six": 26, "twenty seven": 27, "twenty eight": 28,
+		"twenty nine": 29, "thirty": 30,
+	}
+	if number := numberWords[value]; number > 0 {
+		return strconv.Itoa(number)
+	}
+	if number := romanToInt(strings.ToUpper(value)); number > 0 {
+		return strconv.Itoa(number)
+	}
+	return value
+}
+
+func discoveredEntryAlreadyLinked(entries []*common.LinkedTocEntry, candidate *common.EntryToFind, scanPage int) bool {
+	candidateIdentifier := normalizeSequenceIdentifier(candidate.Identifier)
+	if candidateIdentifier == "" {
+		return false
+	}
+	candidateLevel := strings.ToLower(strings.TrimSpace(candidate.LevelName))
+	for _, entry := range entries {
+		if entry.ActualPage == nil || *entry.ActualPage != scanPage {
+			continue
+		}
+		if normalizeSequenceIdentifier(entry.EntryNumber) != candidateIdentifier {
+			continue
+		}
+		existingLevel := strings.ToLower(strings.TrimSpace(entry.LevelName))
+		if candidateLevel == "" || existingLevel == "" || candidateLevel == existingLevel {
+			return true
+		}
+	}
+	return false
+}
+
 func generateSequence(start, end string) []string {
 	startNum, startErr := strconv.Atoi(start)
 	endNum, endErr := strconv.Atoi(end)
