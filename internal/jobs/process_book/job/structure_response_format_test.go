@@ -110,6 +110,29 @@ func TestStructurePolishRetriesFailedGenerationBeforeFailingClosed(t *testing.T)
 	}
 }
 
+func TestStructurePolishProgressCountersPersistDuringFanout(t *testing.T) {
+	store := common.NewMemoryStateStore()
+	store.SetDoc("Book", "book-1", map[string]any{})
+	j := newStructureResponseFormatJob()
+	j.Book.Store = store
+	j.Book.SetStructurePhase(StructPhasePolish)
+	j.Book.SetStructureProgress(3, 3, 0, 0)
+
+	j.incrementStructurePolished(context.Background())
+	j.incrementStructurePolishFailed(context.Background())
+
+	doc := store.GetDoc("Book", "book-1")
+	if got := doc["structure_phase"]; got != StructPhasePolish {
+		t.Fatalf("structure_phase = %v, want %q", got, StructPhasePolish)
+	}
+	if got := doc["structure_chapters_polished"]; got != 1 {
+		t.Fatalf("structure_chapters_polished = %v, want 1", got)
+	}
+	if got := doc["structure_polish_failed"]; got != 1 {
+		t.Fatalf("structure_polish_failed = %v, want 1", got)
+	}
+}
+
 func TestFailedBookOperationErrorDoesNotClaimPageZero(t *testing.T) {
 	err := failedWorkUnitError(WorkUnitInfo{
 		UnitType: WorkUnitTypeTocExtract,

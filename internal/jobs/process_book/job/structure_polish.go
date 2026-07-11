@@ -45,7 +45,7 @@ func (j *Job) createStructurePolishWorkUnits(ctx context.Context) []jobs.WorkUni
 			chapter.EditsAppliedJSON = "[]"
 			chapter.PolishDone = true
 			j.Book.UpdateChapter(chapter) // Save changes back
-			j.Book.IncrementStructurePolished()
+			j.incrementStructurePolished(ctx)
 			if err := j.persistChapterPolishResult(ctx, chapter); err != nil {
 				if logger := svcctx.LoggerFrom(ctx); logger != nil {
 					logger.Warn("failed to persist skipped chapter polish result",
@@ -185,7 +185,7 @@ func (j *Job) processStructurePolishResult(ctx context.Context, result jobs.Work
 
 	// Helper to mark chapter as failed and save
 	markFailed := func(reason string, err error) error {
-		j.Book.IncrementStructurePolishFailed()
+		j.incrementStructurePolishFailed(ctx)
 		chapter.PolishDone = true
 		chapter.PolishFailed = true
 		chapter.PolishedText = chapter.MechanicalText // Fallback to mechanical text
@@ -244,7 +244,7 @@ func (j *Job) processStructurePolishResult(ctx context.Context, result jobs.Work
 	chapter.PolishDone = true
 	j.Book.UpdateChapter(chapter) // Save changes back
 
-	j.Book.IncrementStructurePolished()
+	j.incrementStructurePolished(ctx)
 	if err := j.persistChapterPolishResult(ctx, chapter); err != nil {
 		if logger != nil {
 			logger.Warn("failed to persist chapter polish result",
@@ -256,6 +256,19 @@ func (j *Job) processStructurePolishResult(ctx context.Context, result jobs.Work
 	}
 
 	return nil
+}
+
+// Keep the durable structure counters current while the fan-out is running.
+// Job heartbeat/last-progress already records liveness, but operators also need
+// the detailed status endpoint to show how much of a large polish wave is done.
+func (j *Job) incrementStructurePolished(ctx context.Context) {
+	j.Book.IncrementStructurePolished()
+	common.PersistStructurePhaseAsync(ctx, j.Book)
+}
+
+func (j *Job) incrementStructurePolishFailed(ctx context.Context) {
+	j.Book.IncrementStructurePolishFailed()
+	common.PersistStructurePhaseAsync(ctx, j.Book)
 }
 
 // allStructurePolishDone checks if all polish work is complete.
