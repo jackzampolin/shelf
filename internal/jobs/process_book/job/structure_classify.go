@@ -59,7 +59,8 @@ func (j *Job) createStructureClassifyWorkUnit(ctx context.Context) (*jobs.WorkUn
 	}
 
 	request := &providers.ChatRequest{
-		Model: "",
+		Model:     "",
+		MaxTokens: common.ClassifyMaxOutputTokens(len(chapters)),
 		Messages: []providers.Message{
 			{Role: "system", Content: systemPrompt},
 			{Role: "user", Content: userPrompt},

@@ -19,8 +19,28 @@ const (
 	// generic 4K allowance; truncated edit JSON must still fail closed.
 	MaxPolishOutputTokens = 16384
 
+	// Classification emits four compact entry-keyed maps. Scale the allowance
+	// for unusually granular ToCs while keeping normal books from requesting an
+	// effectively unbounded structured completion.
+	minClassifyOutputTokens = 4096
+	maxClassifyOutputTokens = 32768
+	classifyTokensPerEntry  = 96
+
 	maxClassifySnippetChars = 1000
 )
+
+// ClassifyMaxOutputTokens returns a bounded output allowance sized to the
+// number of entries being classified.
+func ClassifyMaxOutputTokens(entryCount int) int {
+	tokens := entryCount * classifyTokensPerEntry
+	if tokens < minClassifyOutputTokens {
+		return minClassifyOutputTokens
+	}
+	if tokens > maxClassifyOutputTokens {
+		return maxClassifyOutputTokens
+	}
+	return tokens
+}
 
 // ClassifySystemPrompt is the system prompt for content classification.
 const ClassifySystemPrompt = `You are a book structure analyzer preparing a book for audiobook output.

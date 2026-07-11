@@ -44,7 +44,26 @@ func TestCreateStructureClassifyWorkUnitUsesInnerJSONSchema(t *testing.T) {
 		t.Fatalf("createStructureClassifyWorkUnit error: %v", err)
 	}
 
+	if unit.ChatRequest.MaxTokens != common.ClassifyMaxOutputTokens(1) {
+		t.Fatalf("classify MaxTokens = %d, want %d", unit.ChatRequest.MaxTokens, common.ClassifyMaxOutputTokens(1))
+	}
 	assertResponseFormatSchemaName(t, unit.ChatRequest.ResponseFormat.JSONSchema, "entry_classifications")
+}
+
+func TestClassifyOutputLimitScalesAndCaps(t *testing.T) {
+	tests := []struct {
+		entries int
+		want    int
+	}{
+		{entries: 1, want: 4096},
+		{entries: 97, want: 9312},
+		{entries: 470, want: 32768},
+	}
+	for _, tt := range tests {
+		if got := common.ClassifyMaxOutputTokens(tt.entries); got != tt.want {
+			t.Fatalf("ClassifyMaxOutputTokens(%d) = %d, want %d", tt.entries, got, tt.want)
+		}
+	}
 }
 
 func TestCreateFinalizePatternWorkUnitBoundsStructuredOutput(t *testing.T) {
