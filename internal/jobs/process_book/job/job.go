@@ -54,6 +54,18 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 			j.reopenInterruptedOperation(ctx, common.OpTocFinder)
 		} else if unit := j.CreateTocFinderWorkUnit(ctx); unit != nil {
 			resumeUnits = append(resumeUnits, *unit)
+		} else if j.TocAgent != nil && j.TocAgent.IsDone() {
+			// A restored pending write_result may finish synchronously while
+			// CreateTocFinderWorkUnit replays tools. Route that result through the
+			// normal completion path instead of discarding it and starting over.
+			recovered, err := j.HandleTocFinderComplete(ctx, jobs.WorkResult{Success: true}, WorkUnitInfo{
+				UnitType:   WorkUnitTypeTocFinder,
+				RetryCount: j.Book.GetTocFinderState().Retries(),
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to apply recovered ToC finder result: %w", err)
+			}
+			resumeUnits = append(resumeUnits, recovered...)
 		} else {
 			// A saved state that cannot emit work should be replaced, but a process
 			// restart still must not spend the provider/result retry budget.

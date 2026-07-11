@@ -2,6 +2,7 @@ package job
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -423,5 +424,72 @@ func TestCreateLinkTocWorkUnitsRestoresDurableRetryMetadata(t *testing.T) {
 	}
 	if info.RetryCount != 2 || info.RetryHint != retryHint {
 		t.Fatalf("restored retry metadata = count %d hint %q", info.RetryCount, info.RetryHint)
+	}
+}
+
+func TestCreateLinkTocWorkUnitsAppliesRecoveredPendingWriteResult(t *testing.T) {
+	entry := &toc_entry_finder.TocEntry{
+		DocID:             "entry-1",
+		EntryNumber:       "1",
+		LevelName:         "chapter",
+		Title:             "Recovered Chapter",
+		PrintedPageNumber: "1",
+	}
+	j, store := newTocRecoveryJob([]*toc_entry_finder.TocEntry{entry})
+	j.Book.TotalPages = 10
+	store.SetDoc("TocEntry", entry.DocID, map[string]any{
+		"_tocID":     "toc-1",
+		"title":      entry.Title,
+		"sort_order": 0,
+	})
+	page := j.Book.GetOrCreatePage(5)
+	page.SetPageDocID("page-5")
+	page.SetOcrMarkdown(`<div data-label="Section-Header">1 Recovered Chapter</div>
+<div data-label="Text"><p>The chapter begins here.</p></div>`)
+	store.SetDoc("Page", "page-5", map[string]any{"page_num": 5})
+
+	call := providers.ToolCall{ID: "call-write", Type: "function"}
+	call.Function.Name = "write_result"
+	call.Function.Arguments = `{"scan_page":5,"reasoning":"exact source heading"}`
+	pending, err := json.Marshal([]providers.ToolCall{call})
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := &common.AgentState{
+		DocID:            "agent-state-1",
+		AgentID:          "agent-1",
+		AgentType:        common.AgentTypeTocEntryFinder,
+		EntryDocID:       entry.DocID,
+		Iteration:        4,
+		MessagesJSON:     "[]",
+		PendingToolCalls: string(pending),
+	}
+	j.Book.SetAgentState(saved)
+	store.SetDoc("AgentState", saved.DocID, map[string]any{
+		"_bookID":            j.Book.BookID,
+		"agent_id":           saved.AgentID,
+		"agent_type":         saved.AgentType,
+		"entry_doc_id":       saved.EntryDocID,
+		"iteration":          saved.Iteration,
+		"messages_json":      saved.MessagesJSON,
+		"pending_tool_calls": saved.PendingToolCalls,
+	})
+
+	units := j.CreateLinkTocWorkUnits(context.Background())
+	if len(units) != 0 {
+		t.Fatalf("recovered final tool emitted %d LLM units, want none", len(units))
+	}
+	if len(j.LinkTocEntryAgents) != 0 {
+		t.Fatalf("completed recovered agent still occupies a slot: %d", len(j.LinkTocEntryAgents))
+	}
+	if got := j.Book.GetAgentState(common.AgentTypeTocEntryFinder, entry.DocID); got != nil {
+		t.Fatalf("completed recovered agent state was not cleaned up: %#v", got)
+	}
+	stored := store.GetDoc("TocEntry", entry.DocID)
+	if stored["_actual_pageID"] != "page-5" {
+		t.Fatalf("recovered link was not committed: %#v", stored)
+	}
+	if !j.Book.TocLinkIsDone() {
+		t.Fatal("final recovered link did not complete the aggregate link stage")
 	}
 }

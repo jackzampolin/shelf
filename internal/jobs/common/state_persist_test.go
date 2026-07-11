@@ -437,6 +437,49 @@ func TestPersistAgentStateUpdatesKnownCheckpointByDocID(t *testing.T) {
 	}
 }
 
+func TestPersistAgentStatesBatchUpdatesKnownCheckpointsByDocID(t *testing.T) {
+	store := NewMemoryStateStore()
+	store.SetDoc("Book", "book-1", map[string]any{})
+	book := NewBookState("book-1")
+	book.Store = store
+
+	states := []*AgentState{
+		{AgentID: "agent-1", AgentType: AgentTypeTocEntryFinder, EntryDocID: "entry-1", Iteration: 2, MessagesJSON: "one"},
+		{AgentID: "agent-2", AgentType: AgentTypeTocEntryFinder, EntryDocID: "entry-2", Iteration: 3, MessagesJSON: "two"},
+	}
+	for i, state := range states {
+		docID := fmt.Sprintf("state-%d", i+1)
+		store.SetDoc("AgentState", docID, map[string]any{
+			"_bookID":      book.BookID,
+			"agent_id":     state.AgentID,
+			"agent_type":   state.AgentType,
+			"entry_doc_id": state.EntryDocID,
+			"iteration":    0,
+		})
+		book.SetAgentState(&AgentState{
+			DocID:      docID,
+			AgentID:    state.AgentID,
+			AgentType:  state.AgentType,
+			EntryDocID: state.EntryDocID,
+		})
+	}
+	store.UpsertErr = fmt.Errorf("batch restart path must update known rows")
+
+	if err := PersistAgentStates(context.Background(), book, states); err != nil {
+		t.Fatal(err)
+	}
+	for i, state := range states {
+		docID := fmt.Sprintf("state-%d", i+1)
+		if state.DocID != docID {
+			t.Fatalf("state %d docID = %q, want %q", i, state.DocID, docID)
+		}
+		stored := store.GetDoc("AgentState", docID)
+		if stored["iteration"] != state.Iteration || stored["messages_json"] != state.MessagesJSON {
+			t.Fatalf("stored state %d = %#v", i, stored)
+		}
+	}
+}
+
 func TestPersistAgentStateRetriesTransientDefraWrite(t *testing.T) {
 	store := &flakyAgentStateStore{
 		MemoryStateStore:  NewMemoryStateStore(),

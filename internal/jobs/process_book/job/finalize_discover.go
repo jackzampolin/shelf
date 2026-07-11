@@ -84,15 +84,36 @@ func (j *Job) createFinalizeDiscoverWorkUnits(ctx context.Context) []jobs.WorkUn
 		}
 	}
 
-	// Phase 3: Store agents and states, then execute tool loops
+	// Phase 3: Store the complete batch before tool replay. A restored final
+	// write_result can complete synchronously and transition/refill this phase.
 	var units []jobs.WorkUnit
 	for _, aws := range agentsToCreate {
 		j.FinalizeDiscoverAgents[aws.entry.Key] = aws.agent
 		j.Book.SetAgentState(aws.initialState)
+	}
 
+	for _, aws := range agentsToCreate {
 		// Execute tool loop to get first work unit
 		agentUnits := agents.ExecuteToolLoop(ctx, aws.agent)
 		if len(agentUnits) == 0 {
+			if aws.agent.IsDone() {
+				recovered, err := j.HandleFinalizeDiscoverComplete(ctx, jobs.WorkResult{Success: true}, WorkUnitInfo{
+					UnitType:      WorkUnitTypeFinalizeDiscover,
+					FinalizePhase: FinalizePhaseDiscover,
+					FinalizeKey:   aws.entry.Key,
+				})
+				if err != nil {
+					j.noWorkFailure = fmt.Sprintf("failed to apply recovered chapter finder %s: %v", aws.entry.Key, err)
+					if logger != nil {
+						logger.Error("failed to apply synchronously completed recovered chapter finder",
+							"book_id", j.Book.BookID,
+							"entry_key", aws.entry.Key,
+							"error", err)
+					}
+					continue
+				}
+				units = append(units, recovered...)
+			}
 			continue
 		}
 

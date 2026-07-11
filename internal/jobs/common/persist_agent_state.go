@@ -145,7 +145,20 @@ func PersistAgentStates(ctx context.Context, book *BookState, states []*AgentSta
 			}
 
 			filter := map[string]any{"_bookID": book.BookID, "agent_id": st.AgentID}
-			res, err := upsertAgentStateWithRetry(ctx, store, filter, doc)
+			existingDocID := st.DocID
+			if existingDocID == "" {
+				existing := book.GetAgentState(st.AgentType, st.EntryDocID)
+				if existing != nil && existing.AgentID == st.AgentID {
+					existingDocID = existing.DocID
+				}
+			}
+			var res defra.WriteResult
+			var err error
+			if existingDocID != "" {
+				res, err = updateAgentStateWithRetry(ctx, store, existingDocID, filter, doc)
+			} else {
+				res, err = upsertAgentStateWithRetry(ctx, store, filter, doc)
+			}
 			if err != nil {
 				results <- upsertResult{index: idx, err: fmt.Errorf("agent state %d (%s): %w", idx, st.AgentID, err)}
 				return

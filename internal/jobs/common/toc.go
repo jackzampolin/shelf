@@ -448,9 +448,9 @@ func SaveTocEntryResult(ctx context.Context, book *BookState, entryDocID string,
 		return "", fmt.Errorf("invalid entry doc ID: %w", err)
 	}
 
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return "", fmt.Errorf("defra sink not in context")
+	store := book.getStore(ctx)
+	if store == nil {
+		return "", fmt.Errorf("no store available")
 	}
 
 	update := map[string]any{
@@ -474,12 +474,7 @@ func SaveTocEntryResult(ctx context.Context, book *BookState, entryDocID string,
 	}
 
 	if len(update) > 0 {
-		writeResult, err := sink.SendSync(ctx, defra.WriteOp{
-			Collection: "TocEntry",
-			DocID:      entryDocID,
-			Document:   update,
-			Op:         defra.OpUpdate,
-		})
+		writeResult, err := store.UpdateWithVersion(ctx, "TocEntry", entryDocID, update)
 		if err != nil {
 			return "", err
 		}

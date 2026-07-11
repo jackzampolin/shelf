@@ -2,6 +2,7 @@ package job
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jackzampolin/shelf/internal/agent"
 	"github.com/jackzampolin/shelf/internal/agents"
@@ -106,15 +107,41 @@ func (j *Job) createMoreLinkTocWorkUnits(ctx context.Context, limit int) []jobs.
 		}
 	}
 
-	// Phase 3: Store agents and states, then execute tool loops
+	// Phase 3: Store the complete batch before executing any tool loops. A
+	// restored pending write_result can complete synchronously and refill the
+	// concurrency window; pre-registering the batch prevents that refill from
+	// creating a duplicate for an entry later in this slice.
 	var units []jobs.WorkUnit
 	for _, aws := range agentsToCreate {
 		j.LinkTocEntryAgents[aws.entry.DocID] = aws.agent
 		j.Book.SetAgentState(aws.initialState)
+	}
 
+	for _, aws := range agentsToCreate {
 		// Execute tool loop to get first work unit
 		agentUnits := agents.ExecuteToolLoop(ctx, aws.agent)
 		if len(agentUnits) == 0 {
+			if aws.agent.IsDone() {
+				recovered, err := j.HandleLinkTocComplete(ctx, jobs.WorkResult{Success: true}, WorkUnitInfo{
+					UnitType:   WorkUnitTypeLinkToc,
+					EntryDocID: aws.entry.DocID,
+					RetryCount: aws.retryCount,
+					RetryHint:  aws.retryHint,
+				})
+				if err != nil {
+					j.noWorkFailure = fmt.Sprintf("failed to apply recovered ToC entry agent %s: %v", aws.entry.DocID, err)
+					if logger != nil {
+						logger.Error("failed to apply synchronously completed recovered ToC entry agent",
+							"book_id", j.Book.BookID,
+							"entry_doc_id", aws.entry.DocID,
+							"error", err)
+					}
+					continue
+				}
+				units = append(units, recovered...)
+				units = append(units, j.maybeCompleteTocLink(ctx)...)
+				continue
+			}
 			if logger != nil {
 				logger.Debug("agent produced no work units",
 					"book_id", j.Book.BookID,

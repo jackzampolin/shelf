@@ -148,15 +148,36 @@ func (j *Job) createFinalizeGapWorkUnits(ctx context.Context) []jobs.WorkUnit {
 		}
 	}
 
-	// Phase 3: Store agents and states, then execute tool loops
+	// Phase 3: Store the complete batch before tool replay. A restored final
+	// write_result can complete synchronously and transition/refill this phase.
 	var units []jobs.WorkUnit
 	for _, aws := range agentsToCreate {
 		j.FinalizeGapAgents[aws.gap.Key] = aws.agent
 		j.Book.SetAgentState(aws.initialState)
+	}
 
+	for _, aws := range agentsToCreate {
 		// Execute tool loop to get first work unit
 		agentUnits := agents.ExecuteToolLoop(ctx, aws.agent)
 		if len(agentUnits) == 0 {
+			if aws.agent.IsDone() {
+				recovered, err := j.HandleFinalizeGapComplete(ctx, jobs.WorkResult{Success: true}, WorkUnitInfo{
+					UnitType:      WorkUnitTypeFinalizeGap,
+					FinalizePhase: FinalizePhaseValidate,
+					FinalizeKey:   aws.gap.Key,
+				})
+				if err != nil {
+					j.noWorkFailure = fmt.Sprintf("failed to apply recovered gap investigator %s: %v", aws.gap.Key, err)
+					if logger != nil {
+						logger.Error("failed to apply synchronously completed recovered gap investigator",
+							"book_id", j.Book.BookID,
+							"gap_key", aws.gap.Key,
+							"error", err)
+					}
+					continue
+				}
+				units = append(units, recovered...)
+			}
 			continue
 		}
 
