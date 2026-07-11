@@ -92,11 +92,26 @@ func TestSanitizeDiscoveredPatternsRejectsMalformedControlData(t *testing.T) {
 		{PatternType: "sequential", LevelName: "chapter", HeadingFormat: "CHAPTER", RangeStart: "1", RangeEnd: "3", Level: 2, Reasoning: "missing placeholder"},
 		{PatternType: "sequential", LevelName: "chapter", HeadingFormat: "CHAPTER {n}", RangeStart: "3", RangeEnd: "1", Level: 2, Reasoning: "reversed"},
 		{PatternType: "sequential", LevelName: "chapter", HeadingFormat: "CHAPTER {n}", RangeStart: "1", RangeEnd: "501", Level: 2, Reasoning: "unbounded"},
+		{PatternType: "sequential", LevelName: "section", HeadingFormat: "{n}", RangeStart: "I", RangeEnd: "VII", Level: 3, Reasoning: "Roman numerals restart in every chapter"},
+		{PatternType: "sequential", LevelName: "section", HeadingFormat: " ({n}). ", RangeStart: "1", RangeEnd: "7", Level: 3, Reasoning: "punctuation does not make a global identity"},
 	}
 
 	got := sanitizeDiscoveredPatterns(patterns)
 	if len(got) != 1 || got[0] != valid {
 		t.Fatalf("sanitized patterns = %#v, want only valid pattern", got)
+	}
+}
+
+func TestHasDiscoveryHeadingAnchor(t *testing.T) {
+	for _, format := range []string{"CHAPTER {n}", "Part {n}", "Appendix-{n}"} {
+		if !hasDiscoveryHeadingAnchor(format) {
+			t.Fatalf("hasDiscoveryHeadingAnchor(%q) = false, want true", format)
+		}
+	}
+	for _, format := range []string{"{n}", " {n}. ", "({n})", "§ {n}"} {
+		if hasDiscoveryHeadingAnchor(format) {
+			t.Fatalf("hasDiscoveryHeadingAnchor(%q) = true, want false", format)
+		}
 	}
 }
 

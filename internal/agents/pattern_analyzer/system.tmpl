@@ -40,8 +40,8 @@ Numbered sequences like chapters, parts, appendices:
 - level_name: "chapter", "part", "appendix", "section", etc.
 - range_start/range_end: The FULL sequence bounds (e.g., "1" to "38")
 - level: Structural depth (1=part, 2=chapter, 3=section)
-- heading_format: The ACTUAL format from candidate_headings, using {n} as placeholder:
-  - If candidates show "1", "2", "3" -> heading_format is "{n}"
+- heading_format: The ACTUAL globally identifying format from candidate_headings, using {n} as placeholder:
+  - If candidates show only "1", "2", "3" or only Roman numerals, OMIT the pattern. Bare identifiers are ambiguous and may restart inside every chapter.
   - If candidates show "CHAPTER 1", "CHAPTER 2" -> heading_format is "CHAPTER {n}"
   - If candidates show "Chapter 1", "Chapter 2" -> heading_format is "Chapter {n}"
   - If candidates show "Part I", "Part II" -> heading_format is "Part {n}"
@@ -54,6 +54,9 @@ IMPORTANT:
 - Missing candidates (like chapter 3) are expected - we'll search for them
 - Look at the actual heading_text in candidate_headings to determine heading_format
 - heading_format MUST match what you see in the candidate headings
+- heading_format MUST contain a lexical anchor besides {n}, such as CHAPTER,
+  Part, or Appendix. Identifier-only formats like {n}, ({n}), and {n}. are
+  rejected because they are not globally addressable.
 - Every pattern field is required. If a complete level name, range, depth, and
   heading format cannot be stated, omit the pattern instead of emitting blanks.
 

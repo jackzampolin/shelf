@@ -149,6 +149,7 @@ func sanitizeDiscoveredPatterns(patterns []common.DiscoveredPattern) []common.Di
 			pattern.LevelName == "" ||
 			pattern.HeadingFormat == "" ||
 			!strings.Contains(pattern.HeadingFormat, "{n}") ||
+			!hasDiscoveryHeadingAnchor(pattern.HeadingFormat) ||
 			pattern.RangeStart == "" ||
 			pattern.RangeEnd == "" ||
 			pattern.Level < 1 || pattern.Level > 6 ||
@@ -168,6 +169,21 @@ func sanitizeDiscoveredPatterns(patterns []common.DiscoveredPattern) []common.Di
 		result = append(result, pattern)
 	}
 	return result
+}
+
+// hasDiscoveryHeadingAnchor rejects identifier-only patterns such as "{n}" or
+// "({n})". A bare number/Roman numeral is not globally addressable: the same
+// marker commonly restarts inside every chapter, so a finder can produce
+// plausible links while collapsing unrelated local sections into one global
+// sequence. Require a lexical anchor such as "CHAPTER" or "Part".
+func hasDiscoveryHeadingAnchor(format string) bool {
+	anchor := strings.ReplaceAll(format, "{n}", "")
+	for _, r := range anchor {
+		if unicode.IsLetter(r) {
+			return true
+		}
+	}
+	return false
 }
 
 // Helper functions
