@@ -66,6 +66,61 @@ func TestAnalyzePageEvidence_FormalSectionHeader(t *testing.T) {
 	}
 }
 
+func TestValidateCandidatePageAcceptsUnlabeledStandaloneAllCapsHeading(t *testing.T) {
+	book := common.NewBookState("book-1")
+	book.TotalPages = 200
+	book.GetOrCreatePage(133).SetOcrMarkdown(`112 Assistant Secretary of State 1945
+
+This preceding discussion supplies more than enough substantive body text to
+prove that the target is not a running header at the page lead. It ends here.
+
+
+THE WAR ENDS AND I RESIGN
+
+When the President and the Secretary went to Potsdam, events moved quickly.`)
+	tools := New(Config{
+		Book: book,
+		Entry: &toc_entry_finder.TocEntry{
+			Title:     "The War Ends and I Resign",
+			LevelName: "section",
+		},
+	})
+
+	evidence, rejection, err := tools.ValidateCandidatePage(context.Background(), 133)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rejection != "" {
+		t.Fatalf("standalone source heading rejected: %q (%#v)", rejection, evidence)
+	}
+	if !evidence.TitleInSectionHeader {
+		t.Fatalf("standalone source heading was not promoted to section evidence: %#v", evidence)
+	}
+	ready, args := tools.writeResultRecommendation(133, evidence, false)
+	if !ready || args["scan_page"] != 133 {
+		t.Fatalf("write recommendation = ready %v, args %#v", ready, args)
+	}
+}
+
+func TestAnalyzePageEvidenceRejectsUnlabeledBodyMentionAsHeading(t *testing.T) {
+	book := common.NewBookState("book-1")
+	book.TotalPages = 200
+	tools := New(Config{
+		Book: book,
+		Entry: &toc_entry_finder.TocEntry{
+			Title:     "The War Ends and I Resign",
+			LevelName: "section",
+		},
+	})
+
+	evidence := tools.AnalyzePageEvidence(`A long body paragraph discusses how
+the war ends and I resign, but the phrase is not isolated or capitalized as a
+source heading and must remain ordinary body evidence.`, 133, false)
+	if evidence.TitleInSectionHeader {
+		t.Fatalf("body mention promoted to section evidence: %#v", evidence)
+	}
+}
+
 func TestAnalyzePageEvidence_NumberedPartTitlePage(t *testing.T) {
 	book := common.NewBookState("book-1")
 	book.TotalPages = 200

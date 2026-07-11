@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 type ScanWindow struct {
@@ -46,6 +48,9 @@ func (t *TocEntryFinderTools) AnalyzePageEvidence(ocrText string, pageNum int, i
 	pageHeaders := extractPageHeaders(ocrText)
 	pageHeaderText := strings.Join(pageHeaders, " ")
 	sectionHeaders := extractSectionHeaders(ocrText)
+	if header := unlabeledStandaloneTitleBlock(ocrText, title); header != "" {
+		sectionHeaders = append(sectionHeaders, header)
+	}
 	sectionHeaderText := strings.Join(sectionHeaders, " ")
 	plainText := stripOCRMarkup(ocrText)
 	normalizedPlainText := normalizeForEvidence(plainText)
@@ -99,6 +104,67 @@ func (t *TocEntryFinderTools) AnalyzePageEvidence(ocrText string, pageNum int, i
 	}
 
 	return evidence
+}
+
+const minStandaloneHeadingPrefixRunes = 100
+
+// unlabeledStandaloneTitleBlock recognizes a conservative enriched-PDF shape:
+// an exact all-caps ToC title isolated by blank lines after substantive text.
+// Some PDFs preserve the visual centered heading but emit no Markdown or
+// data-label marker. Requiring an exact, isolated, all-caps block away from the
+// page lead keeps ordinary prose mentions and repeated running headers out.
+func unlabeledStandaloneTitleBlock(ocrText, title string) string {
+	target := normalizeForEvidence(title)
+	if len(target) < 4 {
+		return ""
+	}
+
+	text := strings.ReplaceAll(ocrText, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	lines := strings.Split(text, "\n")
+	prefixRunes := 0
+	for i := 0; i < len(lines); {
+		for i < len(lines) && strings.TrimSpace(stripOCRMarkup(lines[i])) == "" {
+			i++
+		}
+		if i >= len(lines) {
+			break
+		}
+
+		start := i
+		blockLines := make([]string, 0, 2)
+		for i < len(lines) {
+			line := strings.TrimSpace(stripOCRMarkup(lines[i]))
+			if line == "" {
+				break
+			}
+			blockLines = append(blockLines, line)
+			i++
+		}
+		block := strings.Join(blockLines, " ")
+		if start > 0 && i < len(lines) &&
+			prefixRunes >= minStandaloneHeadingPrefixRunes &&
+			normalizeForEvidence(block) == target &&
+			allCapsHeading(block) {
+			return block
+		}
+		prefixRunes += utf8.RuneCountInString(block)
+	}
+	return ""
+}
+
+func allCapsHeading(text string) bool {
+	letters := 0
+	for _, r := range text {
+		if !unicode.IsLetter(r) {
+			continue
+		}
+		letters++
+		if unicode.IsLower(r) {
+			return false
+		}
+	}
+	return letters >= 4
 }
 
 func (t *TocEntryFinderTools) ValidateCandidatePage(ctx context.Context, scanPage int) (PageEvidence, string, error) {
