@@ -60,6 +60,39 @@ func TestFailedPage(t *testing.T) {
 	}
 }
 
+func TestFailedTocEntry(t *testing.T) {
+	for _, tc := range []struct {
+		text  string
+		entry string
+		ok    bool
+	}{
+		{"ToC entry bae-4102ef46-8eff-586d-8bfb-d11095fceae1 failed after 3 retries: agent did not complete", "bae-4102ef46-8eff-586d-8bfb-d11095fceae1", true},
+		{"work unit failed (toc_extract retries=3)", "", false},
+	} {
+		entry, ok := failedTocEntry(tc.text)
+		if entry != tc.entry || ok != tc.ok {
+			t.Fatalf("failedTocEntry(%q) = %q,%v want %q,%v", tc.text, entry, ok, tc.entry, tc.ok)
+		}
+	}
+}
+
+func TestTocEntryRecovery(t *testing.T) {
+	hint, command, ok := tocEntryRecovery(
+		"book-1",
+		"ToC entry bae-4102ef46-8eff-586d-8bfb-d11095fceae1 failed after 3 retries: agent did not complete",
+	)
+	if !ok {
+		t.Fatal("tocEntryRecovery did not recognize the durable entry failure")
+	}
+	if !strings.Contains(hint, "bae-4102ef46-8eff-586d-8bfb-d11095fceae1") || !strings.Contains(hint, "inspect the source") {
+		t.Fatalf("hint = %q", hint)
+	}
+	want := "shelf api books repair-toc-entry book-1 --entry bae-4102ef46-8eff-586d-8bfb-d11095fceae1 --reason 'Operator source-verified the unresolved entry for targeted retry' --force"
+	if command != want {
+		t.Fatalf("command = %q, want %q", command, want)
+	}
+}
+
 func TestFailedJobRecoveryCommand(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

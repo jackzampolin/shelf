@@ -39,7 +39,10 @@ type BookSummary struct {
 	RecoveryCommand string     `json:"recovery_command,omitempty"`
 }
 
-var failedPagePattern = regexp.MustCompile(`(?:page=|page\s+)(\d+)`)
+var (
+	failedPagePattern     = regexp.MustCompile(`(?:page=|page\s+)(\d+)`)
+	failedTocEntryPattern = regexp.MustCompile(`(?i)\btoc entry ([a-z0-9][a-z0-9-]*) failed after`)
+)
 
 func failedPage(errorText string) (int, bool) {
 	match := failedPagePattern.FindStringSubmatch(strings.ToLower(errorText))
@@ -48,6 +51,24 @@ func failedPage(errorText string) (int, bool) {
 	}
 	page, err := strconv.Atoi(match[1])
 	return page, err == nil && page > 0
+}
+
+func failedTocEntry(errorText string) (string, bool) {
+	match := failedTocEntryPattern.FindStringSubmatch(errorText)
+	if len(match) != 2 || match[1] == "" {
+		return "", false
+	}
+	return match[1], true
+}
+
+func tocEntryRecovery(bookID, failureText string) (hint, command string, ok bool) {
+	entryID, ok := failedTocEntry(failureText)
+	if !ok || bookID == "" {
+		return "", "", false
+	}
+	return fmt.Sprintf("ToC entry %s exhausted its bounded agents; inspect the source, then resolve it directly or retry only that entry", entryID),
+		fmt.Sprintf("shelf api books repair-toc-entry %s --entry %s --reason 'Operator source-verified the unresolved entry for targeted retry' --force", bookID, entryID),
+		true
 }
 
 // RunSummaryEndpoint handles GET /api/run/summary.
@@ -162,7 +183,10 @@ func (e *RunSummaryEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 					book.RecoveryHint = recoveryHint(book.Status, book.StatusReason, book.LatestError)
 				}
 				failureText := book.StatusReason + " " + book.LatestError
-				if page, ok := failedPage(failureText); ok {
+				if hint, command, ok := tocEntryRecovery(book.ID, failureText); ok {
+					book.RecoveryHint = hint
+					book.RecoveryCommand = command
+				} else if page, ok := failedPage(failureText); ok {
 					if book.Status == "degraded" {
 						book.RecoveryHint = fmt.Sprintf("page %d is explicitly quarantined; repair it before certification", page)
 					} else {
