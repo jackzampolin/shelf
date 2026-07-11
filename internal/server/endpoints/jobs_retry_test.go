@@ -53,6 +53,21 @@ func TestInferResetFromJobError(t *testing.T) {
 			want: "toc_extract",
 		},
 		{
+			name: "toc extraction work unit with diagnostics",
+			err:  `work unit failed (toc_extract retries=0): model output reached the 32768-token limit before completion`,
+			want: "toc_extract",
+		},
+		{
+			name: "legacy toc extraction work unit with page zero",
+			err:  `work unit failed (toc_extract page=0 provider= retries=0): model output reached the 16384-token limit before completion`,
+			want: "toc_extract",
+		},
+		{
+			name: "extract work unit with diagnostics",
+			err:  `work unit failed (extract page=17 provider= retries=10): worker queue full`,
+			want: "ocr",
+		},
+		{
 			name: "toc finalize",
 			err:  `finalize toc failed: no usable links`,
 			want: "toc_finalize",

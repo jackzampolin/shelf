@@ -181,11 +181,11 @@ func inferResetFromJobError(errMsg string) string {
 		return string(common.ResetTocExtract)
 	case strings.Contains(errMsg, "(metadata)") || strings.Contains(errMsg, "metadata"):
 		return string(common.ResetMetadata)
-	case strings.Contains(errMsg, "(toc_finder)") || strings.Contains(errMsg, "toc finder"):
+	case strings.Contains(errMsg, "toc_finder") || strings.Contains(errMsg, "toc finder"):
 		return string(common.ResetTocFinder)
-	case strings.Contains(errMsg, "(toc_extract)") || strings.Contains(errMsg, "toc extract") || strings.Contains(errMsg, "toc extraction"):
+	case strings.Contains(errMsg, "toc_extract") || strings.Contains(errMsg, "toc extract") || strings.Contains(errMsg, "toc extraction"):
 		return string(common.ResetTocExtract)
-	case strings.Contains(errMsg, "(extract)") || strings.Contains(errMsg, "failed to extract page") || strings.Contains(errMsg, "page extraction"):
+	case strings.Contains(errMsg, "work unit failed (extract") || strings.Contains(errMsg, "failed to extract page") || strings.Contains(errMsg, "page extraction"):
 		return string(common.ResetOcr)
 	case strings.Contains(errMsg, "(link_toc)") || strings.Contains(errMsg, "link_toc") || strings.Contains(errMsg, "toc link"):
 		return string(common.ResetTocLink)

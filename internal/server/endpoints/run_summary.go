@@ -163,7 +163,7 @@ func (e *RunSummaryEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 					book.RecoveryHint = fmt.Sprintf("page %d failed and remains incomplete; run the targeted OCR repair", page)
 					book.RecoveryCommand = fmt.Sprintf("shelf api books repair-ocr %s --pages %d --force", book.ID, page)
 				} else if latest != nil && latest.Status == jobs.StatusFailed {
-					book.RecoveryCommand = fmt.Sprintf("shelf api jobs retry %s", latest.ID)
+					book.RecoveryCommand = failedJobRecoveryCommand(latest)
 				}
 			}
 			out.Counts[book.Status]++
@@ -174,6 +174,19 @@ func (e *RunSummaryEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(out.Books, func(i, j int) bool { return out.Books[i].Status > out.Books[j].Status })
 
 	writeJSON(w, http.StatusOK, out)
+}
+
+func failedJobRecoveryCommand(record *jobs.Record) string {
+	if record == nil || record.Status != jobs.StatusFailed {
+		return ""
+	}
+	if resetFrom := inferResetFromJobError(record.Error); resetFrom != "" {
+		return fmt.Sprintf("shelf api jobs retry %s --reset-from %s", record.ID, resetFrom)
+	}
+	if retryWithoutResetAllowed(record.Error) {
+		return fmt.Sprintf("shelf api jobs retry %s", record.ID)
+	}
+	return ""
 }
 
 func (e *RunSummaryEndpoint) Command(getServerURL func() string) *cobra.Command {

@@ -59,6 +59,38 @@ func TestFailedPage(t *testing.T) {
 	}
 }
 
+func TestFailedJobRecoveryCommand(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		record *jobs.Record
+		want   string
+	}{
+		{
+			name: "toc extract includes reset",
+			record: &jobs.Record{ID: "job-toc", Status: jobs.StatusFailed,
+				Error: "work unit failed (toc_extract retries=0): model output reached token limit"},
+			want: "shelf api jobs retry job-toc --reset-from toc_extract",
+		},
+		{
+			name: "resume loader needs no destructive reset",
+			record: &jobs.Record{ID: "job-resume", Status: jobs.StatusFailed,
+				Error: "resume failed to recreate job: failed to load book"},
+			want: "shelf api jobs retry job-resume",
+		},
+		{
+			name:   "ambiguous failure emits no broken command",
+			record: &jobs.Record{ID: "job-unknown", Status: jobs.StatusFailed, Error: "job failed"},
+			want:   "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := failedJobRecoveryCommand(tc.record); got != tc.want {
+				t.Fatalf("failedJobRecoveryCommand() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // fakeDefra answers the two GraphQL queries the handler issues (Book list and
 // Job list) from a single httptest server, routing by request body.
 func fakeDefra(t *testing.T) *httptest.Server {
