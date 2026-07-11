@@ -110,6 +110,43 @@ func TestCircuitTripsAndPausesDispatch(t *testing.T) {
 	drain(results)
 }
 
+func TestStartupHealthFailurePausesBeforeFirstProviderCallAndRecovers(t *testing.T) {
+	prov := newCtrlProvider()
+	prov.setDown(true)
+
+	pool, results := newTestPool(t, prov, circuitConfig{
+		TripThreshold: 5,
+		ProbeInterval: 20 * time.Millisecond,
+		ParkMaxAge:    time.Hour,
+		ParkCapacity:  16,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	pool.openOnStartup(ctx, errBackendDown)
+	go pool.Start(ctx)
+
+	mustSubmit(t, pool, ocrUnit("cold-start"))
+	time.Sleep(80 * time.Millisecond)
+	if got := prov.callCount(); got != 0 {
+		t.Fatalf("provider called %d times despite failed startup health check", got)
+	}
+	if got := pool.Status().Health; got == healthHealthy {
+		t.Fatalf("startup outage status = %q, want open circuit", got)
+	}
+
+	prov.setDown(false)
+	waitFor(t, time.Second, func() bool { return pool.Status().Health == healthHealthy })
+	waitFor(t, time.Second, func() bool { return prov.callCount() == 1 })
+	select {
+	case result := <-results:
+		if !result.Result.Success {
+			t.Fatalf("replayed unit failed: %v", result.Result.Error)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("replayed startup unit produced no result")
+	}
+}
+
 func TestExplicitDispatchPauseHoldsWorkUntilResume(t *testing.T) {
 	prov := newCtrlProvider()
 	pool, _ := newTestPool(t, prov, circuitConfig{

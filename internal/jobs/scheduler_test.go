@@ -451,8 +451,17 @@ func TestInitFromRegistry_FailFastOnUnhealthy(t *testing.T) {
 	}
 
 	s2 := NewScheduler(SchedulerConfig{Logger: slog.Default()})
-	if err := s2.InitFromRegistryWithHealthCheck(context.Background(), reg, true, false); err != nil {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := s2.InitFromRegistryWithHealthCheck(ctx, reg, true, false); err != nil {
 		t.Fatalf("expected no error with failFast=false, got %v", err)
+	}
+	pool, ok := s2.GetPool("bad")
+	if !ok {
+		t.Fatal("expected unhealthy provider pool to be registered")
+	}
+	if got := pool.Status().Health; got == healthHealthy {
+		t.Fatalf("unhealthy startup pool reported %q, want open circuit", got)
 	}
 }
 
@@ -492,8 +501,10 @@ func TestInitFromRegistry_HealthCheckTimeout(t *testing.T) {
 	})
 
 	scheduler := NewScheduler(SchedulerConfig{Logger: slog.Default()})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	start := time.Now()
-	if err := scheduler.InitFromRegistryWithHealthCheck(context.Background(), reg, true, false); err != nil {
+	if err := scheduler.InitFromRegistryWithHealthCheck(ctx, reg, true, false); err != nil {
 		t.Fatalf("expected warn-only timeout to still initialize pool, got %v", err)
 	}
 	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
@@ -501,6 +512,10 @@ func TestInitFromRegistry_HealthCheckTimeout(t *testing.T) {
 	}
 	if _, ok := scheduler.GetPool("slow"); !ok {
 		t.Fatal("expected pool to register after warn-only timeout")
+	}
+	pool, _ := scheduler.GetPool("slow")
+	if got := pool.Status().Health; got == healthHealthy {
+		t.Fatalf("timed-out startup pool reported %q, want open circuit", got)
 	}
 }
 

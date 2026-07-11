@@ -78,6 +78,20 @@ func (c *circuit) recordFailure() (justTripped bool) {
 	return false
 }
 
+// openNow forces a cold-start outage into the same durable circuit state used
+// after runtime infrastructure failures. It reports whether this call opened
+// the circuit so exactly one recovery prober is launched.
+func (c *circuit) openNow() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.open {
+		return false
+	}
+	c.consecFails = c.cfg.TripThreshold
+	c.openLocked()
+	return true
+}
+
 // noteFinalFailure records the final infra-class failure of a work unit and,
 // if the circuit is open (including having just been tripped by this very
 // failure — the check is atomic), parks the unit for replay. It reports
@@ -272,6 +286,19 @@ func (p *ProviderWorkerPool) onCircuitOpen(ctx context.Context, triggerJobID str
 	go p.probeUntilRecovered(ctx)
 }
 
+// openOnStartup carries a failed initialization health check into the worker
+// pool. Without this handoff the pool reports healthy and dispatches requests
+// to a backend already proven unreachable, spending request and semantic retry
+// budgets before the normal runtime circuit can trip.
+func (p *ProviderWorkerPool) openOnStartup(ctx context.Context, healthErr error) {
+	if healthErr == nil || !p.circuit.openNow() {
+		return
+	}
+	p.logger.Warn("provider unavailable at startup; opening circuit before dispatch",
+		"error", healthErr)
+	p.onCircuitOpen(ctx, "")
+}
+
 // probeUntilRecovered runs while the circuit is open: it expires overdue
 // parked units (failing them through) and probes the provider's HealthCheck,
 // closing the circuit and replaying parked units on the first success.
@@ -290,7 +317,10 @@ func (p *ProviderWorkerPool) probeUntilRecovered(ctx context.Context) {
 		for _, pu := range p.circuit.expireParked() {
 			p.failParkedThrough(pu)
 		}
-		if err := p.healthCheck(ctx); err != nil {
+		probeCtx, cancel := context.WithTimeout(ctx, providerHealthCheckTimeout)
+		err := p.healthCheck(probeCtx)
+		cancel()
+		if err != nil {
 			p.logger.Debug("provider health probe failed", "error", err)
 			continue
 		}

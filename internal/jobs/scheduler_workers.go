@@ -66,15 +66,16 @@ func (s *Scheduler) InitFromRegistryStrict(ctx context.Context, registry *provid
 func (s *Scheduler) InitFromRegistryWithHealthCheck(ctx context.Context, registry *providers.Registry, runHealthChecks, failFast bool) error {
 	// Create pools from LLM clients
 	for name, client := range registry.LLMClients() {
+		var healthErr error
 		if runHealthChecks {
 			checkCtx, cancel := context.WithTimeout(ctx, providerHealthCheckTimeout)
-			err := client.HealthCheck(checkCtx)
+			healthErr = client.HealthCheck(checkCtx)
 			cancel()
-			if err != nil {
+			if healthErr != nil {
 				if failFast {
-					return fmt.Errorf("LLM provider %q failed health check: %w", name, err)
+					return fmt.Errorf("LLM provider %q failed health check: %w", name, healthErr)
 				}
-				s.logger.Warn("LLM provider health check failed", "name", name, "error", err)
+				s.logger.Warn("LLM provider health check failed", "name", name, "error", healthErr)
 			} else {
 				s.logger.Debug("LLM provider health check passed", "name", name)
 			}
@@ -90,19 +91,21 @@ func (s *Scheduler) InitFromRegistryWithHealthCheck(ctx context.Context, registr
 			return fmt.Errorf("failed to create LLM pool %s: %w", name, err)
 		}
 		s.RegisterPool(pool)
+		pool.openOnStartup(ctx, healthErr)
 	}
 
 	// Create pools from OCR providers
 	for name, provider := range registry.OCRProviders() {
+		var healthErr error
 		if runHealthChecks {
 			checkCtx, cancel := context.WithTimeout(ctx, providerHealthCheckTimeout)
-			err := provider.HealthCheck(checkCtx)
+			healthErr = provider.HealthCheck(checkCtx)
 			cancel()
-			if err != nil {
+			if healthErr != nil {
 				if failFast {
-					return fmt.Errorf("OCR provider %q failed health check: %w", name, err)
+					return fmt.Errorf("OCR provider %q failed health check: %w", name, healthErr)
 				}
-				s.logger.Warn("OCR provider health check failed", "name", name, "error", err)
+				s.logger.Warn("OCR provider health check failed", "name", name, "error", healthErr)
 			} else {
 				s.logger.Debug("OCR provider health check passed", "name", name)
 			}
@@ -118,19 +121,21 @@ func (s *Scheduler) InitFromRegistryWithHealthCheck(ctx context.Context, registr
 			return fmt.Errorf("failed to create OCR pool %s: %w", name, err)
 		}
 		s.RegisterPool(pool)
+		pool.openOnStartup(ctx, healthErr)
 	}
 
 	// Create pools from TTS providers
 	for name, provider := range registry.TTSProviders() {
+		var healthErr error
 		if runHealthChecks {
 			checkCtx, cancel := context.WithTimeout(ctx, providerHealthCheckTimeout)
-			err := provider.HealthCheck(checkCtx)
+			healthErr = provider.HealthCheck(checkCtx)
 			cancel()
-			if err != nil {
+			if healthErr != nil {
 				if failFast {
-					return fmt.Errorf("TTS provider %q failed health check: %w", name, err)
+					return fmt.Errorf("TTS provider %q failed health check: %w", name, healthErr)
 				}
-				s.logger.Warn("TTS provider health check failed", "name", name, "error", err)
+				s.logger.Warn("TTS provider health check failed", "name", name, "error", healthErr)
 			} else {
 				s.logger.Debug("TTS provider health check passed", "name", name)
 			}
@@ -146,6 +151,7 @@ func (s *Scheduler) InitFromRegistryWithHealthCheck(ctx context.Context, registr
 			return fmt.Errorf("failed to create TTS pool %s: %w", name, err)
 		}
 		s.RegisterPool(pool)
+		pool.openOnStartup(ctx, healthErr)
 	}
 
 	s.logger.Info("initialized pools from registry",
