@@ -14,6 +14,11 @@ const (
 	// 15k cap hid most OCR errors in long chapters.
 	MaxPolishPromptChars = 120000
 
+	// MaxPolishOutputTokens accommodates the strict 50-edit response schema.
+	// Scholarly chapters with dense OCR damage can legitimately exceed the
+	// generic 4K allowance; truncated edit JSON must still fail closed.
+	MaxPolishOutputTokens = 16384
+
 	maxClassifySnippetChars = 1000
 )
 

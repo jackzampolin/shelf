@@ -409,8 +409,7 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 			}
 		}
 		j.RemoveWorkUnit(result.WorkUnitID)
-		return nil, fmt.Errorf("work unit failed (%s page=%d provider=%s retries=%d): %v",
-			info.UnitType, info.PageNum, info.Provider, info.RetryCount, result.Error)
+		return nil, failedWorkUnitError(info, result.Error)
 	}
 
 	var newUnits []jobs.WorkUnit
@@ -554,6 +553,15 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 	j.CheckCompletion(ctx)
 
 	return newUnits, nil
+}
+
+func failedWorkUnitError(info WorkUnitInfo, err error) error {
+	if info.UnitType == WorkUnitTypeStructurePolish {
+		return fmt.Errorf("work unit failed (%s chapter=%s retries=%d): %v",
+			info.UnitType, info.ChapterID, info.RetryCount, err)
+	}
+	return fmt.Errorf("work unit failed (%s page=%d provider=%s retries=%d): %v",
+		info.UnitType, info.PageNum, info.Provider, info.RetryCount, err)
 }
 
 func isRetriableBookOpHandlerError(unitType string) bool {

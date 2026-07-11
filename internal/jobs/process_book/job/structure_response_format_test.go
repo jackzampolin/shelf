@@ -54,10 +54,22 @@ func TestCreateChapterPolishWorkUnitUsesInnerJSONSchema(t *testing.T) {
 		t.Fatal("createChapterPolishWorkUnit returned nil")
 	}
 
-	if unit.ChatRequest.MaxTokens != 4096 {
-		t.Fatalf("polish MaxTokens = %d, want 4096", unit.ChatRequest.MaxTokens)
+	if unit.ChatRequest.MaxTokens != common.MaxPolishOutputTokens {
+		t.Fatalf("polish MaxTokens = %d, want %d", unit.ChatRequest.MaxTokens, common.MaxPolishOutputTokens)
 	}
 	assertResponseFormatSchemaName(t, unit.ChatRequest.ResponseFormat.JSONSchema, "text_edits")
+}
+
+func TestFailedStructurePolishErrorNamesChapter(t *testing.T) {
+	err := failedWorkUnitError(WorkUnitInfo{
+		UnitType:  WorkUnitTypeStructurePolish,
+		ChapterID: "ch_007",
+	}, errors.New("model output reached token limit"))
+	for _, want := range []string{"structure_polish", "chapter=ch_007", "model output reached token limit"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q missing %q", err, want)
+		}
+	}
 }
 
 func TestIsDefraDocIDExistsError(t *testing.T) {
