@@ -85,6 +85,39 @@ func TestGetHeadingPagesChoosesTitleHeadingOverChapterNumberHeading(t *testing.T
 	}
 }
 
+func TestGetHeadingPagesCapsLargeRangesAfterRanking(t *testing.T) {
+	book := common.NewBookState("book-1")
+	book.TotalPages = 100
+	for page := 1; page <= 30; page++ {
+		title := "Ordinary heading"
+		if page == 30 {
+			title = "Tokyo"
+		}
+		book.GetOrCreatePage(page).SetOcrMarkdownWithHeadings("# "+title, []common.HeadingItem{
+			{Level: 1, Text: title, LineNumber: 1},
+		})
+	}
+	toolset := New(Config{
+		Book:  book,
+		Entry: &toc_entry_finder.TocEntry{LevelName: "section", Title: "Tokyo"},
+	})
+	start, end := 1, 100
+	got, err := toolset.getHeadingPages(&start, &end)
+	if err != nil {
+		t.Fatal(err)
+	}
+	results := parseHeadingPageResults(t, got)
+	if len(results) != maxHeadingPageResults {
+		t.Fatalf("results = %d, want cap %d", len(results), maxHeadingPageResults)
+	}
+	if results[0].ScanPage != 30 || !results[0].TargetTitleMatch {
+		t.Fatalf("target was not retained first after cap: %#v", results[0])
+	}
+	if !strings.Contains(got, "Found 30 pages") || !strings.Contains(got, "top 20") {
+		t.Fatalf("output omitted cap accounting: %s", got)
+	}
+}
+
 func parseHeadingPageResults(t *testing.T, output string) []HeadingPageResult {
 	t.Helper()
 	jsonStart := strings.Index(output, "[")

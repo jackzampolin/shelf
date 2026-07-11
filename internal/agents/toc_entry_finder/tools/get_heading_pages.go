@@ -9,6 +9,8 @@ import (
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
+const maxHeadingPageResults = 20
+
 // HeadingPageResult represents a page with chapter-level headings.
 type HeadingPageResult struct {
 	ScanPage               int         `json:"scan_page"`
@@ -118,6 +120,10 @@ func (t *TocEntryFinderTools) getHeadingPages(startPage, endPage *int) (string, 
 	sort.SliceStable(results, func(i, j int) bool {
 		return headingPageResultLess(results[i], results[j])
 	})
+	totalResults := len(results)
+	if len(results) > maxHeadingPageResults {
+		results = results[:maxHeadingPageResults]
+	}
 
 	// Format output
 	if len(results) == 0 {
@@ -140,6 +146,12 @@ func (t *TocEntryFinderTools) getHeadingPages(startPage, endPage *int) (string, 
 		return "", fmt.Errorf("failed to marshal results: %w", err)
 	}
 
+	if totalResults > len(results) {
+		return fmt.Sprintf(
+			"Found %d pages with chapter headings; returning the top %d ranked candidates:\n%s",
+			totalResults, len(results), string(output),
+		), nil
+	}
 	return fmt.Sprintf("Found %d pages with chapter headings:\n%s", len(results), string(output)), nil
 }
 
