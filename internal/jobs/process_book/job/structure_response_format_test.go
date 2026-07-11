@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -63,6 +64,57 @@ func TestClassifyOutputLimitScalesAndCaps(t *testing.T) {
 		if got := common.ClassifyMaxOutputTokens(tt.entries); got != tt.want {
 			t.Fatalf("ClassifyMaxOutputTokens(%d) = %d, want %d", tt.entries, got, tt.want)
 		}
+	}
+}
+
+func TestStructureClassificationChunksGranularBooksWithinContextBudget(t *testing.T) {
+	j := newStructureResponseFormatJob()
+	chapters := make([]*common.ChapterState, 470)
+	for i := range chapters {
+		chapters[i] = &common.ChapterState{
+			EntryID: fmt.Sprintf("ch_%03d", i+1), Title: fmt.Sprintf("Section %d", i+1),
+			MechanicalText: strings.Repeat("source evidence ", 80),
+		}
+	}
+	j.Book.SetStructureChapters(chapters)
+	units := j.transitionToStructureClassify(context.Background())
+	if len(units) != 8 {
+		t.Fatalf("classification chunks = %d, want 8", len(units))
+	}
+	for i, unit := range units {
+		if unit.ChatRequest.MaxTokens > common.ClassifyMaxOutputTokens(structureClassifyChunkSize) {
+			t.Fatalf("chunk %d max tokens = %d, exceeds bounded chunk allowance", i, unit.ChatRequest.MaxTokens)
+		}
+		info, ok := j.Tracker.Get(unit.ID)
+		if !ok || info.ClassifyStart != i*structureClassifyChunkSize || info.ClassifyEnd <= info.ClassifyStart || info.ClassifyEnd-info.ClassifyStart > structureClassifyChunkSize {
+			t.Fatalf("chunk %d tracker info = %+v, ok=%v", i, info, ok)
+		}
+	}
+}
+
+func TestStructureClassificationFailureFailsClosed(t *testing.T) {
+	j := newStructureResponseFormatJob()
+	result := jobs.WorkResult{WorkUnitID: "classify-failed", Success: false, Error: errors.New("provider rejected request")}
+	_, err := j.HandleStructureClassifyComplete(context.Background(), result, WorkUnitInfo{
+		UnitType: WorkUnitTypeStructureClassify, StructurePhase: StructPhaseClassify,
+		RetryCount: MaxStructureRetries, ClassifyStart: 0, ClassifyEnd: 1,
+	})
+	if err == nil || !strings.Contains(err.Error(), "classification chunk 0-1 failed") {
+		t.Fatalf("error = %v, want fail-closed chunk error", err)
+	}
+}
+
+func TestAlreadyPolishedTransitionCannotDrainSilently(t *testing.T) {
+	j := newStructureResponseFormatJob()
+	chapter := j.Book.GetStructureChapters()[0]
+	chapter.PolishDone = true
+	chapter.PolishedText = chapter.MechanicalText
+	j.Book.SetStructureChapters([]*common.ChapterState{chapter})
+	if units := j.transitionToStructurePolish(context.Background()); len(units) != 0 {
+		t.Fatalf("units = %d, want synchronous completion attempt", len(units))
+	}
+	if !strings.Contains(j.noWorkFailure, "persist already-complete polish results") {
+		t.Fatalf("noWorkFailure = %q, want actionable completion failure", j.noWorkFailure)
 	}
 }
 

@@ -28,7 +28,27 @@ func (j *Job) transitionToStructurePolish(ctx context.Context) []jobs.WorkUnit {
 			"chapters", len(chapters))
 	}
 
-	return j.createStructurePolishWorkUnits(ctx)
+	units := j.createStructurePolishWorkUnits(ctx)
+	if len(units) == 0 && j.allStructurePolishDone() {
+		if err := j.persistPolishResults(ctx); err != nil {
+			j.failStructureTransition(ctx, fmt.Errorf("persist already-complete polish results: %w", err))
+			return nil
+		}
+		if _, err := j.completeStructurePhase(ctx); err != nil {
+			j.failStructureTransition(ctx, err)
+			return nil
+		}
+	}
+	return units
+}
+
+func (j *Job) failStructureTransition(ctx context.Context, err error) {
+	j.noWorkFailure = fmt.Sprintf("structure completion failed: %v", err)
+	j.Book.StructureFail(MaxBookOpRetries)
+	j.Book.PersistOpStateAsync(ctx, common.OpStructure)
+	if logger := svcctx.LoggerFrom(ctx); logger != nil {
+		logger.Error("structure transition failed without downstream work", "error", err)
+	}
 }
 
 // createStructurePolishWorkUnits creates work units for all chapters needing polish.

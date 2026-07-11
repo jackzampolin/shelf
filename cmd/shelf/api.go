@@ -93,6 +93,7 @@ func init() {
 	booksCmd.AddCommand((&endpoints.RepairTocEntryEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.ResolveTocEntryEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.ResolveTocEntriesEndpoint{}).Command(getServerURL))
+	booksCmd.AddCommand((&endpoints.InsertTocEntryEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.ExcludeTocEntryEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.QuarantineOCREndpoint{}).Command(getServerURL))
 

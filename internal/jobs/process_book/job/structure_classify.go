@@ -14,6 +14,10 @@ import (
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
+// Keep the prompt, four keyed result maps, and bounded completion comfortably
+// inside a 65K context even for books with hundreds of fine-grained entries.
+const structureClassifyChunkSize = 64
+
 // transitionToStructureClassify starts the classify phase.
 func (j *Job) transitionToStructureClassify(ctx context.Context) []jobs.WorkUnit {
 	j.Book.SetStructurePhase(StructPhaseClassify)
@@ -26,25 +30,43 @@ func (j *Job) transitionToStructureClassify(ctx context.Context) []jobs.WorkUnit
 			"book_id", j.Book.BookID)
 	}
 
-	unit, err := j.createStructureClassifyWorkUnit(ctx)
-	if err != nil {
-		if logger != nil {
-			logger.Warn("failed to create classify work unit, skipping to polish", "error", err)
+	chapters := j.Book.GetStructureChapters()
+	var units []jobs.WorkUnit
+	for start := 0; start < len(chapters); start += structureClassifyChunkSize {
+		end := start + structureClassifyChunkSize
+		if end > len(chapters) {
+			end = len(chapters)
 		}
-		return j.transitionToStructurePolish(ctx)
+		unit, err := j.createStructureClassifyChunkWorkUnit(ctx, chapters[start:end], start, end, 0)
+		if err != nil {
+			j.noWorkFailure = fmt.Sprintf("failed to create structure classification chunk %d-%d: %v", start, end, err)
+			if logger != nil {
+				logger.Error("failed to create classify work unit", "start", start, "end", end, "error", err)
+			}
+			return nil
+		}
+		units = append(units, *unit)
 	}
-
-	return []jobs.WorkUnit{*unit}
+	if len(units) == 0 {
+		j.noWorkFailure = "structure classification has no chapters"
+		return nil
+	}
+	j.Book.SetStructureClassifyPending(true)
+	return units
 }
 
 // createStructureClassifyWorkUnit creates an LLM work unit for matter classification.
 func (j *Job) createStructureClassifyWorkUnit(ctx context.Context) (*jobs.WorkUnit, error) {
+	chapters := j.Book.GetStructureChapters()
+	return j.createStructureClassifyChunkWorkUnit(ctx, chapters, 0, len(chapters), 0)
+}
+
+func (j *Job) createStructureClassifyChunkWorkUnit(ctx context.Context, chapters []*common.ChapterState, start, end, retryCount int) (*jobs.WorkUnit, error) {
 	systemPrompt := j.GetPrompt(common.PromptKeyClassifySystem)
 	if systemPrompt == "" {
 		systemPrompt = common.ClassifySystemPrompt
 	}
 
-	chapters := j.Book.GetStructureChapters()
 	userPrompt := common.BuildClassifyPrompt(chapters, j.Book.TotalPages)
 
 	// Inner json_schema object only; vLLM requires response_format.json_schema.name.
@@ -77,7 +99,7 @@ func (j *Job) createStructureClassifyWorkUnit(ctx context.Context) (*jobs.WorkUn
 		ChatRequest: request,
 		Metrics: &jobs.WorkUnitMetrics{
 			Stage:     "structure-classify",
-			ItemKey:   "classify_matter",
+			ItemKey:   fmt.Sprintf("classify_matter_%03d_%03d", start, end),
 			PromptKey: common.PromptKeyClassifySystem,
 			PromptCID: j.Book.GetPromptCID(common.PromptKeyClassifySystem),
 			BookID:    j.Book.BookID,
@@ -87,9 +109,10 @@ func (j *Job) createStructureClassifyWorkUnit(ctx context.Context) (*jobs.WorkUn
 	j.RegisterWorkUnit(unitID, WorkUnitInfo{
 		UnitType:       WorkUnitTypeStructureClassify,
 		StructurePhase: StructPhaseClassify,
+		RetryCount:     retryCount,
+		ClassifyStart:  start,
+		ClassifyEnd:    end,
 	})
-
-	j.Book.SetStructureClassifyPending(true)
 	return unit, nil
 }
 
@@ -105,21 +128,21 @@ func (j *Job) HandleStructureClassifyComplete(ctx context.Context, result jobs.W
 					"retry_count", info.RetryCount,
 					"error", result.Error)
 			}
-			unit, err := j.createStructureClassifyWorkUnit(ctx)
-			if err != nil {
-				return j.transitionToStructurePolish(ctx), nil
+			chapters := j.Book.GetStructureChapters()
+			if info.ClassifyStart < 0 || info.ClassifyEnd > len(chapters) || info.ClassifyStart >= info.ClassifyEnd {
+				return nil, fmt.Errorf("invalid structure classification chunk %d-%d", info.ClassifyStart, info.ClassifyEnd)
 			}
-			j.Tracker.Register(unit.ID, WorkUnitInfo{
-				UnitType:       WorkUnitTypeStructureClassify,
-				StructurePhase: StructPhaseClassify,
-				RetryCount:     info.RetryCount + 1,
-			})
+			unit, err := j.createStructureClassifyChunkWorkUnit(ctx, chapters[info.ClassifyStart:info.ClassifyEnd], info.ClassifyStart, info.ClassifyEnd, info.RetryCount+1)
+			if err != nil {
+				return nil, fmt.Errorf("recreate structure classification chunk %d-%d: %w", info.ClassifyStart, info.ClassifyEnd, err)
+			}
 			return []jobs.WorkUnit{*unit}, nil
 		}
 		if logger != nil {
-			logger.Warn("classification permanently failed, skipping to polish")
+			logger.Error("classification permanently failed",
+				"start", info.ClassifyStart, "end", info.ClassifyEnd, "error", result.Error)
 		}
-		return j.transitionToStructurePolish(ctx), nil
+		return nil, fmt.Errorf("structure classification chunk %d-%d failed after %d attempts: %w", info.ClassifyStart, info.ClassifyEnd, info.RetryCount+1, result.Error)
 	}
 
 	// Process classification result
@@ -130,7 +153,11 @@ func (j *Job) HandleStructureClassifyComplete(ctx context.Context, result jobs.W
 		return nil, err
 	}
 
-	// Persist classification results
+	if j.PendingWorkUnits() > 0 {
+		return nil, nil
+	}
+	j.Book.SetStructureClassifyPending(false)
+	// Persist the complete merged classification only after all chunks land.
 	if err := j.persistClassifyResults(ctx); err != nil {
 		if logger != nil {
 			logger.Warn("failed to persist classification results", "error", err)
@@ -163,47 +190,13 @@ func (j *Job) processStructureClassifyResult(ctx context.Context, result jobs.Wo
 		return fmt.Errorf("failed to parse classification result: %w", err)
 	}
 
-	// Store classifications on BookState
-	j.Book.SetStructureClassifications(classifyResult.Classifications)
-	if classifyResult.Reasoning != nil {
-		j.Book.SetStructureClassifyReasonings(classifyResult.Reasoning)
-	}
-
-	// Apply to chapters
-	chapters := j.Book.GetStructureChapters()
-	classifications := j.Book.GetStructureClassifications()
-	reasonings := j.Book.GetStructureClassifyReasonings()
-	for _, chapter := range chapters {
-		modified := false
-		if matterType, ok := classifications[chapter.EntryID]; ok {
-			chapter.MatterType = matterType
-			modified = true
-		}
-		if contentType, ok := classifyResult.ContentTypes[chapter.EntryID]; ok {
-			chapter.ContentType = contentType
-			modified = true
-		}
-		if include, ok := classifyResult.AudioInclude[chapter.EntryID]; ok {
-			chapter.AudioInclude = include
-			modified = true
-		}
-		if reasoning, ok := reasonings[chapter.EntryID]; ok {
-			chapter.ClassifyReasoning = reasoning
-			chapter.AudioIncludeReasoning = reasoning
-			modified = true
-		}
-		if modified {
-			j.Book.UpdateChapter(chapter) // Save changes back
-		}
-	}
+	j.Book.ApplyStructureClassifyResult(classifyResult)
 
 	if logger != nil {
 		logger.Debug("applied matter classifications",
 			"book_id", j.Book.BookID,
-			"classifications", len(classifications))
+			"classifications", len(classifyResult.Classifications))
 	}
-
-	j.Book.SetStructureClassifyPending(false)
 	return nil
 }
 

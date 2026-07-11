@@ -116,6 +116,8 @@ type WorkUnitInfo struct {
 	// Structure fields
 	StructurePhase string // classify, polish
 	ChapterID      string // chapter entry ID for polish
+	ClassifyStart  int    // inclusive chapter index for classification chunks
+	ClassifyEnd    int    // exclusive chapter index for classification chunks
 }
 
 func maxRetriesForPageWorkUnit(unitType string) int {

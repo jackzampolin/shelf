@@ -222,3 +222,42 @@ func (b *BookState) SetStructureClassifyReasonings(reasonings map[string]string)
 	defer b.mu.Unlock()
 	b.structureClassifyReasonings = reasonings
 }
+
+// ApplyStructureClassifyResult atomically merges one bounded classification
+// chunk and applies it to the matching chapters. Classification fans out for
+// unusually granular books, so read-copy-write map updates would otherwise
+// lose sibling chunk results.
+func (b *BookState) ApplyStructureClassifyResult(result ClassifyResult) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.structureClassifications == nil {
+		b.structureClassifications = make(map[string]string)
+	}
+	if b.structureClassifyReasonings == nil {
+		b.structureClassifyReasonings = make(map[string]string)
+	}
+	for entryID, matterType := range result.Classifications {
+		b.structureClassifications[entryID] = matterType
+	}
+	for entryID, reasoning := range result.Reasoning {
+		b.structureClassifyReasonings[entryID] = reasoning
+	}
+	for _, chapter := range b.structureChapters {
+		if chapter == nil {
+			continue
+		}
+		if matterType, ok := result.Classifications[chapter.EntryID]; ok {
+			chapter.MatterType = matterType
+		}
+		if contentType, ok := result.ContentTypes[chapter.EntryID]; ok {
+			chapter.ContentType = contentType
+		}
+		if include, ok := result.AudioInclude[chapter.EntryID]; ok {
+			chapter.AudioInclude = include
+		}
+		if reasoning, ok := result.Reasoning[chapter.EntryID]; ok {
+			chapter.ClassifyReasoning = reasoning
+			chapter.AudioIncludeReasoning = reasoning
+		}
+	}
+}
