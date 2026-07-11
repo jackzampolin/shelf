@@ -5,12 +5,13 @@ import (
 	"time"
 )
 
-// EndpointPool round-robins across a fixed set of base URLs.
+// EndpointPool balances requests across a fixed set of base URLs.
 // It is safe for concurrent use.
 type EndpointPool struct {
 	urls          []string
 	indexByURL    map[string]int
 	cooldownUntil []atomic.Int64
+	inFlight      []atomic.Int64
 	counter       atomic.Uint64
 }
 
@@ -29,6 +30,7 @@ func NewEndpointPool(urls []string) *EndpointPool {
 		urls:          cp,
 		indexByURL:    indexByURL,
 		cooldownUntil: make([]atomic.Int64, len(cp)),
+		inFlight:      make([]atomic.Int64, len(cp)),
 	}
 }
 
@@ -52,6 +54,63 @@ func (p *EndpointPool) Next() string {
 		}
 	}
 	return p.urls[start%n]
+}
+
+// Acquire reserves the least-busy healthy endpoint and returns its base URL.
+// Round-robin order breaks ties so simultaneous short requests still spread
+// evenly. Call Release when the response body has been fully consumed.
+func (p *EndpointPool) Acquire() string {
+	n := len(p.urls)
+	if n == 0 {
+		return ""
+	}
+
+	start := int((p.counter.Add(1) - 1) % uint64(n))
+	now := time.Now().UnixNano()
+	selected := -1
+	var selectedLoad int64
+	for offset := 0; offset < n; offset++ {
+		i := (start + offset) % n
+		if p.cooldownUntil[i].Load() > now {
+			continue
+		}
+		load := p.inFlight[i].Load()
+		if selected == -1 || load < selectedLoad {
+			selected = i
+			selectedLoad = load
+		}
+	}
+
+	// If every endpoint is cooling down, keep the pool live by choosing the
+	// least-busy one. The caller's retry/circuit logic remains authoritative.
+	if selected == -1 {
+		for offset := 0; offset < n; offset++ {
+			i := (start + offset) % n
+			load := p.inFlight[i].Load()
+			if selected == -1 || load < selectedLoad {
+				selected = i
+				selectedLoad = load
+			}
+		}
+	}
+
+	p.inFlight[selected].Add(1)
+	return p.urls[selected]
+}
+
+// Release removes one in-flight reservation for url. Callers must release each
+// acquisition exactly once; unknown URLs are ignored defensively.
+func (p *EndpointPool) Release(url string) {
+	i, ok := p.indexByURL[url]
+	if !ok {
+		return
+	}
+	for {
+		current := p.inFlight[i].Load()
+		if current <= 0 || p.inFlight[i].CompareAndSwap(current, current-1) {
+			return
+		}
+	}
 }
 
 // MarkFailure temporarily deprioritizes an endpoint. If every endpoint is in

@@ -10,12 +10,12 @@ import (
 const OpenAICompatName = "openai-compat"
 
 // OpenAICompatConfig configures a client for a self-hosted OpenAI-compatible
-// chat API. Unlike OpenRouter, it round-robins across BaseURLs, sends no vendor
-// headers or `usage.include` flag, sends auth only when APIKey is set, and
-// reports zero cost (the server returns no cost fields).
+// chat API. Unlike OpenRouter, it load-balances across BaseURLs, sends no
+// vendor headers or `usage.include` flag, sends auth only when APIKey is set,
+// and reports zero cost (the server returns no cost fields).
 type OpenAICompatConfig struct {
 	Name           string   // provider identity (default "openai-compat")
-	BaseURLs       []string // self-hosted endpoints, round-robined; first is the fallback base
+	BaseURLs       []string // self-hosted endpoints, least-busy first; first is the fallback base
 	APIKey         string   // optional; sent as Bearer only when non-empty
 	DefaultModel   string
 	Timeout        time.Duration

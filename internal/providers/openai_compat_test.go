@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -152,6 +153,59 @@ func TestOpenAICompatClient_RoundRobinsAcrossEndpoints(t *testing.T) {
 	}
 	if hitsA.Load() != 2 || hitsB.Load() != 2 {
 		t.Fatalf("round-robin uneven: A=%d B=%d, want 2/2", hitsA.Load(), hitsB.Load())
+	}
+}
+
+func TestOpenAICompatClient_RoutesAroundBusyEndpoint(t *testing.T) {
+	var hitsA, hitsB atomic.Int64
+	aStarted := make(chan struct{})
+	unblockA := make(chan struct{})
+	var startedOnce sync.Once
+	var unblockOnce sync.Once
+	releaseA := func() { unblockOnce.Do(func() { close(unblockA) }) }
+	defer releaseA()
+	srvA := chatCompletionStub(t, func(path string, _ http.Header, _ []byte) {
+		if path != "/chat/completions" {
+			return
+		}
+		hitsA.Add(1)
+		startedOnce.Do(func() { close(aStarted) })
+		<-unblockA
+	})
+	defer srvA.Close()
+	srvB := chatCompletionStub(t, func(path string, _ http.Header, _ []byte) {
+		if path == "/chat/completions" {
+			hitsB.Add(1)
+		}
+	})
+	defer srvB.Close()
+
+	c := NewOpenAICompatClient(OpenAICompatConfig{
+		BaseURLs: []string{srvA.URL, srvB.URL}, DefaultModel: "m", Timeout: 2 * time.Second,
+	})
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := c.Chat(context.Background(), &ChatRequest{Messages: []Message{{Role: "user", Content: "long"}}})
+		firstDone <- err
+	}()
+	select {
+	case <-aStarted:
+	case <-time.After(time.Second):
+		t.Fatal("first request did not reach endpoint a")
+	}
+
+	for i := 0; i < 2; i++ {
+		if _, err := c.Chat(context.Background(), &ChatRequest{Messages: []Message{{Role: "user", Content: "short"}}}); err != nil {
+			t.Fatalf("short Chat() error = %v", err)
+		}
+	}
+	if hitsA.Load() != 1 || hitsB.Load() != 2 {
+		t.Fatalf("busy-endpoint routing hits A=%d B=%d, want A=1 B=2", hitsA.Load(), hitsB.Load())
+	}
+
+	releaseA()
+	if err := <-firstDone; err != nil {
+		t.Fatalf("long Chat() error = %v", err)
 	}
 }
 

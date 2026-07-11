@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -33,7 +34,7 @@ type OpenAIChatClient struct {
 	name         string // provider identity reported by Name() and on results
 	apiKey       string
 	baseURL      string
-	endpoints    *EndpointPool // optional; round-robins request base URLs when set
+	endpoints    *EndpointPool // optional; load-balances request base URLs when set
 	defaultModel string
 	client       *http.Client
 
@@ -99,6 +100,18 @@ func (c *OpenAIChatClient) baseURLForRequest() string {
 		return c.endpoints.Next()
 	}
 	return c.baseURL
+}
+
+// acquireBaseURLForRequest reserves an endpoint for the duration of one HTTP
+// attempt. The returned release function must be called after its response body
+// is consumed.
+func (c *OpenAIChatClient) acquireBaseURLForRequest() (string, func()) {
+	if c.endpoints != nil && c.endpoints.Len() > 0 {
+		baseURL := c.endpoints.Acquire()
+		var once sync.Once
+		return baseURL, func() { once.Do(func() { c.endpoints.Release(baseURL) }) }
+	}
+	return c.baseURL, func() {}
 }
 
 // RequestsPerSecond returns the RPS limit for rate limiting.

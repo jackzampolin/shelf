@@ -39,9 +39,10 @@ func (c *OpenAIChatClient) doRequest(ctx context.Context, path string, body any)
 			return nil, fmt.Errorf("failed to marshal request: %w", err)
 		}
 
-		baseURL := c.baseURLForRequest()
+		baseURL, releaseEndpoint := c.acquireBaseURLForRequest()
 		req, err := http.NewRequestWithContext(ctx, "POST", baseURL+path, bytes.NewReader(bodyBytes))
 		if err != nil {
+			releaseEndpoint()
 			return nil, fmt.Errorf("failed to create request: %w", err)
 		}
 
@@ -56,6 +57,7 @@ func (c *OpenAIChatClient) doRequest(ctx context.Context, path string, body any)
 
 		resp, err := c.client.Do(req)
 		if err != nil {
+			releaseEndpoint()
 			// Network error - retry
 			c.markEndpointFailure(baseURL)
 			lastErr = fmt.Errorf("request failed: %w", err)
@@ -65,6 +67,7 @@ func (c *OpenAIChatClient) doRequest(ctx context.Context, path string, body any)
 
 		respBody, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
+		releaseEndpoint()
 		if err != nil {
 			lastErr = fmt.Errorf("failed to read response: %w", err)
 			c.sleepWithJitter(ctx, attempt)

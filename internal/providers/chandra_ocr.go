@@ -65,7 +65,7 @@ Guidelines:
 // over an OpenAI-compatible chat API (e.g. `vllm serve datalab-to/chandra-ocr-2`).
 type ChandraOCRConfig struct {
 	Name                  string   // provider identity (default "chandra")
-	BaseURLs              []string // self-hosted endpoints, round-robined
+	BaseURLs              []string // self-hosted endpoints, least-busy first
 	APIKey                string   // optional; sent only when non-empty
 	Model                 string   // default datalab-to/chandra-ocr-2
 	Prompt                string   // OCR instruction; default DefaultChandraOCRPrompt
@@ -83,8 +83,8 @@ type ChandraOCRConfig struct {
 
 // ChandraOCRClient implements OCRProvider by sending each page image plus an OCR
 // prompt to a Chandra vision model and returning the Markdown transcription.
-// It wraps an OpenAI-compatible chat client, reusing its transport, round-robin,
-// and retry machinery.
+// It wraps an OpenAI-compatible chat client, reusing its transport, endpoint
+// load-balancing, and retry machinery.
 type ChandraOCRClient struct {
 	name                  string
 	model                 string

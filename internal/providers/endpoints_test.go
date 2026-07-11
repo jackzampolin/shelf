@@ -47,6 +47,41 @@ func TestEndpointPool_ConcurrentSafe(t *testing.T) {
 	wg.Wait()
 }
 
+func TestEndpointPool_AcquireUsesLeastBusyEndpoint(t *testing.T) {
+	p := NewEndpointPool([]string{"a", "b", "c"})
+	first := p.Acquire()
+	second := p.Acquire()
+	third := p.Acquire()
+	if first != "a" || second != "b" || third != "c" {
+		t.Fatalf("initial Acquire() sequence = [%s %s %s], want [a b c]", first, second, third)
+	}
+
+	// All three have one request. The tie-breaker chooses a; once c is
+	// released, the next reservation must choose c even though round-robin
+	// order would otherwise start at b.
+	fourth := p.Acquire()
+	if fourth != "a" {
+		t.Fatalf("fourth Acquire() = %q, want a", fourth)
+	}
+	p.Release(third)
+	if got := p.Acquire(); got != "c" {
+		t.Fatalf("Acquire() with c least busy = %q, want c", got)
+	}
+}
+
+func TestEndpointPool_AcquireSkipsCooldown(t *testing.T) {
+	p := NewEndpointPool([]string{"a", "b"})
+	p.MarkFailure("a", time.Hour)
+
+	first := p.Acquire()
+	second := p.Acquire()
+	if first != "b" || second != "b" {
+		t.Fatalf("Acquire() with a cooling down = [%s %s], want [b b]", first, second)
+	}
+	p.Release(first)
+	p.Release(second)
+}
+
 func TestEndpointPool_SkipsFailedEndpointDuringCooldown(t *testing.T) {
 	p := NewEndpointPool([]string{"a", "b"})
 	p.MarkFailure("a", time.Hour)
