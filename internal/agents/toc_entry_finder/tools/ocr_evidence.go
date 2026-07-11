@@ -18,6 +18,7 @@ type PageEvidence struct {
 	TitleInPageHeader          bool        `json:"title_in_page_header"`
 	TitleInSectionHeader       bool        `json:"title_in_section_header"`
 	TitlePrefixInSectionHeader bool        `json:"title_prefix_in_section_header"`
+	TitleAtPageLead            bool        `json:"title_at_page_lead"`
 	TitleInBody                bool        `json:"title_in_body"`
 	EntryNumberFound           bool        `json:"entry_number_found"`
 	EntryNumberInSectionHeader bool        `json:"entry_number_in_section_header"`
@@ -27,6 +28,8 @@ type PageEvidence struct {
 	PreviousPrintedPageNumber  int         `json:"previous_printed_page_number,omitempty"`
 	PreviousPageHeaderText     []string    `json:"previous_page_header_text,omitempty"`
 	StartsTitleHeaderCluster   bool        `json:"starts_title_header_cluster,omitempty"`
+	StartsTitleLeadCluster     bool        `json:"starts_title_lead_cluster,omitempty"`
+	LooksLikeContentsPage      bool        `json:"looks_like_contents_page,omitempty"`
 	ExpectedPrintedPageMissing bool        `json:"expected_printed_page_missing,omitempty"`
 	VisibleLead                string      `json:"visible_lead,omitempty"`
 	ExpectedScanWindow         *ScanWindow `json:"expected_scan_window,omitempty"`
@@ -45,6 +48,8 @@ func (t *TocEntryFinderTools) AnalyzePageEvidence(ocrText string, pageNum int, i
 	sectionHeaders := extractSectionHeaders(ocrText)
 	sectionHeaderText := strings.Join(sectionHeaders, " ")
 	plainText := stripOCRMarkup(ocrText)
+	normalizedPlainText := normalizeForEvidence(plainText)
+	normalizedTitle := normalizeForEvidence(title)
 	bodyText := stripOCRMarkup(removeLabeledBlocks(removeLabeledBlocks(removeLabeledBlocks(ocrText, "Page-Header"), "Page-Footer"), "Section-Header"))
 	numberedLevelTitleMatch := sectionHeaderMatchesNumberedLevelTitle(sectionHeaders, title, t.entryLevelName(), plainText)
 
@@ -57,15 +62,17 @@ func (t *TocEntryFinderTools) AnalyzePageEvidence(ocrText string, pageNum int, i
 		TitleInPageHeader:          normalizedContains(pageHeaderText, title),
 		TitleInSectionHeader:       normalizedContains(sectionHeaderText, title) || numberedLevelTitleMatch,
 		TitlePrefixInSectionHeader: sectionHeaderMatchesTitlePrefix(sectionHeaders, title, t.entryNumber()),
+		TitleAtPageLead:            normalizedTitleAtPageLead(normalizedPlainText, normalizedTitle),
 		TitleInBody:                normalizedContains(bodyText, title),
 		EntryNumberFound:           t.entryNumberFound(plainText),
+		LooksLikeContentsPage:      looksLikeContentsPage(normalizedPlainText),
 	}
 	entryNumberInSectionHeader := t.entryNumberFound(sectionHeaderText)
 	if !entryNumberInSectionHeader && evidence.TitlePrefixInSectionHeader {
 		entryNumberInSectionHeader = t.entryNumberPrefixInSectionHeader(sectionHeaders)
 	}
 	evidence.EntryNumberInSectionHeader = entryNumberInSectionHeader
-	evidence.TitleFound = evidence.TitleInPageHeader || evidence.TitleInSectionHeader || evidence.TitlePrefixInSectionHeader || evidence.TitleInBody
+	evidence.TitleFound = evidence.TitleInPageHeader || evidence.TitleInSectionHeader || evidence.TitlePrefixInSectionHeader || evidence.TitleAtPageLead || evidence.TitleInBody
 
 	if start, end, ok := t.expectedScanWindow(); ok {
 		evidence.ExpectedScanWindow = &ScanWindow{StartPage: start, EndPage: end}
@@ -81,6 +88,8 @@ func (t *TocEntryFinderTools) AnalyzePageEvidence(ocrText string, pageNum int, i
 		evidence.DecisionGuidance = "Target title appears in a page header inside the expected scan window. This is only enough evidence if this page starts the title cluster; repeated running headers on later pages will be rejected."
 	case evidence.TitleInPageHeader && !inBackMatter:
 		evidence.DecisionGuidance = "Target title appears in a page header. Verify this is the first page of the target's grep cluster before calling write_result; repeated running headers are not entry openers."
+	case evidence.TitleAtPageLead && !evidence.LooksLikeContentsPage:
+		evidence.DecisionGuidance = "The exact target title appears at the start of unlabeled OCR. Verify the previous page does not start with the same title; contents listings and repeated running leads are rejected."
 	case evidence.TitleFound && !inBackMatter:
 		evidence.DecisionGuidance = "Target title appears on this page, but not as a formal section header. Confirm it is an opener rather than an incidental body-text reference."
 	case inBackMatter && !t.targetIsBackMatter:
@@ -116,10 +125,18 @@ func (t *TocEntryFinderTools) ValidateCandidatePage(ctx context.Context, scanPag
 	if evidence.TitleInSectionHeader || evidence.TitlePrefixInSectionHeader || evidence.EntryNumberInSectionHeader {
 		return evidence, "", nil
 	}
-
 	if evidence.TitleInPageHeader {
 		if !evidence.StartsTitleHeaderCluster {
 			return evidence, fmt.Sprintf("page header/title also appears on previous page %d, so scan_page %d looks like a repeated running header instead of the entry opener", scanPage-1, scanPage), nil
+		}
+		return evidence, "", nil
+	}
+	if evidence.TitleAtPageLead {
+		if evidence.LooksLikeContentsPage {
+			return evidence, "the target appears near the top of a contents listing, not an entry opener", nil
+		}
+		if !evidence.StartsTitleLeadCluster {
+			return evidence, fmt.Sprintf("the target also appears at the lead of previous page %d, so scan_page %d looks like a repeated running lead instead of the entry opener", scanPage-1, scanPage), nil
 		}
 		return evidence, "", nil
 	}
@@ -131,6 +148,40 @@ func (t *TocEntryFinderTools) ValidateCandidatePage(ctx context.Context, scanPag
 		return evidence, "target title appears only outside a page header or formal section header; body-text mentions are not enough to link the ToC entry", nil
 	}
 	return evidence, "OCR evidence on this page does not contain the target title or entry number", nil
+}
+
+const maxNormalizedTitleLeadOffset = 80
+
+func normalizedTitleAtPageLead(normalizedText, normalizedTitle string) bool {
+	if normalizedText == "" || normalizedTitle == "" {
+		return false
+	}
+	idx := strings.Index(normalizedText, normalizedTitle)
+	if idx >= 0 {
+		return idx <= maxNormalizedTitleLeadOffset
+	}
+	// Reuse the bounded OCR typo matcher, but only over enough leading text to
+	// contain the title plus a short level/number prefix. This admits a source
+	// opener such as "Defeating Germany and Javan" for target "...Japan"
+	// without turning a later body mention into lead evidence.
+	leadEnd := maxNormalizedTitleLeadOffset + len(normalizedTitle) + 40
+	if leadEnd > len(normalizedText) {
+		leadEnd = len(normalizedText)
+	}
+	return normalizedApproxContains(normalizedText[:leadEnd], normalizedTitle)
+}
+
+func looksLikeContentsPage(normalizedText string) bool {
+	if normalizedText == "" {
+		return false
+	}
+	for _, marker := range []string{"table of contents", "contents"} {
+		idx := strings.Index(normalizedText, marker)
+		if idx >= 0 && idx <= maxNormalizedTitleLeadOffset {
+			return true
+		}
+	}
+	return false
 }
 
 func (t *TocEntryFinderTools) expectedScanWindow() (int, int, bool) {

@@ -21,16 +21,33 @@ func (t *TocEntryFinderTools) pageEvidence(ctx context.Context, pageNum int, inB
 }
 
 func (t *TocEntryFinderTools) addPageHeaderBoundaryEvidence(ctx context.Context, pageNum int, evidence *PageEvidence) error {
-	if evidence == nil || !evidence.TitleInPageHeader || pageNum <= 1 {
+	if evidence == nil {
+		return nil
+	}
+	needsLeadBoundary := evidence.TitleAtPageLead &&
+		!evidence.TitleInSectionHeader &&
+		!evidence.TitlePrefixInSectionHeader &&
+		!evidence.EntryNumberInSectionHeader
+	if !evidence.TitleInPageHeader && !needsLeadBoundary {
+		return nil
+	}
+	if pageNum <= 1 {
+		evidence.StartsTitleHeaderCluster = evidence.TitleInPageHeader
+		evidence.StartsTitleLeadCluster = needsLeadBoundary
 		return nil
 	}
 	prevEvidence, err := t.previousPageEvidence(ctx, pageNum)
 	if err != nil {
 		return fmt.Errorf("could not verify whether page %d starts the title cluster: %w", pageNum, err)
 	}
-	evidence.PreviousPageHeaderText = prevEvidence.PageHeaderText
-	evidence.PreviousPrintedPageNumber = prevEvidence.PrintedPageNumber
-	evidence.StartsTitleHeaderCluster = !prevEvidence.TitleFound
+	if evidence.TitleInPageHeader {
+		evidence.PreviousPageHeaderText = prevEvidence.PageHeaderText
+		evidence.PreviousPrintedPageNumber = prevEvidence.PrintedPageNumber
+		evidence.StartsTitleHeaderCluster = !prevEvidence.TitleInPageHeader
+	}
+	if needsLeadBoundary {
+		evidence.StartsTitleLeadCluster = !prevEvidence.TitleAtPageLead
+	}
 
 	targetPrinted, ok := t.targetPrintedPageNumber()
 	if ok && prevEvidence.PrintedPageNumber > 0 && evidence.PrintedPageNumber > 0 &&

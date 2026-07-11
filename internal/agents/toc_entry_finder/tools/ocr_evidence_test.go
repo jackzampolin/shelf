@@ -219,3 +219,116 @@ func TestValidateCandidatePageAcceptsNearTitleHeaderMatch(t *testing.T) {
 		t.Fatalf("expected near title page-header evidence: %#v", evidence)
 	}
 }
+
+func TestValidateCandidatePageAcceptsUnlabeledExactTitleAtPageLead(t *testing.T) {
+	book := common.NewBookState("book-1")
+	book.TotalPages = 300
+	book.GetOrCreatePage(172).SetOcrMarkdown("The preceding chapter ends on this page.")
+	book.GetOrCreatePage(173).SetOcrMarkdown(`Chapter 5
+
+Creating the “Family Circle”
+The Tortuous Path to Tehran, 1942–43
+
+As relations with Moscow soured, Roosevelt blamed Stalin's isolation.`)
+
+	tools := New(Config{
+		Book: book,
+		Entry: &toc_entry_finder.TocEntry{
+			Title:             "Creating the Family Circle The Tortuous Path to Tehran 1942 43",
+			EntryNumber:       "5",
+			LevelName:         "chapter",
+			PrintedPageNumber: "163",
+		},
+	})
+
+	evidence, rejection, err := tools.ValidateCandidatePage(context.Background(), 173)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rejection != "" {
+		t.Fatalf("unlabeled opener rejected: %q (%#v)", rejection, evidence)
+	}
+	if !evidence.TitleAtPageLead || !evidence.StartsTitleLeadCluster {
+		t.Fatalf("missing page-lead evidence: %#v", evidence)
+	}
+}
+
+func TestValidateCandidatePageAcceptsUnlabeledTitleAtLeadWithBoundedOCRTypo(t *testing.T) {
+	book := common.NewBookState("book-1")
+	book.TotalPages = 200
+	book.GetOrCreatePage(82).SetOcrMarkdown("The preceding chapter concludes.")
+	book.GetOrCreatePage(83).SetOcrMarkdown(`Cooperating for Victory:
+Defeating Germany and Javan
+
+In August, 1943, William C. Bullitt submitted a memorandum.`)
+
+	tools := New(Config{
+		Book: book,
+		Entry: &toc_entry_finder.TocEntry{
+			Title:             "Cooperating for Victory Defeating Germany and Japan",
+			EntryNumber:       "3",
+			LevelName:         "chapter",
+			PrintedPageNumber: "63",
+		},
+	})
+
+	evidence, rejection, err := tools.ValidateCandidatePage(context.Background(), 83)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rejection != "" || !evidence.TitleAtPageLead {
+		t.Fatalf("bounded lead typo was not accepted: rejection=%q evidence=%#v", rejection, evidence)
+	}
+}
+
+func TestValidateCandidatePageRejectsUnlabeledContentsListing(t *testing.T) {
+	book := common.NewBookState("book-1")
+	book.TotalPages = 300
+	book.GetOrCreatePage(2).SetOcrMarkdown("Copyright page")
+	book.GetOrCreatePage(3).SetOcrMarkdown(`For Benjamin and Emma
+
+Contents
+Preface: A Cemetery in Luxembourg, 5
+Part I: Liberation in the West, 19`)
+
+	tools := New(Config{
+		Book: book,
+		Entry: &toc_entry_finder.TocEntry{
+			Title:       "A Cemetery in Luxembourg",
+			LevelName:   "preface",
+			EntryNumber: "",
+		},
+	})
+
+	evidence, rejection, err := tools.ValidateCandidatePage(context.Background(), 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rejection == "" || !evidence.LooksLikeContentsPage {
+		t.Fatalf("contents listing accepted: rejection=%q evidence=%#v", rejection, evidence)
+	}
+}
+
+func TestValidateCandidatePageRejectsRepeatedUnlabeledTitleLead(t *testing.T) {
+	book := common.NewBookState("book-1")
+	book.TotalPages = 300
+	book.GetOrCreatePage(82).SetOcrMarkdown("Cooperating for Victory Defeating Germany and Japan\ncontinued body")
+	book.GetOrCreatePage(83).SetOcrMarkdown("Cooperating for Victory Defeating Germany and Japan\nmore continued body")
+
+	tools := New(Config{
+		Book: book,
+		Entry: &toc_entry_finder.TocEntry{
+			Title:       "Cooperating for Victory Defeating Germany and Japan",
+			EntryNumber: "3",
+			LevelName:   "chapter",
+		},
+	})
+
+	evidence, rejection, err := tools.ValidateCandidatePage(context.Background(), 83)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rejection == "" || evidence.StartsTitleLeadCluster {
+		t.Fatalf("repeated unlabeled lead accepted: rejection=%q evidence=%#v", rejection, evidence)
+	}
+}
