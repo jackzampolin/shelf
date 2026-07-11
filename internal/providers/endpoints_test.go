@@ -82,6 +82,31 @@ func TestEndpointPool_AcquireSkipsCooldown(t *testing.T) {
 	p.Release(second)
 }
 
+func TestEndpointPool_ExclusiveReservationDrainsEndpoint(t *testing.T) {
+	p := NewEndpointPool([]string{"a", "b"})
+	exclusive := p.AcquireExclusive()
+	if exclusive != "a" {
+		t.Fatalf("AcquireExclusive() = %q, want a", exclusive)
+	}
+
+	first := p.Acquire()
+	second := p.Acquire()
+	if first != "b" || second != "b" {
+		t.Fatalf("ordinary acquisitions during exclusive lease = [%s %s], want [b b]", first, second)
+	}
+	status := p.Status()
+	if status[0].Exclusive != 1 || status[0].InFlight != 1 {
+		t.Fatalf("exclusive endpoint status = %#v, want one exclusive request", status[0])
+	}
+
+	p.Release(first)
+	p.Release(second)
+	p.ReleaseExclusive(exclusive)
+	if status := p.Status(); status[0].Exclusive != 0 || status[0].InFlight != 0 {
+		t.Fatalf("status after exclusive release = %#v", status[0])
+	}
+}
+
 func TestEndpointPool_Status(t *testing.T) {
 	p := NewEndpointPool([]string{"a", "b"})
 	acquired := p.Acquire()

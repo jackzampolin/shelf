@@ -39,7 +39,7 @@ func (c *OpenAIChatClient) doRequest(ctx context.Context, path string, body any)
 			return nil, fmt.Errorf("failed to marshal request: %w", err)
 		}
 
-		baseURL, releaseEndpoint := c.acquireBaseURLForRequest()
+		baseURL, releaseEndpoint := c.acquireBaseURLForRequest(orReq.MaxTokens)
 		req, err := http.NewRequestWithContext(ctx, "POST", baseURL+path, bytes.NewReader(bodyBytes))
 		if err != nil {
 			releaseEndpoint()

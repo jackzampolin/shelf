@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+const exclusiveEndpointMinOutputTokens = 32768
+
 const (
 	OpenRouterName    = "openrouter"
 	OpenRouterBaseURL = "https://openrouter.ai/api/v1"
@@ -105,11 +107,25 @@ func (c *OpenAIChatClient) baseURLForRequest() string {
 // acquireBaseURLForRequest reserves an endpoint for the duration of one HTTP
 // attempt. The returned release function must be called after its response body
 // is consumed.
-func (c *OpenAIChatClient) acquireBaseURLForRequest() (string, func()) {
+func (c *OpenAIChatClient) acquireBaseURLForRequest(maxTokens int) (string, func()) {
 	if c.endpoints != nil && c.endpoints.Len() > 0 {
-		baseURL := c.endpoints.Acquire()
+		exclusive := maxTokens >= exclusiveEndpointMinOutputTokens
+		var baseURL string
+		if exclusive {
+			baseURL = c.endpoints.AcquireExclusive()
+		} else {
+			baseURL = c.endpoints.Acquire()
+		}
 		var once sync.Once
-		return baseURL, func() { once.Do(func() { c.endpoints.Release(baseURL) }) }
+		return baseURL, func() {
+			once.Do(func() {
+				if exclusive {
+					c.endpoints.ReleaseExclusive(baseURL)
+					return
+				}
+				c.endpoints.Release(baseURL)
+			})
+		}
 	}
 	return c.baseURL, func() {}
 }

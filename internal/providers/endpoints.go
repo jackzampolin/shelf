@@ -12,6 +12,7 @@ type EndpointPool struct {
 	indexByURL    map[string]int
 	cooldownUntil []atomic.Int64
 	inFlight      []atomic.Int64
+	exclusive     []atomic.Int64
 	counter       atomic.Uint64
 }
 
@@ -21,6 +22,7 @@ type EndpointPool struct {
 type EndpointStatus struct {
 	BaseURL       string     `json:"base_url"`
 	InFlight      int64      `json:"in_flight"`
+	Exclusive     int64      `json:"exclusive"`
 	CooldownUntil *time.Time `json:"cooldown_until,omitempty"`
 }
 
@@ -40,6 +42,7 @@ func NewEndpointPool(urls []string) *EndpointPool {
 		indexByURL:    indexByURL,
 		cooldownUntil: make([]atomic.Int64, len(cp)),
 		inFlight:      make([]atomic.Int64, len(cp)),
+		exclusive:     make([]atomic.Int64, len(cp)),
 	}
 }
 
@@ -54,8 +57,9 @@ func (p *EndpointPool) Status() []EndpointStatus {
 	now := time.Now().UnixNano()
 	for i, url := range p.urls {
 		status[i] = EndpointStatus{
-			BaseURL:  url,
-			InFlight: p.inFlight[i].Load(),
+			BaseURL:   url,
+			InFlight:  p.inFlight[i].Load(),
+			Exclusive: p.exclusive[i].Load(),
 		}
 		if until := p.cooldownUntil[i].Load(); until > now {
 			untilTime := time.Unix(0, until)
@@ -86,6 +90,18 @@ func (p *EndpointPool) Next() string {
 // Round-robin order breaks ties so simultaneous short requests still spread
 // evenly. Call Release when the response body has been fully consumed.
 func (p *EndpointPool) Acquire() string {
+	return p.acquire(false)
+}
+
+// AcquireExclusive reserves a healthy endpoint for one large request. New
+// ordinary and exclusive acquisitions avoid that URL until ReleaseExclusive,
+// allowing already-running short requests to drain while preserving the other
+// endpoint for normal throughput.
+func (p *EndpointPool) AcquireExclusive() string {
+	return p.acquire(true)
+}
+
+func (p *EndpointPool) acquire(exclusive bool) string {
 	n := len(p.urls)
 	if n == 0 {
 		return ""
@@ -97,7 +113,7 @@ func (p *EndpointPool) Acquire() string {
 	var selectedLoad int64
 	for offset := 0; offset < n; offset++ {
 		i := (start + offset) % n
-		if p.cooldownUntil[i].Load() > now {
+		if p.cooldownUntil[i].Load() > now || p.exclusive[i].Load() > 0 {
 			continue
 		}
 		load := p.inFlight[i].Load()
@@ -120,6 +136,9 @@ func (p *EndpointPool) Acquire() string {
 		}
 	}
 
+	if exclusive {
+		p.exclusive[selected].Add(1)
+	}
 	p.inFlight[selected].Add(1)
 	return p.urls[selected]
 }
@@ -134,6 +153,22 @@ func (p *EndpointPool) Release(url string) {
 	for {
 		current := p.inFlight[i].Load()
 		if current <= 0 || p.inFlight[i].CompareAndSwap(current, current-1) {
+			return
+		}
+	}
+}
+
+// ReleaseExclusive removes an exclusive reservation after its response has
+// been fully consumed.
+func (p *EndpointPool) ReleaseExclusive(url string) {
+	i, ok := p.indexByURL[url]
+	if !ok {
+		return
+	}
+	p.Release(url)
+	for {
+		current := p.exclusive[i].Load()
+		if current <= 0 || p.exclusive[i].CompareAndSwap(current, current-1) {
 			return
 		}
 	}
