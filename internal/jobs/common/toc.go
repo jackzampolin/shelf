@@ -166,11 +166,13 @@ func SaveTocExtractResult(ctx context.Context, tocDocID string, result *extract_
 		uniqueKey := fmt.Sprintf("%s:%s:%d", tocDocID, generation, i)
 
 		entryData := map[string]any{
-			"_tocID":     tocDocID,
-			"unique_key": uniqueKey,
-			"title":      entry.Title,
-			"level":      entry.Level,
-			"sort_order": i,
+			"_tocID":       tocDocID,
+			"unique_key":   uniqueKey,
+			"title":        entry.Title,
+			"level":        entry.Level,
+			"sort_order":   i,
+			"link_retries": 0,
+			"link_failed":  false,
 		}
 
 		if entry.EntryNumber != nil {
@@ -450,7 +452,11 @@ func SaveTocEntryResult(ctx context.Context, book *BookState, entryDocID string,
 		return "", fmt.Errorf("defra sink not in context")
 	}
 
-	update := map[string]any{}
+	update := map[string]any{
+		"link_failed":         false,
+		"link_failure_reason": nil,
+		"link_failed_at":      nil,
+	}
 
 	if result.ScanPage != nil {
 		// Get page doc ID from BookState

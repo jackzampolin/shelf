@@ -386,3 +386,27 @@ func TestConvertLinkTocAgentUnitsPreservesRetryMetadata(t *testing.T) {
 		t.Fatalf("retry metadata = count %d hint %q, want count 2 hint %q", info.RetryCount, info.RetryHint, retryHint)
 	}
 }
+
+func TestCreateLinkTocWorkUnitsRestoresDurableRetryMetadata(t *testing.T) {
+	retryHint := "Attempt 2 rejected before restart"
+	entry := &toc_entry_finder.TocEntry{
+		DocID:             "entry-1",
+		Title:             "Stubborn chapter",
+		LinkRetries:       2,
+		LinkFailureReason: retryHint,
+	}
+	j, _ := newTocRecoveryJob([]*toc_entry_finder.TocEntry{entry})
+	j.Book.TotalPages = 100
+
+	units := j.CreateLinkTocWorkUnits(context.Background())
+	if len(units) != 1 {
+		t.Fatalf("created %d units, want 1", len(units))
+	}
+	info, ok := j.GetWorkUnit(units[0].ID)
+	if !ok {
+		t.Fatal("created unit was not registered")
+	}
+	if info.RetryCount != 2 || info.RetryHint != retryHint {
+		t.Fatalf("restored retry metadata = count %d hint %q", info.RetryCount, info.RetryHint)
+	}
+}

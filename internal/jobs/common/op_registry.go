@@ -361,7 +361,13 @@ func resetTocLinkHook(ctx context.Context, book *BookState, tocDocID string) err
 	}
 	var err error
 	if book.Store != nil {
-		err = updateCollectionDocsViaStore(ctx, book.Store, "TocEntry", "_tocID", tocDocID, map[string]any{"_actual_pageID": nil})
+		err = updateCollectionDocsViaStore(ctx, book.Store, "TocEntry", "_tocID", tocDocID, map[string]any{
+			"_actual_pageID":      nil,
+			"link_retries":        0,
+			"link_failed":         false,
+			"link_failure_reason": nil,
+			"link_failed_at":      nil,
+		})
 	} else {
 		err = clearTocEntryLinks(ctx, tocDocID)
 	}

@@ -16,6 +16,13 @@ type TocEntry {
     printed_page_number: String
     actual_page: Page
 
+    # Durable per-entry link budget. A failed entry remains visibly skipped
+    # across process restarts until an explicit toc_link reset clears it.
+    link_retries: Int
+    link_failed: Boolean
+    link_failure_reason: String
+    link_failed_at: DateTime
+
     # Source tracking
     source: String
 

@@ -59,4 +59,11 @@ func TestOnCompleteTocLinkFailureAfterRetriesSkipsEntryAndCompletes(t *testing.T
 	if _, ok := j.GetWorkUnit(unitID); ok {
 		t.Fatal("failed link work unit should be removed after giving up on the entry")
 	}
+	entry := store.GetDoc("TocEntry", "entry-1")
+	if entry["link_failed"] != true || entry["link_retries"] != MaxBookOpRetries {
+		t.Fatalf("terminal entry state = %#v", entry)
+	}
+	if entry["link_failure_reason"] != "agent did not complete within 25 iterations" || entry["link_failed_at"] == "" {
+		t.Fatalf("terminal entry provenance = %#v", entry)
+	}
 }

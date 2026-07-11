@@ -47,6 +47,9 @@ func buildTocStatus(ctx context.Context, client *defra.Client, bookID string, re
 					printed_page_number
 					sort_order
 					source
+					link_retries
+					link_failed
+					link_failure_reason
 					actual_page {
 						page_num
 					}
@@ -151,6 +154,18 @@ func buildTocStatus(ctx context.Context, client *defra.Client, bookID string, re
 									if v == "discovered" {
 										resp.ToC.EntriesDiscovered++
 									}
+								}
+								if v, ok := entry["link_retries"].(float64); ok {
+									tocEntry.LinkRetries = int(v)
+								}
+								if v, ok := entry["link_failed"].(bool); ok {
+									tocEntry.LinkFailed = v
+									if v {
+										resp.ToC.EntriesFailed++
+									}
+								}
+								if v, ok := entry["link_failure_reason"].(string); ok {
+									tocEntry.LinkFailureReason = v
 								}
 								// Check if entry is linked to actual page
 								if actualPage, ok := entry["actual_page"].(map[string]any); ok {

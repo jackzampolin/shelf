@@ -128,6 +128,7 @@ type ToCStatus struct {
 	// Entries (when extracted)
 	EntryCount    int        `json:"entry_count"`
 	EntriesLinked int        `json:"entries_linked"`
+	EntriesFailed int        `json:"entries_failed,omitempty"`
 	Entries       []ToCEntry `json:"entries,omitempty"`
 
 	CostUSD float64 `json:"cost_usd"`
@@ -160,6 +161,9 @@ type ToCEntry struct {
 	SortOrder         int    `json:"sort_order"`
 	ActualPageNum     int    `json:"actual_page_num,omitempty"`
 	IsLinked          bool   `json:"is_linked"`
+	LinkRetries       int    `json:"link_retries,omitempty"`
+	LinkFailed        bool   `json:"link_failed,omitempty"`
+	LinkFailureReason string `json:"link_failure_reason,omitempty"`
 	Source            string `json:"source,omitempty"` // "extracted" or "discovered"
 }
 

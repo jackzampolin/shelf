@@ -15,4 +15,6 @@ type TocEntry struct {
 	LevelName         string `json:"level_name"`          // "chapter", "part", "section"
 	PrintedPageNumber string `json:"printed_page_number"` // From original ToC
 	SortOrder         int    `json:"sort_order"`          // Position in ToC
+	LinkRetries       int    `json:"link_retries"`        // Durable failed-attempt count
+	LinkFailureReason string `json:"link_failure_reason"` // Feedback retained across restart
 }

@@ -42,6 +42,9 @@ func LoadTocEntries(ctx context.Context, tocDocID string) ([]*toc_entry_finder.T
 			level_name
 			printed_page_number
 			sort_order
+			link_retries
+			link_failed
+			link_failure_reason
 			actual_page {
 				_docID
 			}
@@ -86,6 +89,9 @@ func LoadTocEntries(ctx context.Context, tocDocID string) ([]*toc_entry_finder.T
 				continue // Already linked
 			}
 		}
+		if failed, _ := entry["link_failed"].(bool); failed {
+			continue // Durably exhausted entries are resolved until an explicit reset.
+		}
 
 		te := &toc_entry_finder.TocEntry{}
 
@@ -109,6 +115,10 @@ func LoadTocEntries(ctx context.Context, tocDocID string) ([]*toc_entry_finder.T
 		}
 		if sortOrder, ok := entry["sort_order"].(float64); ok {
 			te.SortOrder = int(sortOrder)
+		}
+		te.LinkRetries = numericToInt(entry["link_retries"])
+		if reason, ok := entry["link_failure_reason"].(string); ok {
+			te.LinkFailureReason = reason
 		}
 
 		if te.DocID != "" {
@@ -137,6 +147,9 @@ func loadTocEntriesViaStore(ctx context.Context, store StateStore, tocDocID stri
 			printed_page_number
 			sort_order
 			_actual_pageID
+			link_retries
+			link_failed
+			link_failure_reason
 		}
 	}`, tocDocID)
 
@@ -159,6 +172,9 @@ func loadTocEntriesViaStore(ctx context.Context, store StateStore, tocDocID stri
 		if linkedID, ok := entry["_actual_pageID"].(string); ok && linkedID != "" {
 			continue
 		}
+		if failed, _ := entry["link_failed"].(bool); failed {
+			continue
+		}
 
 		te := &toc_entry_finder.TocEntry{}
 		if docID, ok := entry["_docID"].(string); ok {
@@ -178,6 +194,10 @@ func loadTocEntriesViaStore(ctx context.Context, store StateStore, tocDocID stri
 			te.PrintedPageNumber = printedPage
 		}
 		te.SortOrder = numericToInt(entry["sort_order"])
+		te.LinkRetries = numericToInt(entry["link_retries"])
+		if reason, ok := entry["link_failure_reason"].(string); ok {
+			te.LinkFailureReason = reason
+		}
 
 		if te.DocID != "" {
 			entries = append(entries, te)

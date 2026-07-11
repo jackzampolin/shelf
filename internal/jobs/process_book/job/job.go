@@ -328,11 +328,13 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		case WorkUnitTypeLinkToc:
 			// Link ToC entry failures - retry individual entry
 			if info.RetryCount < MaxBookOpRetries {
-				retryUnit := j.createLinkTocRetryUnit(ctx, info, linkTocWorkFailureReason(result))
-				if retryUnit != nil {
+				retryUnit, retryErr := j.createLinkTocRetryUnit(ctx, info, linkTocWorkFailureReason(result))
+				if retryErr != nil {
 					j.RemoveWorkUnit(result.WorkUnitID)
-					return []jobs.WorkUnit{*retryUnit}, nil
+					return nil, retryErr
 				}
+				j.RemoveWorkUnit(result.WorkUnitID)
+				return []jobs.WorkUnit{*retryUnit}, nil
 			}
 			// Retries exhausted: skip this entry rather than failing the book.
 			if logger != nil {
@@ -340,6 +342,10 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 					"entry_doc_id", info.EntryDocID,
 					"retry_count", info.RetryCount,
 					"error", result.Error)
+			}
+			if err := j.persistSkippedTocLinkEntry(ctx, info, linkTocWorkFailureReason(result)); err != nil {
+				j.RemoveWorkUnit(result.WorkUnitID)
+				return nil, err
 			}
 			j.RemoveWorkUnit(result.WorkUnitID)
 			units := j.resolveTocLinkEntry(ctx, info)
@@ -517,11 +523,13 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 					"retry_count", info.RetryCount,
 					"error", handlerErr)
 			}
-			retryUnit := j.createLinkTocRetryUnit(ctx, info, handlerErr)
-			if retryUnit != nil {
+			retryUnit, retryErr := j.createLinkTocRetryUnit(ctx, info, handlerErr)
+			if retryErr != nil {
 				j.RemoveWorkUnit(result.WorkUnitID)
-				return []jobs.WorkUnit{*retryUnit}, nil
+				return nil, retryErr
 			}
+			j.RemoveWorkUnit(result.WorkUnitID)
+			return []jobs.WorkUnit{*retryUnit}, nil
 		}
 		if info.UnitType == WorkUnitTypeLinkToc {
 			// Retries exhausted (or retry creation failed): skip this entry rather
@@ -531,6 +539,10 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 					"entry_doc_id", info.EntryDocID,
 					"retry_count", info.RetryCount,
 					"error", handlerErr)
+			}
+			if err := j.persistSkippedTocLinkEntry(ctx, info, handlerErr); err != nil {
+				j.RemoveWorkUnit(result.WorkUnitID)
+				return nil, err
 			}
 			j.RemoveWorkUnit(result.WorkUnitID)
 			units := j.resolveTocLinkEntry(ctx, info)

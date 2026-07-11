@@ -3,6 +3,7 @@ package job
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/jackzampolin/shelf/internal/agent"
 	"github.com/jackzampolin/shelf/internal/agents"
@@ -96,11 +97,11 @@ func (j *Job) HandleLinkTocComplete(ctx context.Context, result jobs.WorkResult,
 				// Remove old work unit from tracker before creating retry
 				j.RemoveWorkUnit(result.WorkUnitID)
 				// Create retry work unit (this creates a fresh agent)
-				unit := j.createLinkTocRetryUnit(ctx, info, resultErr)
-				if unit != nil {
-					return []jobs.WorkUnit{*unit}, nil
+				unit, err := j.createLinkTocRetryUnit(ctx, info, resultErr)
+				if err != nil {
+					return nil, err
 				}
-				// If we can't create retry unit, fall through to mark as failed
+				return []jobs.WorkUnit{*unit}, nil
 			}
 
 			// Retries exhausted (or retry creation failed): skip this entry rather
@@ -114,6 +115,9 @@ func (j *Job) HandleLinkTocComplete(ctx context.Context, result jobs.WorkResult,
 					"max_retries", MaxBookOpRetries,
 					"error", resultErr)
 			}
+			if err := j.persistSkippedTocLinkEntry(ctx, info, resultErr); err != nil {
+				return nil, err
+			}
 			// fall through to the shared resolution bookkeeping below
 		}
 
@@ -124,6 +128,21 @@ func (j *Job) HandleLinkTocComplete(ctx context.Context, result jobs.WorkResult,
 	}
 
 	return nil, nil
+}
+
+func (j *Job) persistSkippedTocLinkEntry(ctx context.Context, info WorkUnitInfo, reason error) error {
+	reasonText := "ToC entry link retry budget exhausted"
+	if reason != nil && strings.TrimSpace(reason.Error()) != "" {
+		reasonText = strings.TrimSpace(reason.Error())
+	}
+	retries := info.RetryCount
+	if retries < MaxBookOpRetries {
+		retries = MaxBookOpRetries
+	}
+	if err := common.PersistTocEntryLinkState(ctx, j.Book, info.EntryDocID, retries, true, reasonText); err != nil {
+		return fmt.Errorf("persist terminal link failure for entry %s: %w", info.EntryDocID, err)
+	}
+	return nil
 }
 
 // resolveTocLinkEntry performs the bookkeeping shared by a successfully linked

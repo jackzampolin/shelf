@@ -64,6 +64,8 @@ func (j *Job) createMoreLinkTocWorkUnits(ctx context.Context, limit int) []jobs.
 		entry        *toc_entry_finder.TocEntry
 		agent        *agent.Agent
 		initialState *common.AgentState
+		retryCount   int
+		retryHint    string
 	}
 	var agentsToCreate []agentWithState
 
@@ -83,6 +85,8 @@ func (j *Job) createMoreLinkTocWorkUnits(ctx context.Context, limit int) []jobs.
 				entry:        entry,
 				agent:        ag,
 				initialState: state,
+				retryCount:   entry.LinkRetries,
+				retryHint:    entry.LinkFailureReason,
 			})
 		}
 	}
@@ -120,7 +124,7 @@ func (j *Job) createMoreLinkTocWorkUnits(ctx context.Context, limit int) []jobs.
 		}
 
 		// Convert and collect work units
-		jobUnits := j.convertLinkTocAgentUnits(agentUnits, aws.entry.DocID, 0, "")
+		jobUnits := j.convertLinkTocAgentUnits(agentUnits, aws.entry.DocID, aws.retryCount, aws.retryHint)
 		if len(jobUnits) > 0 {
 			units = append(units, jobUnits[0])
 		}

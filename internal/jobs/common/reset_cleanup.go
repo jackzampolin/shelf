@@ -197,7 +197,11 @@ func clearTocEntryLinks(ctx context.Context, tocDocID string) error {
 			Collection: "TocEntry",
 			DocID:      docID,
 			Document: map[string]any{
-				"_actual_pageID": nil,
+				"_actual_pageID":      nil,
+				"link_retries":        0,
+				"link_failed":         false,
+				"link_failure_reason": nil,
+				"link_failed_at":      nil,
 			},
 			Op: defra.OpUpdate,
 		})

@@ -140,6 +140,10 @@ func TestResetFrom_TocLinkReloadsClearedEntries(t *testing.T) {
 		"level_name":          "chapter",
 		"printed_page_number": "12",
 		"sort_order":          float64(2),
+		"link_retries":        3,
+		"link_failed":         true,
+		"link_failure_reason": "old failure",
+		"link_failed_at":      "2026-07-10T00:00:00Z",
 	})
 	store.SetDoc("TocEntry", "entry-1", map[string]any{
 		"_tocID":              "toc-1",
@@ -150,6 +154,9 @@ func TestResetFrom_TocLinkReloadsClearedEntries(t *testing.T) {
 		"level_name":          "chapter",
 		"printed_page_number": "3",
 		"sort_order":          float64(1),
+		"link_retries":        2,
+		"link_failed":         false,
+		"link_failure_reason": "old retry",
 	})
 
 	ctx := context.Background()
@@ -161,6 +168,15 @@ func TestResetFrom_TocLinkReloadsClearedEntries(t *testing.T) {
 		doc := store.GetDoc("TocEntry", docID)
 		if _, ok := doc["_actual_pageID"]; ok {
 			t.Fatalf("expected %s _actual_pageID to be cleared, got %v", docID, doc["_actual_pageID"])
+		}
+		if doc["link_retries"] != 0 || doc["link_failed"] != false {
+			t.Fatalf("expected %s link budget to reset, got %v", docID, doc)
+		}
+		if _, ok := doc["link_failure_reason"]; ok {
+			t.Fatalf("expected %s link failure reason to clear, got %v", docID, doc)
+		}
+		if _, ok := doc["link_failed_at"]; ok {
+			t.Fatalf("expected %s link failure timestamp to clear, got %v", docID, doc)
 		}
 	}
 

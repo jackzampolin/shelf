@@ -33,7 +33,7 @@ func (j *Job) createEntryFinderAgentWithState(ctx context.Context, entry *toc_en
 
 	// Check for saved agent state (job resume case)
 	savedState := j.Book.GetAgentState(common.AgentTypeTocEntryFinder, entry.DocID)
-	if savedState != nil && !savedState.Complete && hint == "" {
+	if savedState != nil && !savedState.Complete {
 		// Resume existing agent
 		if logger != nil {
 			logger.Debug("resuming ToC entry finder agent from saved state",
@@ -156,7 +156,7 @@ func (j *Job) createEntryFinderWorkUnit(ctx context.Context, entry *toc_entry_fi
 
 // createLinkTocRetryUnit creates a retry work unit for a failed link_toc operation.
 // Cleans up old agent state and creates a fresh agent with feedback from the rejection.
-func (j *Job) createLinkTocRetryUnit(ctx context.Context, info WorkUnitInfo, retryReason error) *jobs.WorkUnit {
+func (j *Job) createLinkTocRetryUnit(ctx context.Context, info WorkUnitInfo, retryReason error) (*jobs.WorkUnit, error) {
 	// Find the entry for this doc ID
 	var entry *toc_entry_finder.TocEntry
 	for _, e := range j.LinkTocEntries {
@@ -171,7 +171,7 @@ func (j *Job) createLinkTocRetryUnit(ctx context.Context, info WorkUnitInfo, ret
 				"book_id", j.Book.BookID,
 				"entry_doc_id", info.EntryDocID)
 		}
-		return nil
+		return nil, fmt.Errorf("entry %s not found for retry", info.EntryDocID)
 	}
 
 	// Remove old agent from map
@@ -182,10 +182,18 @@ func (j *Job) createLinkTocRetryUnit(ctx context.Context, info WorkUnitInfo, ret
 	j.cleanupLinkTocAgentStateWithMode(ctx, info.EntryDocID, true)
 
 	retryHint := appendLinkTocRetryHint(info.RetryHint, info.RetryCount, retryReason)
+	newRetryCount := info.RetryCount + 1
+	if err := common.PersistTocEntryLinkState(ctx, j.Book, info.EntryDocID, newRetryCount, false, retryHint); err != nil {
+		return nil, fmt.Errorf("persist link retry for entry %s: %w", info.EntryDocID, err)
+	}
 
 	// Create new work unit with fresh agent and carry retry metadata through
 	// every future LLM unit produced by this agent.
-	return j.createEntryFinderWorkUnit(ctx, entry, info.RetryCount+1, retryHint)
+	unit := j.createEntryFinderWorkUnit(ctx, entry, newRetryCount, retryHint)
+	if unit == nil {
+		return nil, fmt.Errorf("create link retry for entry %s", info.EntryDocID)
+	}
+	return unit, nil
 }
 
 func linkTocWorkFailureReason(result jobs.WorkResult) error {
