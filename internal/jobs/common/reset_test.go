@@ -200,6 +200,10 @@ func TestResetFrom_TocExtractClearsFinalizeCheckpoints(t *testing.T) {
 	book.SetFinalizeEntriesTotal(3)
 	book.SetFinalizeGapsTotal(2)
 	book.SetFinalizeProgress(2, 1, 1, 1)
+	book.SetOpState(OpTocExtract, false, false, true, 3)
+	book.SetOpState(OpTocLink, false, false, true, 3)
+	book.SetOpState(OpTocFinalize, false, false, true, 3)
+	book.SetOpState(OpStructure, false, false, true, 3)
 
 	store.SetTocDoc("toc-1", map[string]any{
 		"finalize_phase":    "gaps",
@@ -217,6 +221,12 @@ func TestResetFrom_TocExtractClearsFinalizeCheckpoints(t *testing.T) {
 
 	if err := ResetFrom(context.Background(), book, "toc-1", ResetTocExtract); err != nil {
 		t.Fatalf("ResetFrom(toc_extract) failed: %v", err)
+	}
+	for _, op := range []OpType{OpTocExtract, OpTocLink, OpTocFinalize, OpStructure} {
+		state := book.OpGetState(op)
+		if !state.CanStart() || state.GetRetries() != 0 {
+			t.Errorf("%s state after explicit reset = canStart:%v retries:%d, want true/0", op, state.CanStart(), state.GetRetries())
+		}
 	}
 
 	toc := store.GetDoc("ToC", "toc-1")

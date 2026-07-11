@@ -20,8 +20,11 @@ func resetOp(ctx context.Context, book *BookState, tocDocID string, op OpType) e
 		return fmt.Errorf("unknown operation: %s", op)
 	}
 
-	// 1. Reset operation state
-	book.OpReset(op)
+	// 1. Explicit operator repair resets both status and semantic retry budget.
+	// OpReset intentionally preserves retries for crash reopen and rollback, so
+	// using it here would let the next async Start write resurrect an exhausted
+	// budget after this function persisted retries=0.
+	book.SetOpState(op, false, false, false, 0)
 
 	// 2. Run memory cleanup hook
 	if cfg.ResetMemoryHook != nil {
