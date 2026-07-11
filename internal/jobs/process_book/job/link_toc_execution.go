@@ -27,9 +27,9 @@ func (j *Job) HandleLinkTocComplete(ctx context.Context, result jobs.WorkResult,
 	// Handle LLM result
 	if result.ChatResult != nil {
 		ag.HandleLLMResult(result.ChatResult)
-
-		// Note: No intermediate state persistence - crash recovery restarts from scratch
-		// This eliminates the SendSync bottleneck that serialized agent execution
+		if err := j.checkpointAgentState(ctx, ag, common.AgentTypeTocEntryFinder, info.EntryDocID); err != nil {
+			return nil, err
+		}
 
 		// Execute tool loop
 		agentUnits := agents.ExecuteToolLoop(ctx, ag)

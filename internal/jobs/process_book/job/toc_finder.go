@@ -201,9 +201,9 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 	// Handle LLM result
 	if result.ChatResult != nil {
 		j.TocAgent.HandleLLMResult(result.ChatResult)
-
-		// Note: No intermediate state persistence - crash recovery restarts from scratch
-		// This eliminates the SendSync bottleneck that serialized agent execution
+		if err := j.checkpointAgentState(ctx, j.TocAgent, common.AgentTypeTocFinder, ""); err != nil {
+			return nil, err
+		}
 
 		// Execute tool loop using helper
 		agentUnits := agents.ExecuteToolLoop(ctx, j.TocAgent)

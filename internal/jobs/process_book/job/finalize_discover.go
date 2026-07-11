@@ -275,9 +275,9 @@ func (j *Job) HandleFinalizeDiscoverComplete(ctx context.Context, result jobs.Wo
 	// Handle LLM result
 	if result.ChatResult != nil {
 		ag.HandleLLMResult(result.ChatResult)
-
-		// Note: No intermediate state persistence - crash recovery restarts from scratch
-		// This eliminates the SendSync bottleneck that serialized agent execution
+		if err := j.checkpointAgentState(ctx, ag, common.AgentTypeChapterFinder, info.FinalizeKey); err != nil {
+			return nil, err
+		}
 
 		agentUnits := agents.ExecuteToolLoop(ctx, ag)
 		if len(agentUnits) > 0 {
