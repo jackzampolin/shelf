@@ -8,14 +8,21 @@ import (
 // reconcileInterval is how often the scheduler scans for stalled books.
 const reconcileInterval = 2 * time.Minute
 
+// A terminal job can be followed immediately by an operator-submitted
+// replacement. Give that transaction one reconcile interval to create its new
+// queued/running record; otherwise the periodic scan can publish a false book
+// failure in the cancel->submit gap.
+const reconcileStrandGrace = reconcileInterval
+
 // bookIsStranded reports whether a book currently in "processing" is stranded:
 // it has no active in-memory job, no queued/running job record, and at least
 // one failed job record.
-func bookIsStranded(hasActiveInMemoryJob bool, records []*Record) bool {
+func bookIsStranded(hasActiveInMemoryJob bool, records []*Record, now time.Time) bool {
 	if hasActiveInMemoryJob {
 		return false
 	}
 	hasFailed := false
+	var latestActivity time.Time
 	for _, r := range records {
 		switch r.Status {
 		case StatusRunning, StatusQueued, StatusWaitingProvider:
@@ -23,6 +30,14 @@ func bookIsStranded(hasActiveInMemoryJob bool, records []*Record) bool {
 		case StatusFailed:
 			hasFailed = true
 		}
+		for _, timestamp := range []*time.Time{&r.CreatedAt, r.StartedAt, r.CompletedAt, r.HeartbeatAt, r.LastProgressAt} {
+			if timestamp != nil && timestamp.After(latestActivity) {
+				latestActivity = *timestamp
+			}
+		}
+	}
+	if !latestActivity.IsZero() && now.Sub(latestActivity) < reconcileStrandGrace {
+		return false
 	}
 	return hasFailed
 }
@@ -78,7 +93,7 @@ func (s *Scheduler) reconcileStalledBooks(ctx context.Context) {
 			s.logger.Warn("reconciler: failed to list jobs for book", "book_id", docID, "error", err)
 			continue
 		}
-		if !bookIsStranded(hasActive, records) {
+		if !bookIsStranded(hasActive, records, time.Now().UTC()) {
 			continue
 		}
 
