@@ -57,7 +57,7 @@ func validateTocEntryResolution(ctx context.Context, book *BookState, entryDocID
 // page, resets downstream artifacts, and reopens (or completes) the aggregate
 // link stage. The caller must stop an active job before calling and submit a
 // replacement process-book job afterward.
-func ResolveTocEntry(ctx context.Context, book *BookState, entryDocID string, pageNum int, reason string, allowRelink bool) (*TocEntryResolutionResult, error) {
+func ResolveTocEntry(ctx context.Context, book *BookState, entryDocID string, pageNum int, reason string, allowRelink bool, titleOverride string) (*TocEntryResolutionResult, error) {
 	repair, pageDocID, err := validateTocEntryResolution(ctx, book, entryDocID, pageNum, reason, allowRelink)
 	if err != nil {
 		return nil, err
@@ -71,7 +71,7 @@ func ResolveTocEntry(ctx context.Context, book *BookState, entryDocID string, pa
 	}
 
 	reason = strings.TrimSpace(reason)
-	writeResult, err := book.getStore(ctx).UpdateWithVersion(ctx, "TocEntry", entryDocID, map[string]any{
+	update := map[string]any{
 		"_actual_pageID":        pageDocID,
 		"link_retries":          0,
 		"link_failed":           false,
@@ -82,7 +82,12 @@ func ResolveTocEntry(ctx context.Context, book *BookState, entryDocID string, pa
 		"link_excluded_at":      nil,
 		"link_repair_reason":    reason,
 		"link_repaired_at":      time.Now().UTC().Format(time.RFC3339),
-	})
+	}
+	if title := strings.TrimSpace(titleOverride); title != "" {
+		update["title"] = title
+		repair.Title = title
+	}
+	writeResult, err := book.getStore(ctx).UpdateWithVersion(ctx, "TocEntry", entryDocID, update)
 	if err != nil {
 		return nil, fmt.Errorf("persist ToC entry page resolution: %w", err)
 	}

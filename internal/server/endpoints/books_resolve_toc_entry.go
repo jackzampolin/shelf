@@ -17,6 +17,7 @@ import (
 type ResolveTocEntryRequest struct {
 	EntryDocID string `json:"entry_doc_id"`
 	PageNum    int    `json:"page_num"`
+	Title      string `json:"title,omitempty"`
 	Reason     string `json:"reason"`
 	Relink     bool   `json:"relink,omitempty"`
 	Force      bool   `json:"force,omitempty"`
@@ -93,7 +94,7 @@ func (e *ResolveTocEntryEndpoint) handler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	resolution, err := common.ResolveTocEntry(r.Context(), book, req.EntryDocID, req.PageNum, req.Reason, req.Relink)
+	resolution, err := common.ResolveTocEntry(r.Context(), book, req.EntryDocID, req.PageNum, req.Reason, req.Relink, req.Title)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("failed to resolve ToC entry: %v", err))
 		return
@@ -113,7 +114,7 @@ func (e *ResolveTocEntryEndpoint) handler(w http.ResponseWriter, r *http.Request
 }
 
 func (e *ResolveTocEntryEndpoint) Command(getServerURL func() string) *cobra.Command {
-	var entryDocID, reason string
+	var entryDocID, reason, title string
 	var pageNum int
 	var force, relink bool
 	cmd := &cobra.Command{
@@ -126,7 +127,7 @@ Use this only after inspecting the target page. Use --force when a job is active
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var resp ResolveTocEntryResponse
 			if err := api.NewClient(getServerURL()).Post(cmd.Context(), "/api/books/"+args[0]+"/resolve-toc-entry", ResolveTocEntryRequest{
-				EntryDocID: entryDocID, PageNum: pageNum, Reason: reason, Relink: relink, Force: force,
+				EntryDocID: entryDocID, PageNum: pageNum, Title: title, Reason: reason, Relink: relink, Force: force,
 			}, &resp); err != nil {
 				return err
 			}
@@ -135,6 +136,7 @@ Use this only after inspecting the target page. Use --force when a job is active
 	}
 	cmd.Flags().StringVar(&entryDocID, "entry", "", "TocEntry document ID from detailed job status")
 	cmd.Flags().IntVar(&pageNum, "page", 0, "Verified 1-indexed scan page")
+	cmd.Flags().StringVar(&title, "title", "", "Optional source-verified title correction")
 	cmd.Flags().StringVar(&reason, "reason", "", "Source-backed reason for the explicit page link")
 	cmd.Flags().BoolVar(&relink, "relink", false, "Allow replacing an existing page link after source verification")
 	cmd.Flags().BoolVar(&force, "force", false, "Cancel an active process-book job before resolution")

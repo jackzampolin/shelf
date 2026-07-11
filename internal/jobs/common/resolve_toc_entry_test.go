@@ -21,7 +21,7 @@ func resolvableTocEntryBook() (*BookState, *MemoryStateStore) {
 
 func TestResolveTocEntryLinksOnlyTargetAndReopensStage(t *testing.T) {
 	book, store := resolvableTocEntryBook()
-	result, err := ResolveTocEntry(context.Background(), book, "entry-failed", 2, "verified title on scan page 2", false)
+	result, err := ResolveTocEntry(context.Background(), book, "entry-failed", 2, "verified title on scan page 2", false, "Corrected title")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,6 +31,9 @@ func TestResolveTocEntryLinksOnlyTargetAndReopensStage(t *testing.T) {
 	failed := store.GetDoc("TocEntry", "entry-failed")
 	if failed["_actual_pageID"] != "page-2" || failed["link_failed"] != false {
 		t.Fatalf("resolved entry = %#v", failed)
+	}
+	if failed["title"] != "Corrected title" || result.Title != "Corrected title" {
+		t.Fatalf("title override result=%#v entry=%#v", result, failed)
 	}
 	if failed["link_repair_reason"] != "verified title on scan page 2" || failed["link_repaired_at"] == "" {
 		t.Fatalf("resolution provenance = %#v", failed)
@@ -63,7 +66,7 @@ func TestResolveTocEntryRejectsUnsafePage(t *testing.T) {
 			if tt.mutate != nil {
 				tt.mutate(book)
 			}
-			_, err := ResolveTocEntry(context.Background(), book, "entry-failed", tt.page, "source-backed reason", false)
+			_, err := ResolveTocEntry(context.Background(), book, "entry-failed", tt.page, "source-backed reason", false, "")
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("error = %v, want substring %q", err, tt.want)
 			}
@@ -73,10 +76,10 @@ func TestResolveTocEntryRejectsUnsafePage(t *testing.T) {
 
 func TestResolveTocEntryRequiresExplicitRelink(t *testing.T) {
 	book, store := resolvableTocEntryBook()
-	if _, err := ResolveTocEntry(context.Background(), book, "entry-good", 2, "verified correction", false); err == nil || !strings.Contains(err.Error(), "already linked") {
+	if _, err := ResolveTocEntry(context.Background(), book, "entry-good", 2, "verified correction", false, ""); err == nil || !strings.Contains(err.Error(), "already linked") {
 		t.Fatalf("ordinary resolution error = %v, want already linked refusal", err)
 	}
-	result, err := ResolveTocEntry(context.Background(), book, "entry-good", 2, "verified correction", true)
+	result, err := ResolveTocEntry(context.Background(), book, "entry-good", 2, "verified correction", true, "")
 	if err != nil {
 		t.Fatal(err)
 	}
