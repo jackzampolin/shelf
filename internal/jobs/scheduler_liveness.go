@@ -68,26 +68,38 @@ func (s *Scheduler) providerWaitChanged(provider, jobID string, waiting bool) {
 	} else {
 		delete(providers, provider)
 	}
-	names := make([]string, 0, len(providers))
-	for name := range providers {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	stillWaiting := len(names) > 0
 	s.mu.Unlock()
 
 	if s.manager == nil {
 		return
 	}
 	ctx := s.schedulerContext()
-	if stillWaiting {
-		reason := fmt.Sprintf("waiting for provider recovery: %s", strings.Join(names, ", "))
-		if err := s.manager.UpdateRuntimeStatus(ctx, jobID, StatusWaitingProvider, reason); err != nil {
-			s.logger.Warn("failed to persist waiting_provider state", "job_id", jobID, "provider", provider, "error", err)
+	_, err := retryTransientOperation(ctx, s.logger, "persist provider runtime state", jobID, func() (struct{}, error) {
+		// Recompute the desired state on every attempt. Provider callbacks and job
+		// completion can race a transient Defra write; retries must converge to
+		// the newest in-memory truth rather than resurrecting a stale state.
+		s.mu.RLock()
+		_, active := s.jobs[jobID]
+		current := s.waitingProviders[jobID]
+		names := make([]string, 0, len(current))
+		for name := range current {
+			names = append(names, name)
 		}
-		return
-	}
-	if err := s.manager.UpdateRuntimeStatus(ctx, jobID, StatusRunning, ""); err != nil {
-		s.logger.Warn("failed to restore running state after provider recovery", "job_id", jobID, "provider", provider, "error", err)
+		s.mu.RUnlock()
+		if !active {
+			return struct{}{}, nil
+		}
+
+		sort.Strings(names)
+		status := StatusRunning
+		reason := ""
+		if len(names) > 0 {
+			status = StatusWaitingProvider
+			reason = fmt.Sprintf("waiting for provider recovery: %s", strings.Join(names, ", "))
+		}
+		return struct{}{}, s.manager.UpdateRuntimeStatus(ctx, jobID, status, reason)
+	})
+	if err != nil {
+		s.logger.Warn("failed to persist provider runtime state", "job_id", jobID, "provider", provider, "error", err)
 	}
 }

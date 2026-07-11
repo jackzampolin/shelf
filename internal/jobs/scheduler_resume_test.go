@@ -132,3 +132,43 @@ func TestParseJobRecordIncludesLivenessFields(t *testing.T) {
 		t.Fatalf("liveness fields not parsed: %#v", record)
 	}
 }
+
+func TestProviderRecoveryRetriesTransientRuntimeStatusWrite(t *testing.T) {
+	withFastResumeBackoff(t)
+	var mu sync.Mutex
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if !strings.Contains(string(body), "update_Job") {
+			t.Fatalf("unexpected Defra request: %s", body)
+		}
+		mu.Lock()
+		attempts++
+		attempt := attempts
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		if attempt == 1 {
+			_, _ = w.Write([]byte(`{"errors":[{"message":"transaction conflict. Please retry"}]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{"update_Job":[{"_docID":"job-1"}]}}`))
+	}))
+	t.Cleanup(server.Close)
+
+	s := NewScheduler(SchedulerConfig{
+		Logger:  slog.Default(),
+		Manager: NewManager(defra.NewClient(server.URL), slog.Default()),
+	})
+	s.mu.Lock()
+	s.jobs["job-1"] = &stubStartJob{stubFailJob: stubFailJob{bookID: "book-1"}}
+	s.waitingProviders["job-1"] = map[string]struct{}{"qwen-local": {}}
+	s.mu.Unlock()
+
+	s.providerWaitChanged("qwen-local", "job-1", false)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if attempts != 2 {
+		t.Fatalf("runtime status update attempts = %d, want 2", attempts)
+	}
+}
