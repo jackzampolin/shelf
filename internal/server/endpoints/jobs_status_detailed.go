@@ -126,10 +126,11 @@ type ToCStatus struct {
 	ValidateComplete  bool                   `json:"validate_complete"`          // Gap validation done (same as FinalizeComplete for now)
 
 	// Entries (when extracted)
-	EntryCount    int        `json:"entry_count"`
-	EntriesLinked int        `json:"entries_linked"`
-	EntriesFailed int        `json:"entries_failed,omitempty"`
-	Entries       []ToCEntry `json:"entries,omitempty"`
+	EntryCount      int        `json:"entry_count"`
+	EntriesLinked   int        `json:"entries_linked"`
+	EntriesFailed   int        `json:"entries_failed,omitempty"`
+	EntriesExcluded int        `json:"entries_excluded,omitempty"`
+	Entries         []ToCEntry `json:"entries,omitempty"`
 
 	CostUSD float64 `json:"cost_usd"`
 }
@@ -153,21 +154,24 @@ type StructureStatus struct {
 
 // ToCEntry represents a single ToC entry.
 type ToCEntry struct {
-	DocID             string `json:"doc_id,omitempty"`
-	EntryNumber       string `json:"entry_number,omitempty"`
-	Title             string `json:"title"`
-	Level             int    `json:"level"`
-	LevelName         string `json:"level_name,omitempty"`
-	PrintedPageNumber string `json:"printed_page_number,omitempty"`
-	SortOrder         int    `json:"sort_order"`
-	ActualPageNum     int    `json:"actual_page_num,omitempty"`
-	IsLinked          bool   `json:"is_linked"`
-	LinkRetries       int    `json:"link_retries,omitempty"`
-	LinkFailed        bool   `json:"link_failed,omitempty"`
-	LinkFailureReason string `json:"link_failure_reason,omitempty"`
-	LinkRepairReason  string `json:"link_repair_reason,omitempty"`
-	LinkRepairedAt    string `json:"link_repaired_at,omitempty"`
-	Source            string `json:"source,omitempty"` // "extracted" or "discovered"
+	DocID               string `json:"doc_id,omitempty"`
+	EntryNumber         string `json:"entry_number,omitempty"`
+	Title               string `json:"title"`
+	Level               int    `json:"level"`
+	LevelName           string `json:"level_name,omitempty"`
+	PrintedPageNumber   string `json:"printed_page_number,omitempty"`
+	SortOrder           int    `json:"sort_order"`
+	ActualPageNum       int    `json:"actual_page_num,omitempty"`
+	IsLinked            bool   `json:"is_linked"`
+	LinkRetries         int    `json:"link_retries,omitempty"`
+	LinkFailed          bool   `json:"link_failed,omitempty"`
+	LinkFailureReason   string `json:"link_failure_reason,omitempty"`
+	LinkRepairReason    string `json:"link_repair_reason,omitempty"`
+	LinkRepairedAt      string `json:"link_repaired_at,omitempty"`
+	LinkExcluded        bool   `json:"link_excluded,omitempty"`
+	LinkExclusionReason string `json:"link_exclusion_reason,omitempty"`
+	LinkExcludedAt      string `json:"link_excluded_at,omitempty"`
+	Source              string `json:"source,omitempty"` // "extracted" or "discovered"
 }
 
 // PatternAnalysisResult contains the full pattern analysis output.

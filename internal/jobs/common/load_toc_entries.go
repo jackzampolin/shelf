@@ -45,6 +45,7 @@ func LoadTocEntries(ctx context.Context, tocDocID string) ([]*toc_entry_finder.T
 			link_retries
 			link_failed
 			link_failure_reason
+			link_excluded
 			actual_page {
 				_docID
 			}
@@ -94,6 +95,9 @@ func LoadTocEntries(ctx context.Context, tocDocID string) ([]*toc_entry_finder.T
 		}
 		if failed, _ := entry["link_failed"].(bool); failed {
 			continue // Durably exhausted entries are resolved until an explicit reset.
+		}
+		if excluded, _ := entry["link_excluded"].(bool); excluded {
+			continue // Explicit source-backed exclusions are terminal and auditable.
 		}
 
 		te := &toc_entry_finder.TocEntry{}
@@ -153,6 +157,7 @@ func loadTocEntriesViaStore(ctx context.Context, store StateStore, tocDocID stri
 			link_retries
 			link_failed
 			link_failure_reason
+			link_excluded
 		}
 	}`, tocDocID)
 
@@ -179,6 +184,9 @@ func loadTocEntriesViaStore(ctx context.Context, store StateStore, tocDocID stri
 			continue
 		}
 		if failed, _ := entry["link_failed"].(bool); failed {
+			continue
+		}
+		if excluded, _ := entry["link_excluded"].(bool); excluded {
 			continue
 		}
 

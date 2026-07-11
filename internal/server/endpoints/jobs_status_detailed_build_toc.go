@@ -53,6 +53,9 @@ func buildTocStatus(ctx context.Context, client *defra.Client, bookID string, re
 					link_failure_reason
 					link_repair_reason
 					link_repaired_at
+					link_excluded
+					link_exclusion_reason
+					link_excluded_at
 					actual_page {
 						page_num
 					}
@@ -178,6 +181,18 @@ func buildTocStatus(ctx context.Context, client *defra.Client, bookID string, re
 								}
 								if v, ok := entry["link_repaired_at"].(string); ok {
 									tocEntry.LinkRepairedAt = v
+								}
+								if v, ok := entry["link_excluded"].(bool); ok {
+									tocEntry.LinkExcluded = v
+									if v {
+										resp.ToC.EntriesExcluded++
+									}
+								}
+								if v, ok := entry["link_exclusion_reason"].(string); ok {
+									tocEntry.LinkExclusionReason = v
+								}
+								if v, ok := entry["link_excluded_at"].(string); ok {
+									tocEntry.LinkExcludedAt = v
 								}
 								// Check if entry is linked to actual page
 								if actualPage, ok := entry["actual_page"].(map[string]any); ok {

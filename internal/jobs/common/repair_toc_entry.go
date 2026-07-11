@@ -24,6 +24,13 @@ type TocEntryRepairResult struct {
 // this book's ToC. Linked entries require a different, explicit relink workflow
 // so a repair cannot erase a known-good result by accident.
 func ValidateTocEntryRepair(ctx context.Context, book *BookState, entryDocID, reason string) (*TocEntryRepairResult, error) {
+	return validateTocEntryTarget(ctx, book, entryDocID, reason, false)
+}
+
+// validateTocEntryTarget loads an entry owned by the book. allowLinked is only
+// used by the explicit operator relink workflow; ordinary repair remains
+// fail-safe and refuses to touch successful links.
+func validateTocEntryTarget(ctx context.Context, book *BookState, entryDocID, reason string, allowLinked bool) (*TocEntryRepairResult, error) {
 	if book == nil {
 		return nil, fmt.Errorf("book state is required")
 	}
@@ -67,11 +74,11 @@ func ValidateTocEntryRepair(ctx context.Context, book *BookState, entryDocID, re
 	if !ok {
 		return nil, fmt.Errorf("ToC entry %s has an invalid record", entryDocID)
 	}
-	if linkedID, _ := entry["_actual_pageID"].(string); linkedID != "" {
+	if linkedID, _ := entry["_actual_pageID"].(string); linkedID != "" && !allowLinked {
 		return nil, fmt.Errorf("ToC entry %s is already linked; refusing to erase a successful link", entryDocID)
 	}
 	if actualPage, ok := entry["actual_page"].(map[string]any); ok {
-		if linkedID, _ := actualPage["_docID"].(string); linkedID != "" {
+		if linkedID, _ := actualPage["_docID"].(string); linkedID != "" && !allowLinked {
 			return nil, fmt.Errorf("ToC entry %s is already linked; refusing to erase a successful link", entryDocID)
 		}
 	}
@@ -107,12 +114,15 @@ func RepairTocEntry(ctx context.Context, book *BookState, entryDocID, reason str
 
 	store := book.getStore(ctx)
 	update := map[string]any{
-		"link_retries":        0,
-		"link_failed":         false,
-		"link_failure_reason": nil,
-		"link_failed_at":      nil,
-		"link_repair_reason":  result.Reason,
-		"link_repaired_at":    time.Now().UTC().Format(time.RFC3339),
+		"link_retries":          0,
+		"link_failed":           false,
+		"link_failure_reason":   nil,
+		"link_failed_at":        nil,
+		"link_excluded":         false,
+		"link_exclusion_reason": nil,
+		"link_excluded_at":      nil,
+		"link_repair_reason":    result.Reason,
+		"link_repaired_at":      time.Now().UTC().Format(time.RFC3339),
 	}
 	writeResult, err := store.UpdateWithVersion(ctx, "TocEntry", entryDocID, update)
 	if err != nil {

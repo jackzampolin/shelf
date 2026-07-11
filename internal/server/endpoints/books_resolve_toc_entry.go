@@ -18,6 +18,7 @@ type ResolveTocEntryRequest struct {
 	EntryDocID string `json:"entry_doc_id"`
 	PageNum    int    `json:"page_num"`
 	Reason     string `json:"reason"`
+	Relink     bool   `json:"relink,omitempty"`
 	Force      bool   `json:"force,omitempty"`
 }
 
@@ -83,7 +84,7 @@ func (e *ResolveTocEntryEndpoint) handler(w http.ResponseWriter, r *http.Request
 		return
 	}
 	book := jobContext.GetBook()
-	if err := common.ValidateTocEntryResolution(r.Context(), book, req.EntryDocID, req.PageNum, req.Reason); err != nil {
+	if err := common.ValidateTocEntryResolution(r.Context(), book, req.EntryDocID, req.PageNum, req.Reason, req.Relink); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -92,7 +93,7 @@ func (e *ResolveTocEntryEndpoint) handler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	resolution, err := common.ResolveTocEntry(r.Context(), book, req.EntryDocID, req.PageNum, req.Reason)
+	resolution, err := common.ResolveTocEntry(r.Context(), book, req.EntryDocID, req.PageNum, req.Reason, req.Relink)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("failed to resolve ToC entry: %v", err))
 		return
@@ -114,7 +115,7 @@ func (e *ResolveTocEntryEndpoint) handler(w http.ResponseWriter, r *http.Request
 func (e *ResolveTocEntryEndpoint) Command(getServerURL func() string) *cobra.Command {
 	var entryDocID, reason string
 	var pageNum int
-	var force bool
+	var force, relink bool
 	cmd := &cobra.Command{
 		Use:   "resolve-toc-entry <book_id>",
 		Short: "Link one ToC entry to an operator-verified scan page",
@@ -125,7 +126,7 @@ Use this only after inspecting the target page. Use --force when a job is active
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var resp ResolveTocEntryResponse
 			if err := api.NewClient(getServerURL()).Post(cmd.Context(), "/api/books/"+args[0]+"/resolve-toc-entry", ResolveTocEntryRequest{
-				EntryDocID: entryDocID, PageNum: pageNum, Reason: reason, Force: force,
+				EntryDocID: entryDocID, PageNum: pageNum, Reason: reason, Relink: relink, Force: force,
 			}, &resp); err != nil {
 				return err
 			}
@@ -135,6 +136,7 @@ Use this only after inspecting the target page. Use --force when a job is active
 	cmd.Flags().StringVar(&entryDocID, "entry", "", "TocEntry document ID from detailed job status")
 	cmd.Flags().IntVar(&pageNum, "page", 0, "Verified 1-indexed scan page")
 	cmd.Flags().StringVar(&reason, "reason", "", "Source-backed reason for the explicit page link")
+	cmd.Flags().BoolVar(&relink, "relink", false, "Allow replacing an existing page link after source verification")
 	cmd.Flags().BoolVar(&force, "force", false, "Cancel an active process-book job before resolution")
 	_ = cmd.MarkFlagRequired("entry")
 	_ = cmd.MarkFlagRequired("page")

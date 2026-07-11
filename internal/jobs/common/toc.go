@@ -166,13 +166,14 @@ func SaveTocExtractResult(ctx context.Context, tocDocID string, result *extract_
 		uniqueKey := fmt.Sprintf("%s:%s:%d", tocDocID, generation, i)
 
 		entryData := map[string]any{
-			"_tocID":       tocDocID,
-			"unique_key":   uniqueKey,
-			"title":        entry.Title,
-			"level":        entry.Level,
-			"sort_order":   i,
-			"link_retries": 0,
-			"link_failed":  false,
+			"_tocID":        tocDocID,
+			"unique_key":    uniqueKey,
+			"title":         entry.Title,
+			"level":         entry.Level,
+			"sort_order":    i,
+			"link_retries":  0,
+			"link_failed":   false,
+			"link_excluded": false,
 		}
 
 		if entry.EntryNumber != nil {
@@ -453,9 +454,12 @@ func SaveTocEntryResult(ctx context.Context, book *BookState, entryDocID string,
 	}
 
 	update := map[string]any{
-		"link_failed":         false,
-		"link_failure_reason": nil,
-		"link_failed_at":      nil,
+		"link_failed":           false,
+		"link_failure_reason":   nil,
+		"link_failed_at":        nil,
+		"link_excluded":         false,
+		"link_exclusion_reason": nil,
+		"link_excluded_at":      nil,
 	}
 
 	if result.ScanPage != nil {

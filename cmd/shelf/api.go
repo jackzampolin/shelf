@@ -90,6 +90,7 @@ func init() {
 	booksCmd.AddCommand((&endpoints.RepairTocRangeEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.RepairTocEntryEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.ResolveTocEntryEndpoint{}).Command(getServerURL))
+	booksCmd.AddCommand((&endpoints.ExcludeTocEntryEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.QuarantineOCREndpoint{}).Command(getServerURL))
 
 	// Metrics as subcommand group

@@ -144,6 +144,9 @@ type TocEntry {
 	link_retries: Int
 	link_failed: Boolean
 	link_failure_reason: String
+	link_excluded: Boolean
+	link_exclusion_reason: String
+	link_excluded_at: DateTime
 	# Optional link to actual Page (generates _actual_pageID)
 	actual_page: Page
 }

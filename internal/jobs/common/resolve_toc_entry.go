@@ -23,13 +23,13 @@ type TocEntryResolutionResult struct {
 // ValidateTocEntryResolution checks the entry and target page without changing
 // durable state. Endpoints call this before cancelling an active job so invalid
 // operator input cannot interrupt healthy work.
-func ValidateTocEntryResolution(ctx context.Context, book *BookState, entryDocID string, pageNum int, reason string) error {
-	_, _, err := validateTocEntryResolution(ctx, book, entryDocID, pageNum, reason)
+func ValidateTocEntryResolution(ctx context.Context, book *BookState, entryDocID string, pageNum int, reason string, allowRelink bool) error {
+	_, _, err := validateTocEntryResolution(ctx, book, entryDocID, pageNum, reason, allowRelink)
 	return err
 }
 
-func validateTocEntryResolution(ctx context.Context, book *BookState, entryDocID string, pageNum int, reason string) (*TocEntryRepairResult, string, error) {
-	repair, err := ValidateTocEntryRepair(ctx, book, entryDocID, reason)
+func validateTocEntryResolution(ctx context.Context, book *BookState, entryDocID string, pageNum int, reason string, allowRelink bool) (*TocEntryRepairResult, string, error) {
+	repair, err := validateTocEntryTarget(ctx, book, entryDocID, reason, allowRelink)
 	if err != nil {
 		return nil, "", err
 	}
@@ -57,8 +57,8 @@ func validateTocEntryResolution(ctx context.Context, book *BookState, entryDocID
 // page, resets downstream artifacts, and reopens (or completes) the aggregate
 // link stage. The caller must stop an active job before calling and submit a
 // replacement process-book job afterward.
-func ResolveTocEntry(ctx context.Context, book *BookState, entryDocID string, pageNum int, reason string) (*TocEntryResolutionResult, error) {
-	repair, pageDocID, err := validateTocEntryResolution(ctx, book, entryDocID, pageNum, reason)
+func ResolveTocEntry(ctx context.Context, book *BookState, entryDocID string, pageNum int, reason string, allowRelink bool) (*TocEntryResolutionResult, error) {
+	repair, pageDocID, err := validateTocEntryResolution(ctx, book, entryDocID, pageNum, reason, allowRelink)
 	if err != nil {
 		return nil, err
 	}
@@ -72,21 +72,38 @@ func ResolveTocEntry(ctx context.Context, book *BookState, entryDocID string, pa
 
 	reason = strings.TrimSpace(reason)
 	writeResult, err := book.getStore(ctx).UpdateWithVersion(ctx, "TocEntry", entryDocID, map[string]any{
-		"_actual_pageID":      pageDocID,
-		"link_retries":        0,
-		"link_failed":         false,
-		"link_failure_reason": nil,
-		"link_failed_at":      nil,
-		"link_repair_reason":  reason,
-		"link_repaired_at":    time.Now().UTC().Format(time.RFC3339),
+		"_actual_pageID":        pageDocID,
+		"link_retries":          0,
+		"link_failed":           false,
+		"link_failure_reason":   nil,
+		"link_failed_at":        nil,
+		"link_excluded":         false,
+		"link_exclusion_reason": nil,
+		"link_excluded_at":      nil,
+		"link_repair_reason":    reason,
+		"link_repaired_at":      time.Now().UTC().Format(time.RFC3339),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("persist ToC entry page resolution: %w", err)
 	}
 
-	pending, err := reloadTocEntriesAfterLinkReset(ctx, book, repair.TocDocID)
+	pendingCount, err := reopenTocLinkAfterOperatorResolution(ctx, book, repair.TocDocID)
 	if err != nil {
-		return nil, fmt.Errorf("reload pending ToC entries: %w", err)
+		return nil, err
+	}
+
+	return &TocEntryResolutionResult{
+		TocDocID: repair.TocDocID, EntryDocID: entryDocID,
+		Title: repair.Title, SortOrder: repair.SortOrder,
+		PageNum: pageNum, Reason: reason, CID: writeResult.CID,
+		PendingCount: pendingCount,
+	}, nil
+}
+
+func reopenTocLinkAfterOperatorResolution(ctx context.Context, book *BookState, tocDocID string) (int, error) {
+	pending, err := reloadTocEntriesAfterLinkReset(ctx, book, tocDocID)
+	if err != nil {
+		return 0, fmt.Errorf("reload pending ToC entries: %w", err)
 	}
 	book.SetTocEntries(pending)
 	book.SetTocLinkProgress(len(pending), 0)
@@ -96,16 +113,10 @@ func ResolveTocEntry(ctx context.Context, book *BookState, entryDocID string, pa
 		book.SetOpState(OpTocLink, false, false, false, 0)
 	}
 	if err := book.PersistOpState(ctx, OpTocLink); err != nil {
-		return nil, fmt.Errorf("persist reopened ToC link operation: %w", err)
+		return 0, fmt.Errorf("persist reopened ToC link operation: %w", err)
 	}
 	if err := book.PersistTocLinkProgress(ctx); err != nil {
-		return nil, fmt.Errorf("persist ToC link progress: %w", err)
+		return 0, fmt.Errorf("persist ToC link progress: %w", err)
 	}
-
-	return &TocEntryResolutionResult{
-		TocDocID: repair.TocDocID, EntryDocID: entryDocID,
-		Title: repair.Title, SortOrder: repair.SortOrder,
-		PageNum: pageNum, Reason: reason, CID: writeResult.CID,
-		PendingCount: len(pending),
-	}, nil
+	return len(pending), nil
 }

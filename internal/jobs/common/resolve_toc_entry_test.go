@@ -21,7 +21,7 @@ func resolvableTocEntryBook() (*BookState, *MemoryStateStore) {
 
 func TestResolveTocEntryLinksOnlyTargetAndReopensStage(t *testing.T) {
 	book, store := resolvableTocEntryBook()
-	result, err := ResolveTocEntry(context.Background(), book, "entry-failed", 2, "verified title on scan page 2")
+	result, err := ResolveTocEntry(context.Background(), book, "entry-failed", 2, "verified title on scan page 2", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,10 +63,24 @@ func TestResolveTocEntryRejectsUnsafePage(t *testing.T) {
 			if tt.mutate != nil {
 				tt.mutate(book)
 			}
-			_, err := ResolveTocEntry(context.Background(), book, "entry-failed", tt.page, "source-backed reason")
+			_, err := ResolveTocEntry(context.Background(), book, "entry-failed", tt.page, "source-backed reason", false)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("error = %v, want substring %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestResolveTocEntryRequiresExplicitRelink(t *testing.T) {
+	book, store := resolvableTocEntryBook()
+	if _, err := ResolveTocEntry(context.Background(), book, "entry-good", 2, "verified correction", false); err == nil || !strings.Contains(err.Error(), "already linked") {
+		t.Fatalf("ordinary resolution error = %v, want already linked refusal", err)
+	}
+	result, err := ResolveTocEntry(context.Background(), book, "entry-good", 2, "verified correction", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.PageNum != 2 || store.GetDoc("TocEntry", "entry-good")["_actual_pageID"] != "page-2" {
+		t.Fatalf("relink result = %#v entry=%#v", result, store.GetDoc("TocEntry", "entry-good"))
 	}
 }
