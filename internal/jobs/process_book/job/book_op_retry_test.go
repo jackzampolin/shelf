@@ -61,6 +61,29 @@ func TestOnCompleteBookOperationFailureRetriesBeforeFailingJob(t *testing.T) {
 	if info.RetryCount != 2 {
 		t.Fatalf("retry count = %d, want 2", info.RetryCount)
 	}
+	state := j.Book.GetMetadataState()
+	if !state.IsStarted() || state.Retries() != 2 {
+		t.Fatalf("durable metadata state = started:%v retries:%d, want true/2", state.IsStarted(), state.Retries())
+	}
+	store := j.Book.Store.(*common.MemoryStateStore)
+	bookDoc := store.GetDoc("Book", "book-1")
+	if bookDoc["metadata_started"] != true || bookDoc["metadata_retries"] != 2 {
+		t.Fatalf("persisted metadata retry = %#v", bookDoc)
+	}
+}
+
+func TestBookOperationCreationRestoresDurableRetryCount(t *testing.T) {
+	j := newMetadataRetryJob()
+	j.Book.SetOpState(common.OpMetadata, true, false, false, 2)
+
+	unit := j.CreateMetadataWorkUnit(context.Background())
+	if unit == nil {
+		t.Fatal("metadata work unit = nil")
+	}
+	info, ok := j.GetWorkUnit(unit.ID)
+	if !ok || info.RetryCount != 2 {
+		t.Fatalf("restored work unit info = %#v, exists=%v", info, ok)
+	}
 }
 
 func TestOnCompleteBookOperationFailureAfterRetriesFailsJob(t *testing.T) {

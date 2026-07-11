@@ -387,6 +387,21 @@ func TestConvertLinkTocAgentUnitsPreservesRetryMetadata(t *testing.T) {
 	}
 }
 
+func TestConvertTocFinderAgentUnitsPreservesRetryCount(t *testing.T) {
+	j, _ := newTocRecoveryJob(nil)
+	units := j.convertTocAgentUnits([]agent.WorkUnit{{
+		Type:        agent.WorkUnitTypeLLM,
+		ChatRequest: &providers.ChatRequest{},
+	}}, 2)
+	if len(units) != 1 {
+		t.Fatalf("converted %d units, want 1", len(units))
+	}
+	info, ok := j.GetWorkUnit(units[0].ID)
+	if !ok || info.UnitType != WorkUnitTypeTocFinder || info.RetryCount != 2 {
+		t.Fatalf("finder retry metadata = %#v, exists=%v", info, ok)
+	}
+}
+
 func TestCreateLinkTocWorkUnitsRestoresDurableRetryMetadata(t *testing.T) {
 	retryHint := "Attempt 2 rejected before restart"
 	entry := &toc_entry_finder.TocEntry{

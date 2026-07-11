@@ -297,31 +297,37 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		switch info.UnitType {
 		case WorkUnitTypeMetadata:
 			if info.RetryCount < MaxBookOpRetries && jobs.IsRetriableError(result.Error) {
-				retryUnit := j.createBookOpRetryUnit(ctx, info, logger)
-				if retryUnit != nil {
+				retryUnit, retryErr := j.createBookOpRetryUnit(ctx, info, logger)
+				if retryErr != nil {
 					j.RemoveWorkUnit(result.WorkUnitID)
-					return []jobs.WorkUnit{*retryUnit}, nil
+					return nil, retryErr
 				}
+				j.RemoveWorkUnit(result.WorkUnitID)
+				return []jobs.WorkUnit{*retryUnit}, nil
 			}
 			j.markBookOpRetryExhausted(common.OpMetadata)
 			j.PersistMetadataState(ctx)
 		case WorkUnitTypeTocFinder:
 			if info.RetryCount < MaxBookOpRetries && jobs.IsRetriableError(result.Error) {
-				retryUnit := j.createBookOpRetryUnit(ctx, info, logger)
-				if retryUnit != nil {
+				retryUnit, retryErr := j.createBookOpRetryUnit(ctx, info, logger)
+				if retryErr != nil {
 					j.RemoveWorkUnit(result.WorkUnitID)
-					return []jobs.WorkUnit{*retryUnit}, nil
+					return nil, retryErr
 				}
+				j.RemoveWorkUnit(result.WorkUnitID)
+				return []jobs.WorkUnit{*retryUnit}, nil
 			}
 			j.markBookOpRetryExhausted(common.OpTocFinder)
 			j.PersistTocFinderState(ctx)
 		case WorkUnitTypeTocExtract:
 			if info.RetryCount < MaxBookOpRetries && jobs.IsRetriableError(result.Error) {
-				retryUnit := j.createBookOpRetryUnit(ctx, info, logger)
-				if retryUnit != nil {
+				retryUnit, retryErr := j.createBookOpRetryUnit(ctx, info, logger)
+				if retryErr != nil {
 					j.RemoveWorkUnit(result.WorkUnitID)
-					return []jobs.WorkUnit{*retryUnit}, nil
+					return nil, retryErr
 				}
+				j.RemoveWorkUnit(result.WorkUnitID)
+				return []jobs.WorkUnit{*retryUnit}, nil
 			}
 			j.markBookOpRetryExhausted(common.OpTocExtract)
 			j.PersistTocExtractState(ctx)
@@ -439,7 +445,7 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		}
 
 	case "toc_finder":
-		units, err := j.HandleTocFinderComplete(ctx, result)
+		units, err := j.HandleTocFinderComplete(ctx, result, info)
 		if err != nil {
 			handlerErr = err
 		} else {
@@ -495,11 +501,13 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 					"retry_count", info.RetryCount,
 					"error", handlerErr)
 			}
-			retryUnit := j.createBookOpRetryUnit(ctx, info, logger)
-			if retryUnit != nil {
+			retryUnit, retryErr := j.createBookOpRetryUnit(ctx, info, logger)
+			if retryErr != nil {
 				j.RemoveWorkUnit(result.WorkUnitID)
-				return []jobs.WorkUnit{*retryUnit}, nil
+				return nil, retryErr
 			}
+			j.RemoveWorkUnit(result.WorkUnitID)
+			return []jobs.WorkUnit{*retryUnit}, nil
 		}
 
 		if isPageOp && info.RetryCount < maxRetriesForPageWorkUnit(info.UnitType) {
@@ -570,13 +578,22 @@ func isRetriableBookOpHandlerError(unitType string) bool {
 	}
 }
 
-func (j *Job) createBookOpRetryUnit(ctx context.Context, info WorkUnitInfo, logger *slog.Logger) *jobs.WorkUnit {
+func (j *Job) createBookOpRetryUnit(ctx context.Context, info WorkUnitInfo, logger *slog.Logger) (*jobs.WorkUnit, error) {
 	newRetryCount := info.RetryCount + 1
 	if logger != nil {
 		logger.Warn("book operation failed, retrying",
 			"unit_type", info.UnitType,
 			"retry_count", newRetryCount,
 			"max_retries", MaxBookOpRetries)
+	}
+
+	op, ok := bookOpForWorkUnit(info.UnitType)
+	if !ok {
+		return nil, fmt.Errorf("work unit %s has no durable book operation", info.UnitType)
+	}
+	j.Book.SetOpState(op, true, false, false, newRetryCount)
+	if err := j.Book.PersistOpState(ctx, op); err != nil {
+		return nil, fmt.Errorf("persist %s retry %d: %w", info.UnitType, newRetryCount, err)
 	}
 
 	var unit *jobs.WorkUnit
@@ -589,14 +606,23 @@ func (j *Job) createBookOpRetryUnit(ctx context.Context, info WorkUnitInfo, logg
 		unit = j.CreateTocExtractWorkUnit(ctx)
 	}
 
-	if unit != nil {
-		j.Tracker.Register(unit.ID, WorkUnitInfo{
-			UnitType:   info.UnitType,
-			RetryCount: newRetryCount,
-		})
+	if unit == nil {
+		return nil, fmt.Errorf("create %s retry %d", info.UnitType, newRetryCount)
 	}
+	return unit, nil
+}
 
-	return unit
+func bookOpForWorkUnit(unitType string) (common.OpType, bool) {
+	switch unitType {
+	case WorkUnitTypeMetadata:
+		return common.OpMetadata, true
+	case WorkUnitTypeTocFinder:
+		return common.OpTocFinder, true
+	case WorkUnitTypeTocExtract:
+		return common.OpTocExtract, true
+	default:
+		return "", false
+	}
 }
 
 func (j *Job) markBookOpRetryExhausted(op common.OpType) {

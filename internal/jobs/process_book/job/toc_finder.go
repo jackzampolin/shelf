@@ -182,7 +182,7 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 	}
 
 	// Convert and return first work unit
-	jobUnits := j.convertTocAgentUnits(agentUnits)
+	jobUnits := j.convertTocAgentUnits(agentUnits, j.Book.GetTocFinderState().Retries())
 	if len(jobUnits) == 0 {
 		return nil
 	}
@@ -191,7 +191,7 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 
 // HandleTocFinderComplete processes ToC finder agent work unit completion.
 // Must be called with j.Mu held.
-func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.WorkUnit, error) {
+func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResult, info WorkUnitInfo) ([]jobs.WorkUnit, error) {
 	if j.TocAgent == nil {
 		return nil, fmt.Errorf("toc agent not initialized")
 	}
@@ -209,7 +209,7 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 		agentUnits := agents.ExecuteToolLoop(ctx, j.TocAgent)
 		if len(agentUnits) > 0 {
 			// It's an LLM call, return as work unit
-			return j.convertTocAgentUnits(agentUnits), nil
+			return j.convertTocAgentUnits(agentUnits, info.RetryCount), nil
 		}
 	}
 
@@ -316,7 +316,7 @@ func (j *Job) cleanupTocFinderAgentState(ctx context.Context) {
 }
 
 // convertTocAgentUnits converts agent work units to job work units.
-func (j *Job) convertTocAgentUnits(agentUnits []agent.WorkUnit) []jobs.WorkUnit {
+func (j *Job) convertTocAgentUnits(agentUnits []agent.WorkUnit, retryCount int) []jobs.WorkUnit {
 	jobUnits := agents.ConvertToJobUnits(agentUnits, agents.ConvertConfig{
 		JobID:     j.RecordID,
 		Provider:  j.Book.TocProvider,
@@ -329,7 +329,7 @@ func (j *Job) convertTocAgentUnits(agentUnits []agent.WorkUnit) []jobs.WorkUnit 
 
 	// Register work units (Job keeps tracking)
 	for _, u := range jobUnits {
-		j.RegisterWorkUnit(u.ID, WorkUnitInfo{UnitType: WorkUnitTypeTocFinder})
+		j.RegisterWorkUnit(u.ID, WorkUnitInfo{UnitType: WorkUnitTypeTocFinder, RetryCount: retryCount})
 	}
 
 	return jobUnits
