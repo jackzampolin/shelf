@@ -72,7 +72,7 @@ func (j *Job) CreateFinalizePatternWorkUnit(ctx context.Context) (*jobs.WorkUnit
 
 	request := &providers.ChatRequest{
 		Model:     "",
-		MaxTokens: pattern_analyzer.MaxOutputTokens,
+		MaxTokens: pattern_analyzer.MaxOutputTokens(len(entries)),
 		Messages: []providers.Message{
 			{Role: "system", Content: systemPrompt},
 			{Role: "user", Content: userPrompt},

@@ -74,10 +74,27 @@ func TestCreateFinalizePatternWorkUnitBoundsStructuredOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateFinalizePatternWorkUnit error: %v", err)
 	}
-	if unit.ChatRequest.MaxTokens != pattern_analyzer.MaxOutputTokens {
-		t.Fatalf("pattern MaxTokens = %d, want %d", unit.ChatRequest.MaxTokens, pattern_analyzer.MaxOutputTokens)
+	if unit.ChatRequest.MaxTokens != pattern_analyzer.MaxOutputTokens(0) {
+		t.Fatalf("pattern MaxTokens = %d, want %d", unit.ChatRequest.MaxTokens, pattern_analyzer.MaxOutputTokens(0))
 	}
 	assertResponseFormatSchemaName(t, unit.ChatRequest.ResponseFormat.JSONSchema, "pattern_analysis")
+}
+
+func TestPatternOutputLimitScalesAndCaps(t *testing.T) {
+	tests := []struct {
+		entries int
+		want    int
+	}{
+		{entries: 1, want: 4096},
+		{entries: 59, want: 5664},
+		{entries: 114, want: 10944},
+		{entries: 470, want: 32768},
+	}
+	for _, tt := range tests {
+		if got := pattern_analyzer.MaxOutputTokens(tt.entries); got != tt.want {
+			t.Fatalf("MaxOutputTokens(%d) = %d, want %d", tt.entries, got, tt.want)
+		}
+	}
 }
 
 func TestCreateChapterPolishWorkUnitUsesInnerJSONSchema(t *testing.T) {

@@ -33,11 +33,26 @@ func SystemPrompt() string {
 // PromptKey is the hierarchical key for the system prompt.
 const PromptKey = "agents.pattern_analyzer.system"
 
-// MaxOutputTokens bounds the structured pattern-analysis response. Live
-// successful calls remain below 2k tokens; leaving this unset lets a malformed
-// constrained generation occupy a local model sequence until the one-hour HTTP
-// timeout without ever returning headers.
-const MaxOutputTokens = 4096
+const (
+	minOutputTokens      = 4096
+	maxOutputTokens      = 32768
+	outputTokensPerEntry = 96
+)
+
+// MaxOutputTokens returns a bounded pattern-analysis allowance sized to the
+// linked ToC. Most books remain at the 4K floor, while granular books can emit
+// the strict pattern/range JSON without truncation. The 32K ceiling prevents a
+// malformed constrained generation from occupying a local model indefinitely.
+func MaxOutputTokens(entryCount int) int {
+	tokens := entryCount * outputTokensPerEntry
+	if tokens < minOutputTokens {
+		return minOutputTokens
+	}
+	if tokens > maxOutputTokens {
+		return maxOutputTokens
+	}
+	return tokens
+}
 
 // UserPromptKey is the hierarchical key for the user prompt template.
 const UserPromptKey = "agents.pattern_analyzer.user"
