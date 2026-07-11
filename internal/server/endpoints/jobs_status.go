@@ -78,7 +78,8 @@ func (e *JobStatusEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 						resp.TocFound = live.TocFound
 						resp.TocExtracted = live.TocExtracted
 						// Job is complete when all phases are done (OCR, metadata, ToC finalized, structure)
-						resp.IsComplete = live.OcrComplete+live.OcrQuarantined >= live.TotalPages &&
+						resp.IsComplete = live.OcrComplete >= live.TotalPages &&
+							live.OcrQuarantined == 0 &&
 							live.MetadataComplete &&
 							live.TocFinalized &&
 							live.StructureComplete

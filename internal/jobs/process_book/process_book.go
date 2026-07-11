@@ -154,7 +154,7 @@ type Status struct {
 
 // IsComplete returns whether processing is complete for this book.
 func (st *Status) IsComplete() bool {
-	allPagesComplete := st.OcrComplete+st.OcrQuarantined >= st.TotalPages
+	allPagesComplete := st.OcrComplete >= st.TotalPages && st.OcrQuarantined == 0
 	if st.BookComplete && st.StructureComplete {
 		return allPagesComplete && st.MetadataComplete
 	}

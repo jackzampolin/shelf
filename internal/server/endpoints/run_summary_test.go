@@ -28,6 +28,7 @@ func TestRecoveryHint(t *testing.T) {
 		{"no work units", "failed", "resumed job produced no work units and is not done", "", "re-run"},
 		{"queue full", "failed", "", "work unit failed (extract): worker queue full: cpu", "queue"},
 		{"still processing", "processing", "", "", "active job"},
+		{"degraded quarantine", "degraded", "completed with quarantined OCR page=76", "", "repair"},
 		// A book re-running after a prior failure (processing now, stale failed
 		// error attached) must show the processing hint, not the old failure hint.
 		{"reprocessing with stale error", "processing", "", "OpenRouter error (status 400): maximum context length", "active job"},
@@ -98,13 +99,15 @@ func fakeDefra(t *testing.T) *httptest.Server {
 	const books = `{"data":{"Book":[
 		{"_docID":"book-A","title":"Alpha","status":"failed","status_reason":null},
 		{"_docID":"book-B","title":"Bravo","status":"processing","status_reason":null},
-		{"_docID":"book-C","title":"Charlie","status":"complete","status_reason":null}
+		{"_docID":"book-C","title":"Charlie","status":"complete","status_reason":null},
+		{"_docID":"book-D","title":"Delta","status":"degraded","status_reason":"completed with quarantined OCR page=76"}
 	]}}`
 	// Newest failed record listed FIRST to prove selection is by time, not order.
 	const jobsData = `{"data":{"Job":[
 		{"_docID":"j2","job_type":"process-book","book_id":"book-A","status":"failed","error":"maximum context length exceeded","created_at":"2026-07-01T10:00:00Z","completed_at":"2026-07-01T10:05:00Z"},
 		{"_docID":"j1","job_type":"process-book","book_id":"book-A","status":"failed","error":"old transient error","created_at":"2026-06-30T10:00:00Z","completed_at":"2026-06-30T10:05:00Z"},
-		{"_docID":"j3","job_type":"process-book","book_id":"book-B","status":"waiting_provider","status_reason":"waiting for provider recovery: chandra-local","created_at":"2026-07-01T11:00:00Z"}
+		{"_docID":"j3","job_type":"process-book","book_id":"book-B","status":"waiting_provider","status_reason":"waiting for provider recovery: chandra-local","created_at":"2026-07-01T11:00:00Z"},
+		{"_docID":"j4","job_type":"process-book","book_id":"book-D","status":"completed","created_at":"2026-07-01T12:00:00Z","completed_at":"2026-07-01T12:05:00Z"}
 	]}}`
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -142,11 +145,11 @@ func TestRunSummaryHandler(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 
-	if resp.Total != 3 {
-		t.Fatalf("total = %d, want 3", resp.Total)
+	if resp.Total != 4 {
+		t.Fatalf("total = %d, want 4", resp.Total)
 	}
-	if resp.Counts["failed"] != 1 || resp.Counts["processing"] != 1 || resp.Counts["complete"] != 1 {
-		t.Fatalf("counts = %#v, want 1 each of failed/processing/complete", resp.Counts)
+	if resp.Counts["failed"] != 1 || resp.Counts["processing"] != 1 || resp.Counts["complete"] != 1 || resp.Counts["degraded"] != 1 {
+		t.Fatalf("counts = %#v, want 1 each of failed/processing/complete/degraded", resp.Counts)
 	}
 
 	byID := map[string]BookSummary{}
@@ -176,6 +179,11 @@ func TestRunSummaryHandler(t *testing.T) {
 	c := byID["book-C"]
 	if c.RecoveryHint != "" {
 		t.Fatalf("book-C (complete) recovery_hint = %q, want empty", c.RecoveryHint)
+	}
+
+	d := byID["book-D"]
+	if d.RecoveryCommand != "shelf api books repair-ocr book-D --pages 76 --force" {
+		t.Fatalf("book-D recovery_command = %q, want targeted quarantine repair", d.RecoveryCommand)
 	}
 }
 

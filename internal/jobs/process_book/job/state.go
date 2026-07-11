@@ -2,6 +2,7 @@ package job
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
@@ -257,13 +258,22 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 
 	j.IsDone = true
 
-	// Persist the terminal complete status synchronously. A dropped async write
+	// Persist the terminal status synchronously. A dropped async write
 	// here would leave the book stuck in "processing" with only a completed job
 	// record, which the reconciler cannot rescue (it flags failed records only).
 	// The sync write also clears any stale status_reason from a prior failure.
-	if _, err := j.Book.PersistBookStatusWithReason(ctx, string(BookStatusComplete), ""); err != nil {
+	status := BookStatusComplete
+	reason := ""
+	if pages := j.Book.QuarantinedOCRPages(); len(pages) > 0 {
+		status = BookStatusDegraded
+		reason = fmt.Sprintf(
+			"completed with %d quarantined OCR page(s); page=%d remains degraded; repair before certification",
+			len(pages), pages[0],
+		)
+	}
+	if _, err := j.Book.PersistBookStatusWithReason(ctx, string(status), reason); err != nil {
 		if logger := svcctx.LoggerFrom(ctx); logger != nil {
-			logger.Warn("failed to persist complete status", "book_id", j.Book.BookID, "error", err)
+			logger.Warn("failed to persist terminal status", "book_id", j.Book.BookID, "status", status, "error", err)
 		}
 	}
 }

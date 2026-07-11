@@ -3,6 +3,7 @@ package common
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/svcctx"
@@ -82,6 +83,20 @@ func (b *BookState) CountOcrPages() int {
 		}
 	})
 	return count
+}
+
+// QuarantinedOCRPages returns the sorted page numbers carrying an explicit OCR
+// quarantine. Quarantine is terminal for scheduling but degraded for output
+// certification.
+func (b *BookState) QuarantinedOCRPages() []int {
+	var pages []int
+	b.ForEachPage(func(pageNum int, state *PageState) {
+		if quarantined, _ := state.OCRQuarantine(); quarantined {
+			pages = append(pages, pageNum)
+		}
+	})
+	sort.Ints(pages)
+	return pages
 }
 
 // AllPagesComplete returns true if all pages have successful OCR or an explicit quarantine.

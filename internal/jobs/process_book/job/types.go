@@ -18,6 +18,7 @@ const (
 	BookStatusIngested   BookStatus = "ingested"
 	BookStatusProcessing BookStatus = "processing"
 	BookStatusComplete   BookStatus = "complete"
+	BookStatusDegraded   BookStatus = "degraded"
 	BookStatusFailed     BookStatus = "failed"
 )
 

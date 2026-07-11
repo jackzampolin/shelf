@@ -21,3 +21,13 @@ func TestStatusDirectImportStillRequiresSourceUnits(t *testing.T) {
 		t.Fatal("direct import with a missing source unit should not be complete")
 	}
 }
+
+func TestStatusWithQuarantineIsNotComplete(t *testing.T) {
+	status := &Status{
+		TotalPages: 13, OcrComplete: 12, OcrQuarantined: 1, MetadataComplete: true,
+		BookComplete: true, StructureComplete: true,
+	}
+	if status.IsComplete() {
+		t.Fatal("quarantined OCR must remain degraded, not complete")
+	}
+}

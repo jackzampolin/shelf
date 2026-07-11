@@ -2,6 +2,7 @@ package job
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/jackzampolin/shelf/internal/jobs/common"
@@ -29,5 +30,31 @@ func TestCheckCompletionRejectsPermanentlyFailedRequiredStage(t *testing.T) {
 	}
 	if got := store.GetDoc("Book", "book-1")["status"]; got == string(BookStatusComplete) {
 		t.Fatal("book was persisted complete despite structure failure")
+	}
+}
+
+func TestCheckCompletionMarksQuarantinedBookDegraded(t *testing.T) {
+	store := common.NewMemoryStateStore()
+	store.SetDoc("Book", "book-1", map[string]any{})
+
+	book := common.NewBookState("book-1")
+	book.Store = store
+	book.EnableOCR = true
+	book.OcrProviders = []string{"chandra-local"}
+	book.TotalPages = 1
+	book.GetOrCreatePage(1).QuarantineOCR("image-only map")
+
+	j := NewFromLoadResult(&common.LoadBookResult{Book: book})
+	j.CheckCompletion(context.Background())
+
+	if !j.Done() {
+		t.Fatal("quarantined book should be terminal for scheduling")
+	}
+	doc := store.GetDoc("Book", "book-1")
+	if got := doc["status"]; got != string(BookStatusDegraded) {
+		t.Fatalf("book status = %v, want degraded", got)
+	}
+	if reason, _ := doc["status_reason"].(string); !strings.Contains(reason, "page=1") {
+		t.Fatalf("status_reason = %q, want actionable quarantined page", reason)
 	}
 }

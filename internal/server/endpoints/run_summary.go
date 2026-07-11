@@ -66,6 +66,9 @@ func recoveryHint(status, statusReason, latestError string) string {
 	if status == "processing" {
 		return "still processing or stalled; check for an active job"
 	}
+	if status == "degraded" {
+		return "processing finished with quarantined OCR; repair the named page before certification"
+	}
 	blob := strings.ToLower(statusReason + " " + latestError)
 	switch {
 	case strings.Contains(blob, "maximum context length"), strings.Contains(blob, "context length"):
@@ -160,7 +163,11 @@ func (e *RunSummaryEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 				}
 				failureText := book.StatusReason + " " + book.LatestError
 				if page, ok := failedPage(failureText); ok {
-					book.RecoveryHint = fmt.Sprintf("page %d failed and remains incomplete; run the targeted OCR repair", page)
+					if book.Status == "degraded" {
+						book.RecoveryHint = fmt.Sprintf("page %d is explicitly quarantined; repair it before certification", page)
+					} else {
+						book.RecoveryHint = fmt.Sprintf("page %d failed and remains incomplete; run the targeted OCR repair", page)
+					}
 					book.RecoveryCommand = fmt.Sprintf("shelf api books repair-ocr %s --pages %d --force", book.ID, page)
 				} else if latest != nil && latest.Status == jobs.StatusFailed {
 					book.RecoveryCommand = failedJobRecoveryCommand(latest)
