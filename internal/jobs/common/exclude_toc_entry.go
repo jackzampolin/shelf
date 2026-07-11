@@ -19,16 +19,16 @@ type TocEntryExclusionResult struct {
 	PendingCount int
 }
 
-func ValidateTocEntryExclusion(ctx context.Context, book *BookState, entryDocID, reason string) error {
-	_, err := validateTocEntryTarget(ctx, book, entryDocID, reason, false)
+func ValidateTocEntryExclusion(ctx context.Context, book *BookState, entryDocID, reason string, allowLinked bool) error {
+	_, err := validateTocEntryTarget(ctx, book, entryDocID, reason, allowLinked)
 	return err
 }
 
 // ExcludeTocEntry marks one unlinked, non-content entry explicitly excluded,
 // with durable provenance. Unlike retry exhaustion, exclusion is an operator
 // resolution and may allow the aggregate link stage to continue.
-func ExcludeTocEntry(ctx context.Context, book *BookState, entryDocID, reason string) (*TocEntryExclusionResult, error) {
-	target, err := validateTocEntryTarget(ctx, book, entryDocID, reason, false)
+func ExcludeTocEntry(ctx context.Context, book *BookState, entryDocID, reason string, allowLinked bool) (*TocEntryExclusionResult, error) {
+	target, err := validateTocEntryTarget(ctx, book, entryDocID, reason, allowLinked)
 	if err != nil {
 		return nil, err
 	}
@@ -41,6 +41,7 @@ func ExcludeTocEntry(ctx context.Context, book *BookState, entryDocID, reason st
 
 	reason = strings.TrimSpace(reason)
 	writeResult, err := book.getStore(ctx).UpdateWithVersion(ctx, "TocEntry", entryDocID, map[string]any{
+		"_actual_pageID":        nil,
 		"link_retries":          0,
 		"link_failed":           false,
 		"link_failure_reason":   nil,

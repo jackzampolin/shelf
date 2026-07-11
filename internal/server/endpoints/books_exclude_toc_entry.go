@@ -17,6 +17,7 @@ import (
 type ExcludeTocEntryRequest struct {
 	EntryDocID string `json:"entry_doc_id"`
 	Reason     string `json:"reason"`
+	Linked     bool   `json:"linked,omitempty"`
 	Force      bool   `json:"force,omitempty"`
 }
 
@@ -79,7 +80,7 @@ func (e *ExcludeTocEntryEndpoint) handler(w http.ResponseWriter, r *http.Request
 		return
 	}
 	book := jobContext.GetBook()
-	if err := common.ValidateTocEntryExclusion(r.Context(), book, req.EntryDocID, req.Reason); err != nil {
+	if err := common.ValidateTocEntryExclusion(r.Context(), book, req.EntryDocID, req.Reason, req.Linked); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -88,7 +89,7 @@ func (e *ExcludeTocEntryEndpoint) handler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	exclusion, err := common.ExcludeTocEntry(r.Context(), book, req.EntryDocID, req.Reason)
+	exclusion, err := common.ExcludeTocEntry(r.Context(), book, req.EntryDocID, req.Reason, req.Linked)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to exclude ToC entry: %v", err))
 		return
@@ -108,7 +109,7 @@ func (e *ExcludeTocEntryEndpoint) handler(w http.ResponseWriter, r *http.Request
 
 func (e *ExcludeTocEntryEndpoint) Command(getServerURL func() string) *cobra.Command {
 	var entryDocID, reason string
-	var force bool
+	var force, linked bool
 	cmd := &cobra.Command{
 		Use:   "exclude-toc-entry <book_id>",
 		Short: "Exclude a non-content ToC item absent from the source artifact",
@@ -120,7 +121,7 @@ item. Use --force when a job is active.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var resp ExcludeTocEntryResponse
 			if err := api.NewClient(getServerURL()).Post(cmd.Context(), "/api/books/"+args[0]+"/exclude-toc-entry", ExcludeTocEntryRequest{
-				EntryDocID: entryDocID, Reason: reason, Force: force,
+				EntryDocID: entryDocID, Reason: reason, Linked: linked, Force: force,
 			}, &resp); err != nil {
 				return err
 			}
@@ -129,6 +130,7 @@ item. Use --force when a job is active.`,
 	}
 	cmd.Flags().StringVar(&entryDocID, "entry", "", "Unlinked TocEntry document ID from detailed job status")
 	cmd.Flags().StringVar(&reason, "reason", "", "Source-backed reason the item is absent or non-content")
+	cmd.Flags().BoolVar(&linked, "linked", false, "Allow unlinking a verified duplicate or non-content entry")
 	cmd.Flags().BoolVar(&force, "force", false, "Cancel an active process-book job before exclusion")
 	_ = cmd.MarkFlagRequired("entry")
 	_ = cmd.MarkFlagRequired("reason")
