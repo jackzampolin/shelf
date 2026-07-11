@@ -51,6 +51,9 @@ func (t *TocEntryFinderTools) AnalyzePageEvidence(ocrText string, pageNum int, i
 	if header := unlabeledStandaloneTitleBlock(ocrText, title); header != "" {
 		sectionHeaders = append(sectionHeaders, header)
 	}
+	if header := unlabeledRunInTitle(ocrText, title); header != "" {
+		sectionHeaders = append(sectionHeaders, header)
+	}
 	sectionHeaderText := strings.Join(sectionHeaders, " ")
 	plainText := stripOCRMarkup(ocrText)
 	normalizedPlainText := normalizeForEvidence(plainText)
@@ -174,6 +177,30 @@ func allCapsHeading(text string) bool {
 		}
 	}
 	return letters >= 4
+}
+
+// unlabeledRunInTitle recognizes a source convention used by enriched PDFs:
+// an exact section title begins a line and is separated from its first sentence
+// by a typographic bullet. The bullet is strong structural evidence even when
+// the embedded text has no Markdown/data-label heading marker.
+func unlabeledRunInTitle(ocrText, title string) string {
+	target := normalizeForEvidence(title)
+	if len(target) < 4 {
+		return ""
+	}
+	text := strings.ReplaceAll(ocrText, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	for _, rawLine := range strings.Split(text, "\n") {
+		line := strings.TrimSpace(stripOCRMarkup(rawLine))
+		for _, delimiter := range []string{"•", "·"} {
+			prefix, _, found := strings.Cut(line, delimiter)
+			prefix = strings.TrimSpace(prefix)
+			if found && normalizeForEvidence(prefix) == target {
+				return prefix
+			}
+		}
+	}
+	return ""
 }
 
 func (t *TocEntryFinderTools) ValidateCandidatePage(ctx context.Context, scanPage int) (PageEvidence, string, error) {

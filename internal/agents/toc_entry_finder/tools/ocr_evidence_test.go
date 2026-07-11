@@ -149,6 +149,49 @@ source heading and must remain ordinary body evidence.`, 133, false)
 	}
 }
 
+func TestValidateCandidatePageAcceptsUnlabeledRunInHeading(t *testing.T) {
+	book := common.NewBookState("book-1")
+	book.TotalPages = 400
+	book.GetOrCreatePage(283).SetOcrMarkdown(`1948 The World That Lay Before Us 261
+Germans with the minimum requirements of occupation and control.
+
+The Blockade of Berlin • These recommendations and the much-needed currency
+reform for West Germany triggered the final break with the Soviet Union.`)
+	tools := New(Config{
+		Book: book,
+		Entry: &toc_entry_finder.TocEntry{
+			Title:     "The Blockade of Berlin",
+			LevelName: "section",
+		},
+	})
+
+	evidence, rejection, err := tools.ValidateCandidatePage(context.Background(), 283)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rejection != "" || !evidence.TitleInSectionHeader {
+		t.Fatalf("run-in source heading rejected: %q (%#v)", rejection, evidence)
+	}
+}
+
+func TestAnalyzePageEvidenceRejectsBulletAfterNonHeadingPrefix(t *testing.T) {
+	book := common.NewBookState("book-1")
+	book.TotalPages = 400
+	tools := New(Config{
+		Book: book,
+		Entry: &toc_entry_finder.TocEntry{
+			Title:     "The Blockade of Berlin",
+			LevelName: "section",
+		},
+	})
+
+	evidence := tools.AnalyzePageEvidence(`A discussion of The Blockade of Berlin •
+continues as ordinary body prose.`, 283, false)
+	if evidence.TitleInSectionHeader {
+		t.Fatalf("non-heading prefix promoted to section evidence: %#v", evidence)
+	}
+}
+
 func TestAnalyzePageEvidence_NumberedPartTitlePage(t *testing.T) {
 	book := common.NewBookState("book-1")
 	book.TotalPages = 200
