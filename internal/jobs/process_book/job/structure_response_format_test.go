@@ -72,6 +72,20 @@ func TestFailedStructurePolishErrorNamesChapter(t *testing.T) {
 	}
 }
 
+func TestFailedBookOperationErrorDoesNotClaimPageZero(t *testing.T) {
+	err := failedWorkUnitError(WorkUnitInfo{
+		UnitType: WorkUnitTypeTocExtract,
+	}, errors.New("model output reached token limit"))
+	for _, want := range []string{"toc_extract", "retries=0", "model output reached token limit"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q missing %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "page=") {
+		t.Fatalf("book-operation error claimed a page: %q", err)
+	}
+}
+
 func TestIsDefraDocIDExistsError(t *testing.T) {
 	err := errors.New("upsert error: a document with the given ID already exists. DocID: bae-123")
 	if !isDefraDocIDExistsError(err) {

@@ -560,6 +560,11 @@ func failedWorkUnitError(info WorkUnitInfo, err error) error {
 		return fmt.Errorf("work unit failed (%s chapter=%s retries=%d): %v",
 			info.UnitType, info.ChapterID, info.RetryCount, err)
 	}
+	switch info.UnitType {
+	case WorkUnitTypeMetadata, WorkUnitTypeTocFinder, WorkUnitTypeTocExtract:
+		return fmt.Errorf("work unit failed (%s retries=%d): %v",
+			info.UnitType, info.RetryCount, err)
+	}
 	return fmt.Errorf("work unit failed (%s page=%d provider=%s retries=%d): %v",
 		info.UnitType, info.PageNum, info.Provider, info.RetryCount, err)
 }

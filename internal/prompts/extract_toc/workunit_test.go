@@ -7,7 +7,7 @@ func TestCreateWorkUnitAllowsLargeStructuredToc(t *testing.T) {
 	if unit.ChatRequest == nil {
 		t.Fatal("CreateWorkUnit returned no chat request")
 	}
-	if got := unit.ChatRequest.MaxTokens; got != 16384 {
-		t.Fatalf("MaxTokens = %d, want 16384", got)
+	if got := unit.ChatRequest.MaxTokens; got != 32768 {
+		t.Fatalf("MaxTokens = %d, want 32768", got)
 	}
 }
