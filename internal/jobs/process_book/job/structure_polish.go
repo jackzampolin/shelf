@@ -14,6 +14,69 @@ import (
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
+// reuseUnchangedPolish carries forward certified polish only when the durable
+// chapter identity and exact extracted source text are unchanged. Chapters
+// previously excluded from audio deliberately take the cheap synchronous path
+// again: classification may now include them, in which case they need real
+// polish rather than a copied mechanical fallback.
+func reuseUnchangedPolish(chapters, prior []*common.ChapterState) int {
+	priorByKey := make(map[string]*common.ChapterState, len(prior))
+	ambiguous := make(map[string]bool)
+	for _, chapter := range prior {
+		key := structureChapterReuseKey(chapter)
+		if key == "" || ambiguous[key] {
+			continue
+		}
+		if _, exists := priorByKey[key]; exists {
+			delete(priorByKey, key)
+			ambiguous[key] = true
+			continue
+		}
+		priorByKey[key] = chapter
+	}
+	currentKeyCounts := make(map[string]int, len(chapters))
+	for _, chapter := range chapters {
+		currentKeyCounts[structureChapterReuseKey(chapter)]++
+	}
+
+	reused := 0
+	for _, chapter := range chapters {
+		key := structureChapterReuseKey(chapter)
+		if key == "" || currentKeyCounts[key] != 1 {
+			continue
+		}
+		old := priorByKey[key]
+		if old == nil || !old.ExtractDone || !old.PolishDone || old.PolishFailed ||
+			!old.AudioInclude || old.MechanicalText == "" ||
+			old.MechanicalText != chapter.MechanicalText || old.PolishedText == "" {
+			continue
+		}
+		chapter.PolishedText = old.PolishedText
+		chapter.EditsAppliedJSON = old.EditsAppliedJSON
+		chapter.WordCount = old.WordCount
+		chapter.PolishDone = true
+		chapter.PolishFailed = false
+		reused++
+	}
+	return reused
+}
+
+func structureChapterReuseKey(chapter *common.ChapterState) string {
+	if chapter == nil {
+		return ""
+	}
+	if chapter.TocEntryID != "" {
+		return "toc:" + chapter.TocEntryID
+	}
+	if chapter.UniqueKey != "" {
+		return "key:" + chapter.UniqueKey
+	}
+	if chapter.EntryID != "" {
+		return fmt.Sprintf("entry:%s:%d", chapter.EntryID, chapter.SortOrder)
+	}
+	return ""
+}
+
 // transitionToStructurePolish starts the polish phase.
 func (j *Job) transitionToStructurePolish(ctx context.Context) []jobs.WorkUnit {
 	j.Book.SetStructurePhase(StructPhasePolish)

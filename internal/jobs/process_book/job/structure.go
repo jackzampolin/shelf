@@ -37,6 +37,24 @@ const (
 func (j *Job) StartStructurePhase(ctx context.Context) []jobs.WorkUnit {
 	logger := svcctx.LoggerFrom(ctx)
 
+	// A targeted downstream repair may reset the structure operation while the
+	// previously persisted Chapter rows remain valid. Load them before replacing
+	// the in-memory skeleton so unchanged polished text can be reused by stable
+	// ToC identity. Failure only disables the optimization; the full structure
+	// path remains the safe fallback.
+	priorChapters := j.Book.GetStructureChapters()
+	if len(priorChapters) == 0 {
+		if err := common.LoadStructureChapters(ctx, j.Book); err != nil {
+			if logger != nil {
+				logger.Warn("failed to load prior chapters for structure reuse",
+					"book_id", j.Book.BookID,
+					"error", err)
+			}
+		} else {
+			priorChapters = j.Book.GetStructureChapters()
+		}
+	}
+
 	// Mark structure as started
 	if err := j.Book.StructureStart(); err != nil {
 		if logger != nil {
@@ -94,9 +112,15 @@ func (j *Job) StartStructurePhase(ctx context.Context) []jobs.WorkUnit {
 	// Phase 2: Extract text (synchronous)
 	j.Book.SetStructurePhase(StructPhaseExtract)
 	chaptersExtracted := j.extractAllChapters(ctx)
+	chaptersPolished := reuseUnchangedPolish(j.Book.GetStructureChapters(), priorChapters)
+	if chaptersPolished > 0 && logger != nil {
+		logger.Info("reused unchanged polished chapters",
+			"book_id", j.Book.BookID,
+			"chapters", chaptersPolished)
+	}
 
 	// Update progress (async - memory is authoritative during execution)
-	j.Book.SetStructureProgress(len(chapters), chaptersExtracted, 0, 0)
+	j.Book.SetStructureProgress(len(chapters), chaptersExtracted, chaptersPolished, 0)
 	common.PersistStructurePhaseAsync(ctx, j.Book)
 
 	// Persist extract results

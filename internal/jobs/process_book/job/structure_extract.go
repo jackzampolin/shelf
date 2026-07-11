@@ -95,12 +95,9 @@ func (j *Job) persistExtractResults(ctx context.Context) error {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
+			doc := chapterExtractUpdate(ch)
 			result, err := defraStructureWriteWithRetry(ctx, func() (defra.WriteResult, error) {
-				return defraClient.UpdateWithVersion(ctx, "Chapter", ch.DocID, map[string]any{
-					"mechanical_text":  ch.MechanicalText,
-					"word_count":       ch.WordCount,
-					"extract_complete": true,
-				})
+				return defraClient.UpdateWithVersion(ctx, "Chapter", ch.DocID, doc)
 			})
 			if err != nil {
 				mu.Lock()
@@ -128,4 +125,21 @@ func (j *Job) persistExtractResults(ctx context.Context) error {
 		logger.Debug("persisted extract results", "count", count)
 	}
 	return firstErr
+}
+
+func chapterExtractUpdate(ch *common.ChapterState) map[string]any {
+	doc := map[string]any{
+		"mechanical_text":  ch.MechanicalText,
+		"word_count":       ch.WordCount,
+		"extract_complete": true,
+	}
+	// A rebuilt chapter whose source text changed must not expose stale
+	// polished output from the prior structure while the repair is active.
+	if !ch.PolishDone {
+		doc["polished_text"] = ""
+		doc["edits_applied_json"] = "[]"
+		doc["polish_complete"] = false
+		doc["polish_failed"] = false
+	}
+	return doc
 }
