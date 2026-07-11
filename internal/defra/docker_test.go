@@ -2,6 +2,7 @@ package defra
 
 import (
 	"context"
+	"reflect"
 	"testing"
 	"time"
 
@@ -107,6 +108,18 @@ func TestFindContainerByExactName(t *testing.T) {
 	}
 	if got, ok := findContainerByExactName(containers, "shelf"); ok {
 		t.Fatalf("substring lookup unexpectedly matched %#v", got)
+	}
+}
+
+func TestDefraHealthcheckUsesAvailableImageTools(t *testing.T) {
+	health := defraHealthcheck()
+	wantPrefix := []string{"CMD", "bash", "-c"}
+	if len(health.Test) != 4 || !reflect.DeepEqual(health.Test[:3], wantPrefix) {
+		t.Fatalf("healthcheck command = %#v, want prefix %#v and script", health.Test, wantPrefix)
+	}
+	if health.Interval != 2*time.Second || health.Timeout != 5*time.Second ||
+		health.Retries != 10 || health.StartPeriod != 5*time.Second {
+		t.Fatalf("unexpected healthcheck timing: %#v", health)
 	}
 }
 

@@ -310,13 +310,7 @@ func (m *DockerManager) createAndStart(ctx context.Context) error {
 		ExposedPorts: nat.PortSet{
 			ContainerPort: struct{}{},
 		},
-		Healthcheck: &container.HealthConfig{
-			Test:        []string{"CMD", "curl", "-sf", "http://localhost:9181/health-check"},
-			Interval:    2 * time.Second,
-			Timeout:     5 * time.Second,
-			Retries:     10,
-			StartPeriod: 5 * time.Second,
-		},
+		Healthcheck: defraHealthcheck(),
 	}
 
 	hostConfig := &container.HostConfig{
@@ -350,6 +344,22 @@ func (m *DockerManager) createAndStart(ctx context.Context) error {
 	}
 
 	return m.waitForReady(ctx, 30*time.Second)
+}
+
+func defraHealthcheck() *container.HealthConfig {
+	// The published DefraDB image includes bash but not curl or wget. Use
+	// bash's /dev/tcp support so Docker health reflects the endpoint Shelf
+	// itself waits on instead of permanently reporting a false unhealthy state.
+	return &container.HealthConfig{
+		Test: []string{
+			"CMD", "bash", "-c",
+			`exec 3<>/dev/tcp/127.0.0.1/9181 && printf 'GET /health-check HTTP/1.0\r\nHost: localhost\r\n\r\n' >&3 && IFS= read -r status <&3 && [[ "$status" == *" 200 "* ]]`,
+		},
+		Interval:    2 * time.Second,
+		Timeout:     5 * time.Second,
+		Retries:     10,
+		StartPeriod: 5 * time.Second,
+	}
 }
 
 // getContainerStatus returns the status and ID of the container.
