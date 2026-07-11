@@ -351,9 +351,13 @@ func (p *ProviderWorkerPool) recordMetrics(ctx context.Context, unit *WorkUnit, 
 		"book_id", m.BookID,
 		"stage", m.Stage,
 		"cost_usd", m.CostUSD)
+	// Provider cancellation is itself an outcome worth recording. Do not pass
+	// its already-cancelled request context into the durable audit write; the
+	// sink owns shutdown ordering and the Defra client bounds the request.
+	persistCtx := context.WithoutCancel(ctx)
 
 	if p.poolType == PoolTypeLLM {
-		writeResult, err := p.sink.SendSync(ctx, defra.WriteOp{
+		writeResult, err := p.sink.SendSync(persistCtx, defra.WriteOp{
 			Op:         defra.OpCreate,
 			Collection: "Metric",
 			Document:   m.ToMap(),
