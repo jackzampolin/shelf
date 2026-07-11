@@ -22,6 +22,8 @@ type TocEntry {
     link_failed: Boolean
     link_failure_reason: String
     link_failed_at: DateTime
+    link_repair_reason: String
+    link_repaired_at: DateTime
 
     # Source tracking
     source: String

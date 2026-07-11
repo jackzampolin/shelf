@@ -40,6 +40,7 @@ func buildTocStatus(ctx context.Context, client *defra.Client, bookID string, re
 				finalize_failed
 				finalize_retries
 				entries {
+					_docID
 					entry_number
 					title
 					level
@@ -50,6 +51,8 @@ func buildTocStatus(ctx context.Context, client *defra.Client, bookID string, re
 					link_retries
 					link_failed
 					link_failure_reason
+					link_repair_reason
+					link_repaired_at
 					actual_page {
 						page_num
 					}
@@ -131,6 +134,9 @@ func buildTocStatus(ctx context.Context, client *defra.Client, bookID string, re
 						for _, e := range entries {
 							if entry, ok := e.(map[string]any); ok {
 								tocEntry := ToCEntry{}
+								if v, ok := entry["_docID"].(string); ok {
+									tocEntry.DocID = v
+								}
 								if v, ok := entry["entry_number"].(string); ok {
 									tocEntry.EntryNumber = v
 								}
@@ -166,6 +172,12 @@ func buildTocStatus(ctx context.Context, client *defra.Client, bookID string, re
 								}
 								if v, ok := entry["link_failure_reason"].(string); ok {
 									tocEntry.LinkFailureReason = v
+								}
+								if v, ok := entry["link_repair_reason"].(string); ok {
+									tocEntry.LinkRepairReason = v
+								}
+								if v, ok := entry["link_repaired_at"].(string); ok {
+									tocEntry.LinkRepairedAt = v
 								}
 								// Check if entry is linked to actual page
 								if actualPage, ok := entry["actual_page"].(map[string]any); ok {

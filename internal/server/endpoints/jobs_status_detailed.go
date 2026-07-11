@@ -153,6 +153,7 @@ type StructureStatus struct {
 
 // ToCEntry represents a single ToC entry.
 type ToCEntry struct {
+	DocID             string `json:"doc_id,omitempty"`
 	EntryNumber       string `json:"entry_number,omitempty"`
 	Title             string `json:"title"`
 	Level             int    `json:"level"`
@@ -164,6 +165,8 @@ type ToCEntry struct {
 	LinkRetries       int    `json:"link_retries,omitempty"`
 	LinkFailed        bool   `json:"link_failed,omitempty"`
 	LinkFailureReason string `json:"link_failure_reason,omitempty"`
+	LinkRepairReason  string `json:"link_repair_reason,omitempty"`
+	LinkRepairedAt    string `json:"link_repaired_at,omitempty"`
 	Source            string `json:"source,omitempty"` // "extracted" or "discovered"
 }
 
