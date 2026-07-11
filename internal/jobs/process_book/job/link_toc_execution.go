@@ -104,33 +104,30 @@ func (j *Job) HandleLinkTocComplete(ctx context.Context, result jobs.WorkResult,
 				return []jobs.WorkUnit{*unit}, nil
 			}
 
-			// Retries exhausted (or retry creation failed): skip this entry rather
-			// than failing the whole book. It is counted as resolved (unlinked) so
-			// the link stage can complete and downstream stages run.
+			// Retries exhausted. Return the deterministic failure to OnComplete,
+			// which persists an actionable entry failure and fails the link stage.
+			// An unlinked entry must never be counted as resolved: doing so lets a
+			// degraded book reach complete and hides the repair that is required.
 			if logger != nil {
-				logger.Warn("ToC entry finder failed after retries; skipping entry to keep the book processing",
+				logger.Warn("ToC entry finder failed after retries; failing closed",
 					"book_id", j.Book.BookID,
 					"entry_doc_id", info.EntryDocID,
 					"retry_count", info.RetryCount,
 					"max_retries", MaxBookOpRetries,
 					"error", resultErr)
 			}
-			if err := j.persistSkippedTocLinkEntry(ctx, info, resultErr); err != nil {
-				return nil, err
-			}
-			// fall through to the shared resolution bookkeeping below
+			return nil, resultErr
 		}
 
-		// Shared resolution bookkeeping for a linked OR skipped entry. The caller
-		// (OnComplete) completes the link stage via maybeCompleteTocLink once
-		// done >= total.
+		// Successful links alone count as resolved. The caller (OnComplete)
+		// completes the link stage via maybeCompleteTocLink once done >= total.
 		return j.resolveTocLinkEntry(ctx, info), nil
 	}
 
 	return nil, nil
 }
 
-func (j *Job) persistSkippedTocLinkEntry(ctx context.Context, info WorkUnitInfo, reason error) error {
+func (j *Job) persistFailedTocLinkEntry(ctx context.Context, info WorkUnitInfo, reason error) error {
 	reasonText := "ToC entry link retry budget exhausted"
 	if reason != nil && strings.TrimSpace(reason.Error()) != "" {
 		reasonText = strings.TrimSpace(reason.Error())
@@ -145,11 +142,31 @@ func (j *Job) persistSkippedTocLinkEntry(ctx context.Context, info WorkUnitInfo,
 	return nil
 }
 
-// resolveTocLinkEntry performs the bookkeeping shared by a successfully linked
-// entry and a skipped (unlinkable) one: it removes the entry's agent state,
-// counts it as resolved against the link progress, drops it from the active set,
-// and returns work units that refill the link concurrency window. Completion of
-// the link stage (done >= total) is handled by the caller via maybeCompleteTocLink.
+// failTocLinkEntry records the terminal entry failure and fails the aggregate
+// ToC link stage. The scheduler then marks the job and book failed, leaving the
+// entry available to the source-backed repair-toc-entry workflow.
+func (j *Job) failTocLinkEntry(ctx context.Context, info WorkUnitInfo, reason error) error {
+	if err := j.persistFailedTocLinkEntry(ctx, info, reason); err != nil {
+		return err
+	}
+	j.markBookOpRetryExhausted(common.OpTocLink)
+	if err := j.Book.PersistOpState(ctx, common.OpTocLink); err != nil {
+		return fmt.Errorf("persist failed ToC link stage: %w", err)
+	}
+	j.cleanupLinkTocAgentStateWithMode(ctx, info.EntryDocID, true)
+	delete(j.LinkTocEntryAgents, info.EntryDocID)
+	j.removeLinkTocEntry(info.EntryDocID)
+
+	reasonText := "ToC entry link retry budget exhausted"
+	if reason != nil && strings.TrimSpace(reason.Error()) != "" {
+		reasonText = strings.TrimSpace(reason.Error())
+	}
+	return fmt.Errorf("ToC entry %s failed after %d retries: %s", info.EntryDocID, info.RetryCount, reasonText)
+}
+
+// resolveTocLinkEntry performs bookkeeping for a successfully linked entry: it
+// removes the entry's agent state, counts it as resolved against link progress,
+// drops it from the active set, and refills the link concurrency window.
 func (j *Job) resolveTocLinkEntry(ctx context.Context, info WorkUnitInfo) []jobs.WorkUnit {
 	j.cleanupLinkTocAgentStateWithMode(ctx, info.EntryDocID, true)
 	j.Book.IncrementTocLinkEntriesDone()

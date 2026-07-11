@@ -3,18 +3,17 @@ package job
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
 )
 
-// A ToC entry that cannot be linked after its retries are exhausted must be
-// skipped (counted as resolved) so the link stage can complete and the book
-// proceeds to finalize/structure. One stubborn entry must NOT kill a book whose
-// other entries linked fine — returning a fatal error makes the scheduler kill
-// the whole job.
-func TestOnCompleteTocLinkFailureAfterRetriesSkipsEntryAndCompletes(t *testing.T) {
+// A ToC entry that cannot be linked after its retries are exhausted must fail
+// visibly. It must not be counted as resolved or allow finalize/structure to
+// turn a degraded book into a successful terminal result.
+func TestOnCompleteTocLinkFailureAfterRetriesFailsClosed(t *testing.T) {
 	store := common.NewMemoryStateStore()
 	store.SetDoc("Book", "book-1", map[string]any{})
 	store.SetDoc("ToC", "toc-1", map[string]any{})
@@ -44,17 +43,20 @@ func TestOnCompleteTocLinkFailureAfterRetriesSkipsEntryAndCompletes(t *testing.T
 		Error:      fmt.Errorf("agent did not complete within 25 iterations"),
 	})
 
-	if err != nil {
-		t.Fatalf("OnComplete returned a fatal error for an unlinkable ToC entry; want nil so the book continues: %v", err)
+	if err == nil {
+		t.Fatal("OnComplete returned nil for an exhausted ToC entry; want actionable terminal failure")
+	}
+	if got := err.Error(); got == "" || !strings.Contains(got, "entry-1") {
+		t.Fatalf("terminal error = %q, want entry ID", got)
 	}
 
 	total, done := j.Book.GetTocLinkProgress()
-	if done != 1 || total != 1 {
-		t.Fatalf("ToC link progress = %d/%d, want 1/1 (skipped entry counted resolved)", done, total)
+	if done != 0 || total != 1 {
+		t.Fatalf("ToC link progress = %d/%d, want 0/1 (failed entry unresolved)", done, total)
 	}
 	linkState := j.Book.GetTocLinkState()
-	if !linkState.IsComplete() {
-		t.Fatal("ToC link should complete after the last entry is skipped, so finalize/structure can run")
+	if linkState.IsComplete() || !linkState.IsFailed() {
+		t.Fatalf("ToC link state = %#v, want failed and incomplete", linkState)
 	}
 	if _, ok := j.GetWorkUnit(unitID); ok {
 		t.Fatal("failed link work unit should be removed after giving up on the entry")

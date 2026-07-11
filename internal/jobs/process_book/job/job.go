@@ -342,22 +342,16 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 				j.RemoveWorkUnit(result.WorkUnitID)
 				return []jobs.WorkUnit{*retryUnit}, nil
 			}
-			// Retries exhausted: skip this entry rather than failing the book.
+			// Retries exhausted: persist the actionable entry failure and fail the
+			// aggregate stage. Never let an unresolved entry reach book complete.
 			if logger != nil {
-				logger.Warn("link_toc entry failed after retries; skipping entry to keep the book processing",
+				logger.Warn("link_toc entry failed after retries; failing closed",
 					"entry_doc_id", info.EntryDocID,
 					"retry_count", info.RetryCount,
 					"error", result.Error)
 			}
-			if err := j.persistSkippedTocLinkEntry(ctx, info, linkTocWorkFailureReason(result)); err != nil {
-				j.RemoveWorkUnit(result.WorkUnitID)
-				return nil, err
-			}
 			j.RemoveWorkUnit(result.WorkUnitID)
-			units := j.resolveTocLinkEntry(ctx, info)
-			units = append(units, j.maybeCompleteTocLink(ctx)...)
-			j.CheckCompletion(ctx)
-			return units, nil
+			return nil, j.failTocLinkEntry(ctx, info, linkTocWorkFailureReason(result))
 		case WorkUnitTypeOCR:
 			// Transient failures (timeouts, dropped connections) are common against
 			// self-hosted inference. Retry first; the round-robin lands the retry on
@@ -467,7 +461,7 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		} else {
 			newUnits = append(newUnits, units...)
 			// Complete the link stage and trigger finalize once every entry is
-			// resolved (linked or skipped).
+			// linked. Terminal failures return through handlerErr and fail closed.
 			newUnits = append(newUnits, j.maybeCompleteTocLink(ctx)...)
 		}
 
@@ -540,23 +534,16 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 			return []jobs.WorkUnit{*retryUnit}, nil
 		}
 		if info.UnitType == WorkUnitTypeLinkToc {
-			// Retries exhausted (or retry creation failed): skip this entry rather
-			// than failing the book.
+			// Retries exhausted (or retry creation failed): persist the actionable
+			// entry failure and fail the aggregate stage.
 			if logger != nil {
-				logger.Warn("link_toc handler failed after retries; skipping entry to keep the book processing",
+				logger.Warn("link_toc handler failed after retries; failing closed",
 					"entry_doc_id", info.EntryDocID,
 					"retry_count", info.RetryCount,
 					"error", handlerErr)
 			}
-			if err := j.persistSkippedTocLinkEntry(ctx, info, handlerErr); err != nil {
-				j.RemoveWorkUnit(result.WorkUnitID)
-				return nil, err
-			}
 			j.RemoveWorkUnit(result.WorkUnitID)
-			units := j.resolveTocLinkEntry(ctx, info)
-			units = append(units, j.maybeCompleteTocLink(ctx)...)
-			j.CheckCompletion(ctx)
-			return units, nil
+			return nil, j.failTocLinkEntry(ctx, info, handlerErr)
 		}
 		j.RemoveWorkUnit(result.WorkUnitID)
 		return nil, handlerErr
