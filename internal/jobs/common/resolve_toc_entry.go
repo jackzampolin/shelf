@@ -20,6 +20,17 @@ type TocEntryResolutionResult struct {
 	PendingCount int
 }
 
+// TocEntryResolutionSpec is one operator-verified entry-to-page decision in a
+// batch. Batching prevents a repair cohort from cancelling and recreating the
+// process-book job once per entry.
+type TocEntryResolutionSpec struct {
+	EntryDocID  string
+	PageNum     int
+	Title       string
+	Reason      string
+	AllowRelink bool
+}
+
 // ValidateTocEntryResolution checks the entry and target page without changing
 // durable state. Endpoints call this before cancelling an active job so invalid
 // operator input cannot interrupt healthy work.
@@ -103,6 +114,94 @@ func ResolveTocEntry(ctx context.Context, book *BookState, entryDocID string, pa
 		PageNum: pageNum, Reason: reason, CID: writeResult.CID,
 		PendingCount: pendingCount,
 	}, nil
+}
+
+// ResolveTocEntries applies a source-verified repair cohort with one downstream
+// reset and one pending-entry reload. Every item is validated before the first
+// durable mutation, including duplicate entry IDs and cross-ToC input.
+func ResolveTocEntries(ctx context.Context, book *BookState, specs []TocEntryResolutionSpec) ([]TocEntryResolutionResult, int, error) {
+	if len(specs) == 0 {
+		return nil, 0, fmt.Errorf("at least one ToC entry resolution is required")
+	}
+	if len(specs) > 100 {
+		return nil, 0, fmt.Errorf("ToC entry resolution batch exceeds limit of 100")
+	}
+
+	type validatedResolution struct {
+		spec      TocEntryResolutionSpec
+		repair    *TocEntryRepairResult
+		pageDocID string
+	}
+	validated := make([]validatedResolution, 0, len(specs))
+	seen := make(map[string]struct{}, len(specs))
+	tocDocID := ""
+	for _, spec := range specs {
+		entryDocID := strings.TrimSpace(spec.EntryDocID)
+		if _, duplicate := seen[entryDocID]; duplicate {
+			return nil, 0, fmt.Errorf("duplicate ToC entry %q in resolution batch", entryDocID)
+		}
+		seen[entryDocID] = struct{}{}
+		repair, pageDocID, err := validateTocEntryResolution(ctx, book, entryDocID, spec.PageNum, spec.Reason, spec.AllowRelink)
+		if err != nil {
+			return nil, 0, fmt.Errorf("validate ToC entry %s: %w", entryDocID, err)
+		}
+		if tocDocID == "" {
+			tocDocID = repair.TocDocID
+		} else if repair.TocDocID != tocDocID {
+			return nil, 0, fmt.Errorf("resolution batch spans multiple ToCs")
+		}
+		spec.EntryDocID = entryDocID
+		validated = append(validated, validatedResolution{spec: spec, repair: repair, pageDocID: pageDocID})
+	}
+
+	if err := ResetFrom(ctx, book, tocDocID, ResetTocFinalize); err != nil {
+		return nil, 0, fmt.Errorf("reset downstream of ToC entry resolution batch: %w", err)
+	}
+	for _, item := range validated {
+		if err := book.DeleteAgentStateByKeys(ctx, AgentTypeTocEntryFinder, item.spec.EntryDocID); err != nil {
+			return nil, 0, fmt.Errorf("delete stale ToC entry agent state %s: %w", item.spec.EntryDocID, err)
+		}
+	}
+
+	results := make([]TocEntryResolutionResult, 0, len(validated))
+	for _, item := range validated {
+		reason := strings.TrimSpace(item.spec.Reason)
+		update := map[string]any{
+			"_actual_pageID":        item.pageDocID,
+			"link_retries":          0,
+			"link_failed":           false,
+			"link_failure_reason":   nil,
+			"link_failed_at":        nil,
+			"link_excluded":         false,
+			"link_exclusion_reason": nil,
+			"link_excluded_at":      nil,
+			"link_repair_reason":    reason,
+			"link_repaired_at":      time.Now().UTC().Format(time.RFC3339),
+		}
+		title := item.repair.Title
+		if override := strings.TrimSpace(item.spec.Title); override != "" {
+			update["title"] = override
+			title = override
+		}
+		writeResult, err := book.getStore(ctx).UpdateWithVersion(ctx, "TocEntry", item.spec.EntryDocID, update)
+		if err != nil {
+			return nil, 0, fmt.Errorf("persist ToC entry page resolution %s: %w", item.spec.EntryDocID, err)
+		}
+		results = append(results, TocEntryResolutionResult{
+			TocDocID: tocDocID, EntryDocID: item.spec.EntryDocID,
+			Title: title, SortOrder: item.repair.SortOrder,
+			PageNum: item.spec.PageNum, Reason: reason, CID: writeResult.CID,
+		})
+	}
+
+	pendingCount, err := reopenTocLinkAfterOperatorResolution(ctx, book, tocDocID)
+	if err != nil {
+		return nil, 0, err
+	}
+	for i := range results {
+		results[i].PendingCount = pendingCount
+	}
+	return results, pendingCount, nil
 }
 
 func reopenTocLinkAfterOperatorResolution(ctx context.Context, book *BookState, tocDocID string) (int, error) {

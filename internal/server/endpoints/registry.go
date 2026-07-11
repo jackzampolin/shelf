@@ -41,6 +41,7 @@ func All(cfg Config) []api.Endpoint {
 		&RepairTocRangeEndpoint{},
 		&RepairTocEntryEndpoint{},
 		&ResolveTocEntryEndpoint{},
+		&ResolveTocEntriesEndpoint{},
 		&ExcludeTocEntryEndpoint{},
 		&QuarantineOCREndpoint{},
 

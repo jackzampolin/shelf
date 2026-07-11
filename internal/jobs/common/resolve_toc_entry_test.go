@@ -87,3 +87,50 @@ func TestResolveTocEntryRequiresExplicitRelink(t *testing.T) {
 		t.Fatalf("relink result = %#v entry=%#v", result, store.GetDoc("TocEntry", "entry-good"))
 	}
 }
+
+func TestResolveTocEntriesAppliesCohortAndReloadsOnce(t *testing.T) {
+	book, store := resolvableTocEntryBook()
+	store.SetDoc("TocEntry", "entry-failed-2", map[string]any{
+		"_tocID":              "toc-1",
+		"title":               "Second Broken Heading",
+		"sort_order":          3,
+		"link_retries":        3,
+		"link_failed":         true,
+		"link_failure_reason": "budget exhausted",
+	})
+
+	results, pending, err := ResolveTocEntries(context.Background(), book, []TocEntryResolutionSpec{
+		{EntryDocID: "entry-failed", PageNum: 1, Reason: "verified first heading"},
+		{EntryDocID: "entry-failed-2", PageNum: 2, Title: "Corrected second heading", Reason: "verified second heading"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 2 || pending != 0 || results[0].PendingCount != 0 || results[1].PendingCount != 0 {
+		t.Fatalf("results=%#v pending=%d", results, pending)
+	}
+	if got := store.GetDoc("TocEntry", "entry-failed")["_actual_pageID"]; got != "page-1" {
+		t.Fatalf("first page link = %#v", got)
+	}
+	second := store.GetDoc("TocEntry", "entry-failed-2")
+	if second["_actual_pageID"] != "page-2" || second["title"] != "Corrected second heading" {
+		t.Fatalf("second resolution = %#v", second)
+	}
+	if got := store.GetDoc("TocEntry", "entry-good")["_actual_pageID"]; got != "page-10" {
+		t.Fatalf("known-good link changed: %#v", got)
+	}
+}
+
+func TestResolveTocEntriesRejectsDuplicateBeforeMutation(t *testing.T) {
+	book, store := resolvableTocEntryBook()
+	_, _, err := ResolveTocEntries(context.Background(), book, []TocEntryResolutionSpec{
+		{EntryDocID: "entry-failed", PageNum: 1, Reason: "first"},
+		{EntryDocID: "entry-failed", PageNum: 2, Reason: "duplicate"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "duplicate ToC entry") {
+		t.Fatalf("error = %v, want duplicate refusal", err)
+	}
+	if got := store.GetDoc("TocEntry", "entry-failed")["_actual_pageID"]; got != nil {
+		t.Fatalf("duplicate batch mutated target: %#v", got)
+	}
+}
