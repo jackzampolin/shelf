@@ -76,7 +76,6 @@ prove that the target is not a running header at the page lead. It ends here.
 
 
 THE WAR ENDS AND I RESIGN
-
 When the President and the Secretary went to Potsdam, events moved quickly.`)
 	tools := New(Config{
 		Book: book,
@@ -99,6 +98,35 @@ When the President and the Secretary went to Potsdam, events moved quickly.`)
 	ready, args := tools.writeResultRecommendation(133, evidence, false)
 	if !ready || args["scan_page"] != 133 {
 		t.Fatalf("write recommendation = ready %v, args %#v", ready, args)
+	}
+}
+
+func TestValidateCandidatePageAcceptsUnlabeledStandaloneAllCapsHeadingWithoutTrailingBlank(t *testing.T) {
+	book := common.NewBookState("book-1")
+	book.TotalPages = 200
+	book.GetOrCreatePage(135).SetOcrMarkdown(`1945 Success, Disenchantment, and Resignation 113
+Crew's view fortunately prevailed. This preceding body text deliberately
+contains more than one hundred substantive runes before the source heading.
+The proclamation issued by the heads of government disturbed me greatly.
+
+
+
+                                AN ATTEMPTED JAIL BREAK
+The President and Mr. Byrnes returned from the Potsdam Conference on August 7.`)
+	tools := New(Config{
+		Book: book,
+		Entry: &toc_entry_finder.TocEntry{
+			Title:     "An Attempted Jail Break",
+			LevelName: "section",
+		},
+	})
+
+	evidence, rejection, err := tools.ValidateCandidatePage(context.Background(), 135)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rejection != "" || !evidence.TitleInSectionHeader {
+		t.Fatalf("source-shaped standalone heading rejected: %q (%#v)", rejection, evidence)
 	}
 }
 

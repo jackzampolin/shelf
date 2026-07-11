@@ -109,10 +109,11 @@ func (t *TocEntryFinderTools) AnalyzePageEvidence(ocrText string, pageNum int, i
 const minStandaloneHeadingPrefixRunes = 100
 
 // unlabeledStandaloneTitleBlock recognizes a conservative enriched-PDF shape:
-// an exact all-caps ToC title isolated by blank lines after substantive text.
+// an exact all-caps ToC title after a blank separator and substantive text.
 // Some PDFs preserve the visual centered heading but emit no Markdown or
-// data-label marker. Requiring an exact, isolated, all-caps block away from the
-// page lead keeps ordinary prose mentions and repeated running headers out.
+// data-label marker, and some omit the blank line between that heading and its
+// first paragraph. Requiring an exact, all-caps line or block away from the page
+// lead keeps ordinary prose mentions and repeated running headers out.
 func unlabeledStandaloneTitleBlock(ocrText, title string) string {
 	target := normalizeForEvidence(title)
 	if len(target) < 4 {
@@ -132,6 +133,14 @@ func unlabeledStandaloneTitleBlock(ocrText, title string) string {
 		}
 
 		start := i
+		firstLine := strings.TrimSpace(stripOCRMarkup(lines[start]))
+		if start > 0 &&
+			strings.TrimSpace(stripOCRMarkup(lines[start-1])) == "" &&
+			prefixRunes >= minStandaloneHeadingPrefixRunes &&
+			normalizeForEvidence(firstLine) == target &&
+			allCapsHeading(firstLine) {
+			return firstLine
+		}
 		blockLines := make([]string, 0, 2)
 		for i < len(lines) {
 			line := strings.TrimSpace(stripOCRMarkup(lines[i]))
