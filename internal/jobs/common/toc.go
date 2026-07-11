@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -13,6 +15,16 @@ import (
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/prompts/extract_toc"
 	"github.com/jackzampolin/shelf/internal/svcctx"
+)
+
+var (
+	// Some structured-output models occasionally serialize a visually indented
+	// run of ToC rows as one title. Requiring three complete "title, page."
+	// anchors makes this distinct from ordinary punctuation in a title.
+	collapsedTocRowPattern = regexp.MustCompile(`(?s)(.*?),\s*([0-9]{1,5})\.`)
+	// In the same failure shape, top-level page anchors are commonly emitted as
+	// part of the title ("Introduction: I") rather than in the page field.
+	colonPageAnchorPattern = regexp.MustCompile(`(?s)^(.+\S)\s*:\s*([0-9]{1,5}|[IVXLCDMivxlcdm]+)\.?$`)
 )
 
 // CreateTocExtractWorkUnit creates a ToC extraction work unit.
@@ -144,10 +156,17 @@ func SaveTocExtractResult(ctx context.Context, tocDocID string, result *extract_
 		return "", fmt.Errorf("defra sink not in context")
 	}
 
+	entries, normalized, err := normalizeTocExtractEntries(result.Entries)
+	if err != nil {
+		return "", fmt.Errorf("invalid collapsed ToC extraction: %w", err)
+	}
+
 	if logger != nil {
 		logger.Debug("upserting extracted ToC entries",
 			"toc_doc_id", tocDocID,
-			"entry_count", len(result.Entries))
+			"entry_count", len(entries),
+			"model_entry_count", len(result.Entries),
+			"normalized_collapsed_rows", normalized)
 	}
 
 	// Defra retains deleted document identities as tombstones. Reusing the old
@@ -161,7 +180,7 @@ func SaveTocExtractResult(ctx context.Context, tocDocID string, result *extract_
 	generation := uuid.NewString()
 
 	// Upsert each TocEntry (filter by unique_key for uniqueness)
-	for i, entry := range result.Entries {
+	for i, entry := range entries {
 		// A generation-scoped key avoids Defra tombstone ID reuse after reset.
 		uniqueKey := fmt.Sprintf("%s:%s:%d", tocDocID, generation, i)
 
@@ -228,7 +247,7 @@ func SaveTocExtractResult(ctx context.Context, tocDocID string, result *extract_
 	if logger != nil {
 		logger.Debug("upserted all extracted ToC entries",
 			"toc_doc_id", tocDocID,
-			"count", len(result.Entries))
+			"count", len(entries))
 	}
 
 	// Mark extraction complete
@@ -244,6 +263,95 @@ func SaveTocExtractResult(ctx context.Context, tocDocID string, result *extract_
 		return "", err
 	}
 	return writeResult.CID, nil
+}
+
+// normalizeTocExtractEntries repairs one narrow, mechanically recognizable
+// structured-output failure: multiple visually indented ToC rows collapsed into
+// a single title. It deliberately leaves ordinary titles untouched. Once that
+// failure shape is present, its companion "Title: page" top-level encoding is
+// normalized as well.
+func normalizeTocExtractEntries(entries []extract_toc.Entry) ([]extract_toc.Entry, int, error) {
+	type normalizedEntry struct {
+		entries   []extract_toc.Entry
+		collapsed bool
+	}
+
+	parsed := make([]normalizedEntry, 0, len(entries))
+	collapsedRows := 0
+	for i, entry := range entries {
+		split, collapsed, err := splitCollapsedTocEntry(entry)
+		if err != nil {
+			return nil, 0, fmt.Errorf("entry %d (%q): %w", i, entry.Title, err)
+		}
+		if collapsed {
+			collapsedRows++
+		}
+		parsed = append(parsed, normalizedEntry{entries: split, collapsed: collapsed})
+	}
+
+	if collapsedRows == 0 {
+		return append([]extract_toc.Entry(nil), entries...), 0, nil
+	}
+
+	result := make([]extract_toc.Entry, 0, len(entries)+collapsedRows*3)
+	for _, item := range parsed {
+		for _, entry := range item.entries {
+			if !item.collapsed {
+				entry = normalizeColonPageAnchor(entry)
+			}
+			result = append(result, entry)
+		}
+	}
+	return result, collapsedRows, nil
+}
+
+func splitCollapsedTocEntry(entry extract_toc.Entry) ([]extract_toc.Entry, bool, error) {
+	if entry.Level < 2 || entry.PrintedPageNumber != nil || entry.EntryNumber != nil {
+		return []extract_toc.Entry{entry}, false, nil
+	}
+
+	matches := collapsedTocRowPattern.FindAllStringSubmatchIndex(entry.Title, -1)
+	if len(matches) < 3 {
+		return []extract_toc.Entry{entry}, false, nil
+	}
+	if strings.TrimSpace(entry.Title[:matches[0][0]]) != "" ||
+		strings.TrimSpace(entry.Title[matches[len(matches)-1][1]:]) != "" {
+		return nil, false, fmt.Errorf("page-anchor sequence does not cover the full title")
+	}
+
+	result := make([]extract_toc.Entry, 0, len(matches))
+	previousPage := 0
+	for _, match := range matches {
+		title := strings.TrimSpace(entry.Title[match[2]:match[3]])
+		pageText := entry.Title[match[4]:match[5]]
+		page, err := strconv.Atoi(pageText)
+		if err != nil || page <= previousPage || title == "" {
+			return nil, false, fmt.Errorf("page anchors must have non-empty titles and strictly increase")
+		}
+		previousPage = page
+		pageCopy := pageText
+		result = append(result, extract_toc.Entry{
+			Title:             title,
+			Level:             entry.Level,
+			LevelName:         entry.LevelName,
+			PrintedPageNumber: &pageCopy,
+		})
+	}
+	return result, true, nil
+}
+
+func normalizeColonPageAnchor(entry extract_toc.Entry) extract_toc.Entry {
+	if entry.Level != 1 || entry.PrintedPageNumber != nil {
+		return entry
+	}
+	match := colonPageAnchorPattern.FindStringSubmatch(entry.Title)
+	if match == nil {
+		return entry
+	}
+	entry.Title = strings.TrimSpace(match[1])
+	page := match[2]
+	entry.PrintedPageNumber = &page
+	return entry
 }
 
 func isDefraDocIDCollision(err error) bool {
