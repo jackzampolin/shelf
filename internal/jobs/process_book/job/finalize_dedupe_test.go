@@ -115,6 +115,45 @@ func TestHasDiscoveryHeadingAnchor(t *testing.T) {
 	}
 }
 
+func TestSanitizeDiscoveredPatternsRequiresCandidateSupport(t *testing.T) {
+	chapterPattern := common.DiscoveredPattern{
+		PatternType: "sequential", LevelName: "chapter", HeadingFormat: "CHAPTER {n}",
+		RangeStart: "1", RangeEnd: "3", Level: 2, Reasoning: "observed global sequence",
+	}
+	bareRomanCandidates := []*candidateHeading{
+		{PageNum: 23, Text: "I", Level: 3},
+		{PageNum: 29, Text: "II", Level: 3},
+	}
+	if got := sanitizeDiscoveredPatternsWithCandidates([]common.DiscoveredPattern{chapterPattern}, bareRomanCandidates); len(got) != 0 {
+		t.Fatalf("invented CHAPTER anchor accepted: %#v", got)
+	}
+
+	chapterCandidates := []*candidateHeading{
+		{PageNum: 15, Text: "CHAPTER 1", Level: 2},
+		{PageNum: 30, Text: "Chapter 2: War", Level: 2},
+	}
+	if got := sanitizeDiscoveredPatternsWithCandidates([]common.DiscoveredPattern{chapterPattern}, chapterCandidates); len(got) != 1 {
+		t.Fatalf("source-supported chapter pattern rejected: %#v", got)
+	}
+}
+
+func TestSanitizeDiscoveredPatternsRejectsRestartingCandidateSequence(t *testing.T) {
+	sectionPattern := common.DiscoveredPattern{
+		PatternType: "sequential", LevelName: "section", HeadingFormat: "Section {n}",
+		RangeStart: "I", RangeEnd: "II", Level: 3, Reasoning: "sections inside chapters",
+	}
+	candidates := []*candidateHeading{
+		{PageNum: 23, Text: "Section I", Level: 3},
+		{PageNum: 29, Text: "Section II", Level: 3},
+		{PageNum: 44, Text: "Section I", Level: 3},
+		{PageNum: 50, Text: "Section II", Level: 3},
+	}
+
+	if got := sanitizeDiscoveredPatternsWithCandidates([]common.DiscoveredPattern{sectionPattern}, candidates); len(got) != 0 {
+		t.Fatalf("locally restarting section pattern accepted: %#v", got)
+	}
+}
+
 func TestSanitizeDiscoveredPatternsAcceptsRomanSequence(t *testing.T) {
 	pattern := common.DiscoveredPattern{
 		PatternType: " sequential ", LevelName: " part ", HeadingFormat: "PART {n} ",

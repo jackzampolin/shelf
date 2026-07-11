@@ -77,7 +77,9 @@ func (j *Job) loadExistingPatternResults(ctx context.Context) bool {
 		return false
 	}
 
-	sanitizedPatterns := sanitizeDiscoveredPatterns(data.Patterns)
+	sanitizedPatterns := sanitizeDiscoveredPatternsWithCandidates(
+		data.Patterns, j.loadCandidateHeadings(),
+	)
 	sanitizedExcluded := sanitizeExcludedRanges(j.Book.TotalPages, data.Excluded)
 	controlDataChanged := len(sanitizedPatterns) != len(data.Patterns) ||
 		len(sanitizedExcluded) != len(data.Excluded)
@@ -181,6 +183,82 @@ func sanitizeDiscoveredPatterns(patterns []common.DiscoveredPattern) []common.Di
 		result = append(result, pattern)
 	}
 	return result
+}
+
+// sanitizeDiscoveredPatternsWithCandidates additionally proves that a model's
+// claimed heading format exists in the source-derived candidate headings. This
+// rejects invented anchors (for example, "Section {n}" when candidates contain
+// only bare Roman numerals) and locally restarting sequences.
+func sanitizeDiscoveredPatternsWithCandidates(patterns []common.DiscoveredPattern, candidates []*candidateHeading) []common.DiscoveredPattern {
+	structurallyValid := sanitizeDiscoveredPatterns(patterns)
+	result := make([]common.DiscoveredPattern, 0, len(structurallyValid))
+	for _, pattern := range structurallyValid {
+		if discoveredPatternHasCandidateSupport(pattern, candidates) {
+			result = append(result, pattern)
+		}
+	}
+	return result
+}
+
+func discoveredPatternHasCandidateSupport(pattern common.DiscoveredPattern, candidates []*candidateHeading) bool {
+	sequence := generateSequence(pattern.RangeStart, pattern.RangeEnd)
+	if len(sequence) == 0 {
+		return false
+	}
+	targets := make(map[string]bool, len(sequence))
+	for _, identifier := range sequence {
+		targets[normalizeSequenceIdentifier(identifier)] = true
+	}
+	anchorTokens := discoveryTokens(strings.ReplaceAll(pattern.HeadingFormat, "{n}", ""))
+	if len(anchorTokens) == 0 {
+		return false
+	}
+	supportPages := make(map[string]map[int]bool)
+	for _, candidate := range candidates {
+		candidateTokens := discoveryTokens(candidate.Text)
+		if !containsDiscoveryTokens(candidateTokens, anchorTokens) {
+			continue
+		}
+		for _, token := range candidateTokens {
+			identifier := normalizeSequenceIdentifier(token)
+			if !targets[identifier] {
+				continue
+			}
+			if supportPages[identifier] == nil {
+				supportPages[identifier] = make(map[int]bool)
+			}
+			supportPages[identifier][candidate.PageNum] = true
+		}
+	}
+	for _, pages := range supportPages {
+		if len(pages) > 1 {
+			return false
+		}
+	}
+	required := 2
+	if len(targets) == 1 {
+		required = 1
+	}
+	return len(supportPages) >= required
+}
+
+func discoveryTokens(value string) []string {
+	return strings.FieldsFunc(strings.ToLower(value), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+}
+
+func containsDiscoveryTokens(haystack, needles []string) bool {
+	available := make(map[string]bool, len(haystack))
+	for _, token := range haystack {
+		available[token] = true
+	}
+	for _, token := range needles {
+		if !available[token] {
+			return false
+		}
+	}
+	return true
 }
 
 // hasDiscoveryHeadingAnchor rejects identifier-only patterns such as "{n}" or

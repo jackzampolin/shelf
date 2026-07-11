@@ -194,7 +194,9 @@ func (j *Job) processFinalizePatternResult(ctx context.Context, result jobs.Work
 			Reasoning:     p.Reasoning,
 		})
 	}
-	patternResult.Patterns = sanitizeDiscoveredPatterns(proposedPatterns)
+	patternResult.Patterns = sanitizeDiscoveredPatternsWithCandidates(
+		proposedPatterns, j.loadCandidateHeadings(),
+	)
 	if len(patternResult.Patterns) != len(proposedPatterns) {
 		if logger := svcctx.LoggerFrom(ctx); logger != nil {
 			logger.Warn("discarded malformed discovered patterns",
