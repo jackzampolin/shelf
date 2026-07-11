@@ -172,3 +172,56 @@ func TestProviderRecoveryRetriesTransientRuntimeStatusWrite(t *testing.T) {
 		t.Fatalf("runtime status update attempts = %d, want 2", attempts)
 	}
 }
+
+func TestResumeRetriesTransientRunningStatusWrite(t *testing.T) {
+	withFastResumeBackoff(t)
+	var mu sync.Mutex
+	runningUpdates := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		bodyText := string(body)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.Contains(bodyText, "update_Job"):
+			if strings.Contains(bodyText, `status: \"running\"`) {
+				mu.Lock()
+				runningUpdates++
+				attempt := runningUpdates
+				mu.Unlock()
+				if attempt == 1 {
+					_, _ = w.Write([]byte(`{"errors":[{"message":"transaction conflict. Please retry"}]}`))
+					return
+				}
+			}
+			_, _ = w.Write([]byte(`{"data":{"update_Job":[{"_docID":"job-1"}]}}`))
+		case strings.Contains(bodyText, "Job(") && strings.Contains(bodyText, string(StatusWaitingProvider)):
+			_, _ = w.Write([]byte(`{"data":{"Job":[]}}`))
+		case strings.Contains(bodyText, "Job("):
+			_, _ = w.Write([]byte(`{"data":{"Job":[{"_docID":"job-1","job_type":"stub","book_id":"book-1","status":"running","created_at":"2026-07-10T08:00:00Z","metadata":"{\"book_id\":\"book-1\"}"}]}}`))
+		default:
+			t.Fatalf("unexpected Defra request: %s", bodyText)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	s := NewScheduler(SchedulerConfig{
+		Logger:  slog.Default(),
+		Manager: NewManager(defra.NewClient(server.URL), slog.Default()),
+	})
+	s.RegisterFactory("stub", func(context.Context, string, map[string]any) (Job, error) {
+		return &stubStartJob{stubFailJob: stubFailJob{bookID: "book-1"}, done: true}, nil
+	})
+
+	resumed, err := s.Resume(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resumed != 1 {
+		t.Fatalf("Resume = %d, want 1", resumed)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if runningUpdates != 2 {
+		t.Fatalf("running status update attempts = %d, want 2", runningUpdates)
+	}
+}

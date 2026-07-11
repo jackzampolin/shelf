@@ -321,7 +321,10 @@ func (s *Scheduler) Resume(ctx context.Context) (int, error) {
 		}
 		s.mu.Unlock()
 
-		if err := s.manager.UpdateRuntimeStatus(enrichedCtx, record.ID, StatusRunning, ""); err != nil {
+		_, err = retryTransientOperation(enrichedCtx, s.logger, "persist resumed running state", record.ID, func() (struct{}, error) {
+			return struct{}{}, s.manager.UpdateRuntimeStatus(enrichedCtx, record.ID, StatusRunning, "")
+		})
+		if err != nil {
 			s.logger.Warn("failed to persist resumed running state", "job_id", record.ID, "error", err)
 		}
 
