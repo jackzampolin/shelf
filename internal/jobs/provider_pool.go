@@ -20,6 +20,7 @@ type ProviderWorkerPool struct {
 	poolType PoolType
 
 	// Provider (one of these is set)
+	providerMu  sync.RWMutex
 	llmClient   providers.LLMClient
 	ocrProvider providers.OCRProvider
 	ttsProvider providers.TTSProvider
@@ -196,6 +197,51 @@ func (p *ProviderWorkerPool) Name() string {
 // Type returns the pool type.
 func (p *ProviderWorkerPool) Type() PoolType {
 	return p.poolType
+}
+
+// replaceProvider swaps the concrete client behind an already-running pool.
+// Config hot reload rebuilds registry providers, but queued and circuit-parked
+// work lives in the scheduler pool; replacing the client in place lets the
+// existing circuit prober observe a restored endpoint without losing work.
+// Worker count and rate limiting remain fixed until restart.
+func (p *ProviderWorkerPool) replaceProvider(
+	llm providers.LLMClient,
+	ocr providers.OCRProvider,
+	tts providers.TTSProvider,
+) error {
+	p.providerMu.Lock()
+	defer p.providerMu.Unlock()
+
+	switch p.poolType {
+	case PoolTypeLLM:
+		if llm == nil {
+			return fmt.Errorf("LLM pool %q requires an LLM client", p.name)
+		}
+		p.llmClient = llm
+	case PoolTypeOCR:
+		if ocr == nil {
+			return fmt.Errorf("OCR pool %q requires an OCR provider", p.name)
+		}
+		p.ocrProvider = ocr
+	case PoolTypeTTS:
+		if tts == nil {
+			return fmt.Errorf("TTS pool %q requires a TTS provider", p.name)
+		}
+		p.ttsProvider = tts
+	default:
+		return fmt.Errorf("pool %q is not provider-backed", p.name)
+	}
+	return nil
+}
+
+func (p *ProviderWorkerPool) providerSnapshot() (
+	providers.LLMClient,
+	providers.OCRProvider,
+	providers.TTSProvider,
+) {
+	p.providerMu.RLock()
+	defer p.providerMu.RUnlock()
+	return p.llmClient, p.ocrProvider, p.ttsProvider
 }
 
 // init initializes the priority queue and channels. Called by scheduler before Start.
@@ -468,14 +514,15 @@ func (p *ProviderWorkerPool) Status() PoolStatus {
 }
 
 func (p *ProviderWorkerPool) endpointStatuses() []providers.EndpointStatus {
+	llm, ocr, tts := p.providerSnapshot()
 	var provider any
 	switch {
-	case p.llmClient != nil:
-		provider = p.llmClient
-	case p.ocrProvider != nil:
-		provider = p.ocrProvider
-	case p.ttsProvider != nil:
-		provider = p.ttsProvider
+	case llm != nil:
+		provider = llm
+	case ocr != nil:
+		provider = ocr
+	case tts != nil:
+		provider = tts
 	}
 	reporter, ok := provider.(providers.EndpointStatusReporter)
 	if !ok {

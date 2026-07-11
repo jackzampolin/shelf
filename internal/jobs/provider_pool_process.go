@@ -47,11 +47,12 @@ func (p *ProviderWorkerPool) process(ctx context.Context, unit *WorkUnit) (WorkR
 
 			var chatResult *providers.ChatResult
 			var err error
+			llm, _, _ := p.providerSnapshot()
 
 			if len(unit.Tools) > 0 {
-				chatResult, err = p.llmClient.ChatWithTools(ctx, unit.ChatRequest, unit.Tools)
+				chatResult, err = llm.ChatWithTools(ctx, unit.ChatRequest, unit.Tools)
 			} else {
-				chatResult, err = p.llmClient.Chat(ctx, unit.ChatRequest)
+				chatResult, err = llm.Chat(ctx, unit.ChatRequest)
 			}
 
 			result.ChatResult = chatResult
@@ -97,7 +98,8 @@ func (p *ProviderWorkerPool) process(ctx context.Context, unit *WorkUnit) (WorkR
 				return result, false
 			}
 
-			ocrResult, err := p.ocrProvider.ProcessImage(ctx, unit.OCRRequest.Image, unit.OCRRequest.PageNum)
+			_, ocr, _ := p.providerSnapshot()
+			ocrResult, err := ocr.ProcessImage(ctx, unit.OCRRequest.Image, unit.OCRRequest.PageNum)
 			result.OCRResult = ocrResult
 			if err == nil {
 				p.noteCallSuccess()
@@ -137,7 +139,8 @@ func (p *ProviderWorkerPool) process(ctx context.Context, unit *WorkUnit) (WorkR
 				Instructions:       unit.TTSRequest.Instructions,
 				PreviousRequestIDs: unit.TTSRequest.PreviousRequestIDs, // For ElevenLabs request stitching
 			}
-			ttsResult, err := p.ttsProvider.Generate(ctx, ttsReq)
+			_, _, tts := p.providerSnapshot()
+			ttsResult, err := tts.Generate(ctx, ttsReq)
 			result.TTSResult = ttsResult
 			if err == nil {
 				p.noteCallSuccess()
@@ -203,27 +206,28 @@ func (p *ProviderWorkerPool) process(ctx context.Context, unit *WorkUnit) (WorkR
 }
 
 func (p *ProviderWorkerPool) getMaxRetries() int {
+	llm, ocr, tts := p.providerSnapshot()
 	switch p.poolType {
 	case PoolTypeLLM:
-		if p.llmClient != nil {
-			if managed, ok := p.llmClient.(providers.RetryManaged); ok && managed.ManagesRetries() {
+		if llm != nil {
+			if managed, ok := llm.(providers.RetryManaged); ok && managed.ManagesRetries() {
 				return 0
 			}
-			return p.llmClient.MaxRetries()
+			return llm.MaxRetries()
 		}
 	case PoolTypeOCR:
-		if p.ocrProvider != nil {
-			if managed, ok := p.ocrProvider.(providers.RetryManaged); ok && managed.ManagesRetries() {
+		if ocr != nil {
+			if managed, ok := ocr.(providers.RetryManaged); ok && managed.ManagesRetries() {
 				return 0
 			}
-			return p.ocrProvider.MaxRetries()
+			return ocr.MaxRetries()
 		}
 	case PoolTypeTTS:
-		if p.ttsProvider != nil {
-			if managed, ok := p.ttsProvider.(providers.RetryManaged); ok && managed.ManagesRetries() {
+		if tts != nil {
+			if managed, ok := tts.(providers.RetryManaged); ok && managed.ManagesRetries() {
 				return 0
 			}
-			return p.ttsProvider.MaxRetries()
+			return tts.MaxRetries()
 		}
 	}
 	return 7

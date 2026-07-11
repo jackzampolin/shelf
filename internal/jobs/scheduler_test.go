@@ -439,6 +439,30 @@ func TestScheduler_InitFromRegistry(t *testing.T) {
 	}
 }
 
+func TestScheduler_RefreshProviderClients(t *testing.T) {
+	oldProvider := newCtrlProvider()
+	newProvider := newCtrlProvider()
+	scheduler := NewScheduler(SchedulerConfig{Logger: slog.Default()})
+	pool, err := NewProviderWorkerPool(ProviderWorkerPoolConfig{
+		Name:        "ocr",
+		OCRProvider: oldProvider,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scheduler.RegisterPool(pool)
+
+	registry := providers.NewRegistry()
+	registry.RegisterOCR("ocr", newProvider)
+	if got := scheduler.RefreshProviderClients(registry); got != 1 {
+		t.Fatalf("RefreshProviderClients() = %d, want 1", got)
+	}
+	_, current, _ := pool.providerSnapshot()
+	if current != newProvider {
+		t.Fatal("scheduler pool retained old OCR provider")
+	}
+}
+
 func TestInitFromRegistry_FailFastOnUnhealthy(t *testing.T) {
 	reg := providers.NewRegistry()
 	bad := providers.NewMockClient()

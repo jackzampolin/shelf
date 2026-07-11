@@ -113,12 +113,6 @@ func New(cfg Config) (*Server, error) {
 	// If config manager provided, set up providers and hot reload
 	if cfg.ConfigManager != nil {
 		registry.Reload(cfg.ConfigManager.Get().ToProviderRegistryConfig())
-
-		// Watch for config changes
-		cfg.ConfigManager.OnChange(func(c *config.Config) {
-			registry.Reload(c.ToProviderRegistryConfig())
-			cfg.Logger.Info("provider registry reloaded from config")
-		})
 	}
 
 	s := &Server{
@@ -127,6 +121,25 @@ func New(cfg Config) (*Server, error) {
 		configMgr:    cfg.ConfigManager,
 		logger:       cfg.Logger,
 		home:         cfg.Home,
+	}
+
+	if cfg.ConfigManager != nil {
+		// Registry reload alone is insufficient once jobs are active: scheduler
+		// pools retain their concrete clients and provider circuits. Refresh
+		// same-name pool clients in place so endpoint restoration can close an
+		// open circuit and replay parked work without a process restart.
+		cfg.ConfigManager.OnChange(func(c *config.Config) {
+			registry.Reload(c.ToProviderRegistryConfig())
+			s.mu.RLock()
+			scheduler := s.scheduler
+			s.mu.RUnlock()
+			refreshed := 0
+			if scheduler != nil {
+				refreshed = scheduler.RefreshProviderClients(registry)
+			}
+			cfg.Logger.Info("provider registry reloaded from config",
+				"active_pools_refreshed", refreshed)
+		})
 	}
 
 	// Create endpoint registry and register all endpoints
@@ -285,12 +298,17 @@ func (s *Server) Start(ctx context.Context) (retErr error) {
 	})
 	s.defraSink.Start(ctx)
 
-	// Create scheduler for job execution (sink enables fire-and-forget metrics)
-	s.scheduler = jobs.NewScheduler(jobs.SchedulerConfig{
+	// Create scheduler for job execution (sink enables fire-and-forget metrics).
+	// Publish it under the server mutex because config hot-reload callbacks may
+	// arrive concurrently during startup.
+	scheduler := jobs.NewScheduler(jobs.SchedulerConfig{
 		Manager: s.jobManager,
 		Logger:  s.logger,
 		Sink:    s.defraSink,
 	})
+	s.mu.Lock()
+	s.scheduler = scheduler
+	s.mu.Unlock()
 
 	// Initialize workers from provider registry. For local inference a down
 	// endpoint stalls the pipeline, so configured deployments can fail fast.

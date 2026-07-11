@@ -147,6 +147,43 @@ func TestStartupHealthFailurePausesBeforeFirstProviderCallAndRecovers(t *testing
 	}
 }
 
+func TestHotReloadedOCRProviderClosesCircuitAndReplays(t *testing.T) {
+	dead := newCtrlProvider()
+	dead.setDown(true)
+	healthy := newCtrlProvider()
+
+	pool, results := newTestPool(t, dead, circuitConfig{
+		TripThreshold: 5,
+		ProbeInterval: 20 * time.Millisecond,
+		ParkMaxAge:    time.Hour,
+		ParkCapacity:  16,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	pool.openOnStartup(ctx, errBackendDown)
+	go pool.Start(ctx)
+
+	mustSubmit(t, pool, ocrUnit("hot-reload"))
+	time.Sleep(80 * time.Millisecond)
+	if got := dead.callCount(); got != 0 {
+		t.Fatalf("dead provider called %d times despite startup-open circuit", got)
+	}
+	if err := pool.replaceProvider(nil, healthy, nil); err != nil {
+		t.Fatalf("replaceProvider() error = %v", err)
+	}
+
+	waitFor(t, time.Second, func() bool { return pool.Status().Health == healthHealthy })
+	waitFor(t, time.Second, func() bool { return healthy.callCount() == 1 })
+	select {
+	case result := <-results:
+		if !result.Result.Success {
+			t.Fatalf("replayed unit failed: %v", result.Result.Error)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("hot-reloaded provider produced no replay result")
+	}
+}
+
 func TestExplicitDispatchPauseHoldsWorkUntilResume(t *testing.T) {
 	prov := newCtrlProvider()
 	pool, _ := newTestPool(t, prov, circuitConfig{

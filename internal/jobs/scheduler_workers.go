@@ -163,6 +163,57 @@ func (s *Scheduler) InitFromRegistryWithHealthCheck(ctx context.Context, registr
 	return nil
 }
 
+// RefreshProviderClients applies same-name provider replacements from a
+// hot-reloaded registry to existing scheduler pools. Queued, in-flight, and
+// circuit-parked work stays attached to the original pool; the next attempt or
+// health probe uses the new client. Pool sizing and rate limits intentionally
+// remain restart-scoped because changing goroutine topology in place would make
+// in-flight accounting ambiguous.
+func (s *Scheduler) RefreshProviderClients(registry *providers.Registry) int {
+	s.mu.RLock()
+	pools := make(map[string]*ProviderWorkerPool, len(s.pools))
+	for name, candidate := range s.pools {
+		if pool, ok := candidate.(*ProviderWorkerPool); ok {
+			pools[name] = pool
+		}
+	}
+	s.mu.RUnlock()
+
+	refreshed := 0
+	for name, pool := range pools {
+		var err error
+		switch pool.Type() {
+		case PoolTypeLLM:
+			var client providers.LLMClient
+			client, err = registry.GetLLM(name)
+			if err == nil {
+				err = pool.replaceProvider(client, nil, nil)
+			}
+		case PoolTypeOCR:
+			var provider providers.OCRProvider
+			provider, err = registry.GetOCR(name)
+			if err == nil {
+				err = pool.replaceProvider(nil, provider, nil)
+			}
+		case PoolTypeTTS:
+			var provider providers.TTSProvider
+			provider, err = registry.GetTTS(name)
+			if err == nil {
+				err = pool.replaceProvider(nil, nil, provider)
+			}
+		}
+		if err != nil {
+			s.logger.Warn("provider pool not refreshed from config",
+				"name", name, "type", pool.Type(), "error", err)
+			continue
+		}
+		refreshed++
+		s.logger.Info("provider pool client refreshed from config",
+			"name", name, "type", pool.Type())
+	}
+	return refreshed
+}
+
 // InitCPUPool creates a single CPU worker pool.
 // If workerCount <= 0, uses runtime.NumCPU().
 // Returns the pool so callers can register task handlers.

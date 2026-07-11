@@ -245,13 +245,14 @@ func (c *circuit) closeLocked() []parkedUnit {
 
 // healthCheck probes the pool's provider.
 func (p *ProviderWorkerPool) healthCheck(ctx context.Context) error {
+	llm, ocr, tts := p.providerSnapshot()
 	switch p.poolType {
 	case PoolTypeLLM:
-		return p.llmClient.HealthCheck(ctx)
+		return llm.HealthCheck(ctx)
 	case PoolTypeOCR:
-		return p.ocrProvider.HealthCheck(ctx)
+		return ocr.HealthCheck(ctx)
 	case PoolTypeTTS:
-		return p.ttsProvider.HealthCheck(ctx)
+		return tts.HealthCheck(ctx)
 	}
 	return nil
 }
