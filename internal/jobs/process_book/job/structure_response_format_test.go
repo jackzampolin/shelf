@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	pattern_analyzer "github.com/jackzampolin/shelf/internal/agents/pattern_analyzer"
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
@@ -44,6 +45,20 @@ func TestCreateStructureClassifyWorkUnitUsesInnerJSONSchema(t *testing.T) {
 	}
 
 	assertResponseFormatSchemaName(t, unit.ChatRequest.ResponseFormat.JSONSchema, "entry_classifications")
+}
+
+func TestCreateFinalizePatternWorkUnitBoundsStructuredOutput(t *testing.T) {
+	j := newStructureResponseFormatJob()
+	j.Book.SetLinkedEntries([]*common.LinkedTocEntry{})
+
+	unit, err := j.CreateFinalizePatternWorkUnit(context.Background())
+	if err != nil {
+		t.Fatalf("CreateFinalizePatternWorkUnit error: %v", err)
+	}
+	if unit.ChatRequest.MaxTokens != pattern_analyzer.MaxOutputTokens {
+		t.Fatalf("pattern MaxTokens = %d, want %d", unit.ChatRequest.MaxTokens, pattern_analyzer.MaxOutputTokens)
+	}
+	assertResponseFormatSchemaName(t, unit.ChatRequest.ResponseFormat.JSONSchema, "pattern_analysis")
 }
 
 func TestCreateChapterPolishWorkUnitUsesInnerJSONSchema(t *testing.T) {
