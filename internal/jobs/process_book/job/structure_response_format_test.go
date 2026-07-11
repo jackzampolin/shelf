@@ -106,8 +106,8 @@ func TestCreateChapterPolishWorkUnitUsesInnerJSONSchema(t *testing.T) {
 		t.Fatal("createChapterPolishWorkUnit returned nil")
 	}
 
-	if unit.ChatRequest.MaxTokens != common.MaxPolishOutputTokens {
-		t.Fatalf("polish MaxTokens = %d, want %d", unit.ChatRequest.MaxTokens, common.MaxPolishOutputTokens)
+	if unit.ChatRequest.MaxTokens != 24576 {
+		t.Fatalf("polish MaxTokens = %d, want 24576", unit.ChatRequest.MaxTokens)
 	}
 	assertResponseFormatSchemaName(t, unit.ChatRequest.ResponseFormat.JSONSchema, "text_edits")
 }

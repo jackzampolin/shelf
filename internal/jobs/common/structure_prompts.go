@@ -16,8 +16,11 @@ const (
 
 	// MaxPolishOutputTokens accommodates the strict 50-edit response schema.
 	// Scholarly chapters with dense OCR damage can legitimately exceed the
-	// generic 4K allowance; truncated edit JSON must still fail closed.
-	MaxPolishOutputTokens = 16384
+	// generic 4K allowance. Live Wave 0 chapters repeatedly filled 16K before
+	// succeeding on retry, so retain the same bounded schema with enough room
+	// to finish while staying below the 65K context window alongside the
+	// 120K-character prompt bound. Truncated edit JSON must still fail closed.
+	MaxPolishOutputTokens = 24576
 
 	// Classification emits four compact entry-keyed maps. Scale the allowance
 	// for unusually granular ToCs while keeping normal books from requesting an
