@@ -253,6 +253,47 @@ As relations with Moscow soured, Roosevelt blamed Stalin's isolation.`)
 	}
 }
 
+func TestValidateCandidatePageRejectsFormalHeadingInsideDetectedContentsRange(t *testing.T) {
+	book := common.NewBookState("book-1")
+	book.TotalPages = 446
+	book.SetTocPageRange(7, 10)
+	book.GetOrCreatePage(7).SetOcrMarkdown(`# CONTENTS
+
+## BOOK I BECOMING AN AMERICAN
+
+1. ELLIS ISLAND AND A TRAGEDY IN TEXAS`)
+	book.GetOrCreatePage(13).SetOcrMarkdown(`BOOK I
+
+## BECOMING AN AMERICAN`)
+
+	tools := New(Config{
+		Book: book,
+		Entry: &toc_entry_finder.TocEntry{
+			Title:     "BECOMING AN AMERICAN",
+			LevelName: "part",
+		},
+	})
+
+	evidence, rejection, err := tools.ValidateCandidatePage(context.Background(), 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rejection != "scan_page 7 is inside the detected contents range 7-10, not an entry opener" {
+		t.Fatalf("contents candidate rejection = %q", rejection)
+	}
+	if evidence.TargetTitle != "" || evidence.TitleFound {
+		t.Fatalf("contents range should reject before treating headings as evidence: %#v", evidence)
+	}
+
+	_, rejection, err = tools.ValidateCandidatePage(context.Background(), 13)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rejection != "" {
+		t.Fatalf("source divider outside contents range rejected: %q", rejection)
+	}
+}
+
 func TestValidateCandidatePageAcceptsUnlabeledTitleAtLeadWithBoundedOCRTypo(t *testing.T) {
 	book := common.NewBookState("book-1")
 	book.TotalPages = 200

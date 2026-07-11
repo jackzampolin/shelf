@@ -108,6 +108,9 @@ func (t *TocEntryFinderTools) ValidateCandidatePage(ctx context.Context, scanPag
 	if scanPage < 1 || scanPage > t.book.TotalPages {
 		return PageEvidence{}, fmt.Sprintf("scan_page %d is outside book range 1-%d", scanPage, t.book.TotalPages), nil
 	}
+	if tocStart, tocEnd := t.book.GetTocPageRange(); tocStart > 0 && tocEnd >= tocStart && scanPage >= tocStart && scanPage <= tocEnd {
+		return PageEvidence{}, fmt.Sprintf("scan_page %d is inside the detected contents range %d-%d, not an entry opener", scanPage, tocStart, tocEnd), nil
+	}
 
 	backMatterStart := t.effectiveBackMatterStart()
 	inBackMatter := backMatterStart > 0 && scanPage >= backMatterStart
