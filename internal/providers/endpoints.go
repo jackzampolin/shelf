@@ -19,9 +19,9 @@ type EndpointPool struct {
 // URL. It reflects requests owned by this Shelf process, not unrelated traffic
 // hitting the same server.
 type EndpointStatus struct {
-	BaseURL       string    `json:"base_url"`
-	InFlight      int64     `json:"in_flight"`
-	CooldownUntil time.Time `json:"cooldown_until,omitempty"`
+	BaseURL       string     `json:"base_url"`
+	InFlight      int64      `json:"in_flight"`
+	CooldownUntil *time.Time `json:"cooldown_until,omitempty"`
 }
 
 // NewEndpointPool creates a pool over a copy of the given base URLs.
@@ -58,7 +58,8 @@ func (p *EndpointPool) Status() []EndpointStatus {
 			InFlight: p.inFlight[i].Load(),
 		}
 		if until := p.cooldownUntil[i].Load(); until > now {
-			status[i].CooldownUntil = time.Unix(0, until)
+			untilTime := time.Unix(0, until)
+			status[i].CooldownUntil = &untilTime
 		}
 	}
 	return status

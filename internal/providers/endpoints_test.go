@@ -94,7 +94,7 @@ func TestEndpointPool_Status(t *testing.T) {
 	if acquired != "a" || status[0].InFlight != 1 {
 		t.Fatalf("a status = %#v after acquiring %q, want one in flight", status[0], acquired)
 	}
-	if status[1].CooldownUntil.IsZero() {
+	if status[1].CooldownUntil == nil || status[1].CooldownUntil.IsZero() {
 		t.Fatalf("b status = %#v, want active cooldown", status[1])
 	}
 
