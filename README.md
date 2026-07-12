@@ -50,6 +50,20 @@ shelf serve
 
 The web UI will be available at http://localhost:8080
 
+### Read-only research MCP
+
+Run a separate, mutation-free MCP boundary over an existing Shelf server:
+
+```bash
+shelf mcp --shelf-url http://127.0.0.1:8080 --port 18081
+```
+
+Defra and other MCP clients connect at `http://127.0.0.1:18081/mcp`. The server
+exposes only bounded book metadata, structure listing, lexical/regex passage
+search, bounded passage reads, and exact quotation validation. Every text result
+includes the current canonical structure digest; processing, repair, raw
+DefraDB, whole-book dumps, and other mutations are intentionally absent.
+
 ### Development
 
 ```bash
