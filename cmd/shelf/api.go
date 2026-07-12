@@ -91,6 +91,7 @@ func init() {
 	booksCmd.AddCommand((&endpoints.RepairPDFTextEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.RepairTocRangeEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.RepairTocEntryEndpoint{}).Command(getServerURL))
+	booksCmd.AddCommand((&endpoints.RepairSamePageAudioEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.ResolveTocEntryEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.ResolveTocEntriesEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.InsertTocEntryEndpoint{}).Command(getServerURL))
