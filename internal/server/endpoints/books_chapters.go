@@ -15,6 +15,7 @@ import (
 type Chapter struct {
 	ID                      string `json:"id"`
 	EntryID                 string `json:"entry_id,omitempty"`
+	ParentID                string `json:"parent_id,omitempty"`
 	Title                   string `json:"title"`
 	Level                   int    `json:"level"`
 	LevelName               string `json:"level_name,omitempty"`
@@ -140,6 +141,7 @@ func (e *GetBookChaptersEndpoint) handler(w http.ResponseWriter, r *http.Request
 		Chapter(filter: {book: {_docID: {_eq: %q}}}) {
 			_docID
 			entry_id
+			parent_id
 			title
 			level
 			level_name
@@ -184,6 +186,7 @@ func (e *GetBookChaptersEndpoint) handler(w http.ResponseWriter, r *http.Request
 			Chapter: Chapter{
 				ID:                      chapterDocID,
 				EntryID:                 getString(cm, "entry_id"),
+				ParentID:                getString(cm, "parent_id"),
 				Title:                   getString(cm, "title"),
 				Level:                   getInt(cm, "level"),
 				LevelName:               getString(cm, "level_name"),
