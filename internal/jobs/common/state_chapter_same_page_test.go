@@ -1,21 +1,19 @@
-package job
+package common
 
 import (
 	"strings"
 	"testing"
-
-	"github.com/jackzampolin/shelf/internal/jobs/common"
 )
 
 func TestCoalesceSharedStartPageAudioKeepsLastIncludedEntry(t *testing.T) {
-	chapters := []*common.ChapterState{
+	chapters := []*ChapterState{
 		{Title: "Chapter Ten", StartPage: 100, AudioInclude: true},
 		{Title: "First Section", StartPage: 100, AudioInclude: true},
 		{Title: "Second Section", StartPage: 100, AudioInclude: true},
 		{Title: "Next Chapter", StartPage: 104, AudioInclude: true},
 	}
 
-	if got := coalesceSharedStartPageAudio(chapters); got != 2 {
+	if got := CoalesceSharedStartPageAudio(chapters); got != 2 {
 		t.Fatalf("excluded = %d, want 2", got)
 	}
 	if chapters[0].AudioInclude || chapters[1].AudioInclude {
@@ -27,16 +25,19 @@ func TestCoalesceSharedStartPageAudioKeepsLastIncludedEntry(t *testing.T) {
 	if !strings.Contains(chapters[0].AudioIncludeReasoning, `under "Second Section"`) {
 		t.Fatalf("reasoning does not identify retained entry: %q", chapters[0].AudioIncludeReasoning)
 	}
+	if got := CoalesceSharedStartPageAudio(chapters); got != 0 {
+		t.Fatalf("second coalescing excluded %d entries, want idempotent no-op", got)
+	}
 }
 
 func TestCoalesceSharedStartPageAudioPreservesModelExclusions(t *testing.T) {
-	chapters := []*common.ChapterState{
+	chapters := []*ChapterState{
 		{Title: "Body Tail", StartPage: 200, AudioInclude: true},
 		{Title: "Index", StartPage: 200, AudioInclude: false, AudioIncludeReasoning: "Index"},
 		{Title: "Back Cover", StartPage: 201, AudioInclude: false, AudioIncludeReasoning: "Cover"},
 	}
 
-	if got := coalesceSharedStartPageAudio(chapters); got != 0 {
+	if got := CoalesceSharedStartPageAudio(chapters); got != 0 {
 		t.Fatalf("excluded = %d, want 0", got)
 	}
 	if !chapters[0].AudioInclude {
@@ -48,13 +49,13 @@ func TestCoalesceSharedStartPageAudioPreservesModelExclusions(t *testing.T) {
 }
 
 func TestCoalesceSharedStartPageAudioLeavesDistinctPagesAlone(t *testing.T) {
-	chapters := []*common.ChapterState{
+	chapters := []*ChapterState{
 		{Title: "One", StartPage: 1, AudioInclude: true},
 		nil,
 		{Title: "Two", StartPage: 2, AudioInclude: true},
 	}
 
-	if got := coalesceSharedStartPageAudio(chapters); got != 0 {
+	if got := CoalesceSharedStartPageAudio(chapters); got != 0 {
 		t.Fatalf("excluded = %d, want 0", got)
 	}
 	if !chapters[0].AudioInclude || !chapters[2].AudioInclude {

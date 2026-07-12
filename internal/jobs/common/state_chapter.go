@@ -108,6 +108,53 @@ type StructureState struct {
 	PolishFailed       int               `json:"polish_failed"`
 }
 
+// CoalesceSharedStartPageAudio resolves an ambiguity inherent in page-level
+// extraction. A run of chapters with the same start page all contains the full
+// OCR text of that page, so at most one may be included without repeating it.
+// The last model-included entry is retained because the chapter skeleton gives
+// it ownership of the continuation through the next distinct page boundary.
+// If the model excluded every entry, the run remains excluded.
+func CoalesceSharedStartPageAudio(chapters []*ChapterState) int {
+	excluded := 0
+	for start := 0; start < len(chapters); {
+		if chapters[start] == nil {
+			start++
+			continue
+		}
+		end := start + 1
+		for end < len(chapters) && chapters[end] != nil && chapters[end].StartPage == chapters[start].StartPage {
+			end++
+		}
+		if end-start < 2 {
+			start = end
+			continue
+		}
+
+		keep := -1
+		for i := start; i < end; i++ {
+			if chapters[i].AudioInclude {
+				keep = i
+			}
+		}
+		if keep >= 0 {
+			for i := start; i < end; i++ {
+				if i == keep || !chapters[i].AudioInclude {
+					continue
+				}
+				chapters[i].AudioInclude = false
+				chapters[i].AudioIncludeReasoning = fmt.Sprintf(
+					"Excluded because %q begins on the same scan page; page-level extraction retains that page once under %q.",
+					chapters[i].Title,
+					chapters[keep].Title,
+				)
+				excluded++
+			}
+		}
+		start = end
+	}
+	return excluded
+}
+
 // GetStructureChapters returns deep copies of all structure chapters.
 // Modifications to returned chapters do not affect BookState.
 // Use UpdateChapter() to save changes back.

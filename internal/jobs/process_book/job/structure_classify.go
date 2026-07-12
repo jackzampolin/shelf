@@ -156,7 +156,7 @@ func (j *Job) HandleStructureClassifyComplete(ctx context.Context, result jobs.W
 	// considered audio-worthy and deterministically exclude the other included
 	// entries in the same-page run.
 	chapters = j.Book.GetStructureChapters()
-	coalesced := coalesceSharedStartPageAudio(chapters)
+	coalesced := common.CoalesceSharedStartPageAudio(chapters)
 	if coalesced > 0 {
 		for _, chapter := range chapters {
 			j.Book.UpdateChapter(chapter)
@@ -176,53 +176,6 @@ func (j *Job) HandleStructureClassifyComplete(ctx context.Context, result jobs.W
 	}
 
 	return j.transitionToStructurePolish(ctx), nil
-}
-
-// coalesceSharedStartPageAudio resolves an ambiguity inherent in page-level
-// extraction. A run of chapters with the same start page all contain the full
-// OCR text of that page, so at most one may be included without repeating it.
-// The last model-included entry is retained because it owns the continuation
-// through the next distinct page boundary. If the model excluded every entry,
-// the run remains excluded.
-func coalesceSharedStartPageAudio(chapters []*common.ChapterState) int {
-	excluded := 0
-	for start := 0; start < len(chapters); {
-		if chapters[start] == nil {
-			start++
-			continue
-		}
-		end := start + 1
-		for end < len(chapters) && chapters[end] != nil && chapters[end].StartPage == chapters[start].StartPage {
-			end++
-		}
-		if end-start < 2 {
-			start = end
-			continue
-		}
-
-		keep := -1
-		for i := start; i < end; i++ {
-			if chapters[i].AudioInclude {
-				keep = i
-			}
-		}
-		if keep >= 0 {
-			for i := start; i < end; i++ {
-				if i == keep || !chapters[i].AudioInclude {
-					continue
-				}
-				chapters[i].AudioInclude = false
-				chapters[i].AudioIncludeReasoning = fmt.Sprintf(
-					"Excluded because %q begins on the same scan page; page-level extraction retains that page once under %q.",
-					chapters[i].Title,
-					chapters[keep].Title,
-				)
-				excluded++
-			}
-		}
-		start = end
-	}
-	return excluded
 }
 
 func (j *Job) retryStructureClassifyChunk(ctx context.Context, info WorkUnitInfo, chunk []*common.ChapterState, cause error) ([]jobs.WorkUnit, error) {

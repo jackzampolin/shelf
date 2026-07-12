@@ -40,6 +40,7 @@ func All(cfg Config) []api.Endpoint {
 		&RepairPDFTextEndpoint{},
 		&RepairTocRangeEndpoint{},
 		&RepairTocEntryEndpoint{},
+		&RepairSamePageAudioEndpoint{},
 		&ResolveTocEntryEndpoint{},
 		&ResolveTocEntriesEndpoint{},
 		&InsertTocEntryEndpoint{},
