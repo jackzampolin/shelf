@@ -51,6 +51,10 @@ func TestResearchToolsPinSearchReadAndValidate(t *testing.T) {
 	if !bookOut.ResearchReady || bookOut.StructureDigest == "" {
 		t.Fatalf("unexpected book output: %#v", bookOut)
 	}
+	const v1Digest = "sha256:704ab7e103614bcbcf2c9e0a2e892ef1278c6676b09cd53a60b76cb1d4f6a03c"
+	if bookOut.StructureDigest != v1Digest {
+		t.Fatalf("structure digest = %q, want frozen v1 digest %q", bookOut.StructureDigest, v1Digest)
+	}
 
 	_, searchOut, err := client.searchPassages(ctx, nil, SearchPassagesInput{
 		BookID: "book-1", Query: "marshall plan", TopK: 5,

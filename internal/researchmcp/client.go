@@ -130,9 +130,9 @@ func makePassage(ch chapter, paragraphID string, sortOrder, startPage int, text 
 	}
 }
 
-func requireCertified(s *snapshot) error {
+func requireResearchReady(s *snapshot) error {
 	if !s.Book.StructureComplete || s.Book.StructureFailed {
-		return fmt.Errorf("book %q is not certified for research: structure_complete=%t structure_failed=%t status=%q", s.Book.ID, s.Book.StructureComplete, s.Book.StructureFailed, s.Book.Status)
+		return fmt.Errorf("book %q is not research-ready: structure_complete=%t structure_failed=%t status=%q", s.Book.ID, s.Book.StructureComplete, s.Book.StructureFailed, s.Book.Status)
 	}
 	if len(s.Passages) == 0 {
 		return fmt.Errorf("book %q has no canonical parsed passages", s.Book.ID)

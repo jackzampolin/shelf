@@ -164,7 +164,7 @@ type ValidateQuoteOutput struct {
 
 func NewServer(client *Client, version string) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "shelf-research", Version: version}, nil)
-	mcp.AddTool(server, &mcp.Tool{Name: "shelf_get_book", Description: "Get certified Shelf book metadata and the current canonical structure digest."}, client.getBook)
+	mcp.AddTool(server, &mcp.Tool{Name: "shelf_get_book", Description: "Get research-ready Shelf book metadata and the current canonical structure digest."}, client.getBook)
 	mcp.AddTool(server, &mcp.Tool{Name: "shelf_list_structure", Description: "List bounded chapter metadata without returning book text."}, client.listStructure)
 	mcp.AddTool(server, &mcp.Tool{Name: "shelf_search_passages", Description: "Search canonical parsed passages using literal text or an RE2 expression and return bounded snippets with stable locators."}, client.searchPassages)
 	mcp.AddTool(server, &mcp.Tool{Name: "shelf_read_passage", Description: "Read a bounded window from one canonical chapter or paragraph."}, client.readPassage)
@@ -183,7 +183,7 @@ func (c *Client) getBook(ctx context.Context, _ *mcp.CallToolRequest, in GetBook
 		SourceFilename: s.Book.SourceFilename, SourceSHA256: s.Book.SourceSHA256,
 		StructureComplete: s.Book.StructureComplete, StructureFailed: s.Book.StructureFailed,
 		StructureDigest: s.StructureDigest, ChapterCount: len(s.Chapters), PassageCount: len(s.Passages),
-		ResearchReady: requireCertified(s) == nil,
+		ResearchReady: requireResearchReady(s) == nil,
 	}, nil
 }
 
@@ -192,7 +192,7 @@ func (c *Client) listStructure(ctx context.Context, _ *mcp.CallToolRequest, in L
 	if err != nil {
 		return nil, ListStructureOutput{}, err
 	}
-	if err := requireCertified(s); err != nil {
+	if err := requireResearchReady(s); err != nil {
 		return nil, ListStructureOutput{}, err
 	}
 	var filtered []chapter
@@ -229,7 +229,7 @@ func (c *Client) searchPassages(ctx context.Context, _ *mcp.CallToolRequest, in 
 	if err != nil {
 		return nil, SearchPassagesOutput{}, err
 	}
-	if err := requireCertified(s); err != nil {
+	if err := requireResearchReady(s); err != nil {
 		return nil, SearchPassagesOutput{}, err
 	}
 	if strings.TrimSpace(in.Query) == "" {
@@ -295,7 +295,7 @@ func (c *Client) readPassage(ctx context.Context, _ *mcp.CallToolRequest, in Rea
 	if err != nil {
 		return nil, ReadPassageOutput{}, err
 	}
-	if err := requireCertified(s); err != nil {
+	if err := requireResearchReady(s); err != nil {
 		return nil, ReadPassageOutput{}, err
 	}
 	p, err := findPassage(s, in.ChapterID, in.ParagraphID)
@@ -334,7 +334,7 @@ func (c *Client) validateQuote(ctx context.Context, _ *mcp.CallToolRequest, in V
 	if err != nil {
 		return nil, ValidateQuoteOutput{}, err
 	}
-	if err := requireCertified(s); err != nil {
+	if err := requireResearchReady(s); err != nil {
 		return nil, ValidateQuoteOutput{}, err
 	}
 	quote := strings.TrimSpace(in.Quote)
