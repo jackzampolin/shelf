@@ -17,17 +17,12 @@ type book struct {
 	StructureFailed   bool   `json:"structure_failed"`
 }
 
-type booksResponse struct {
-	Books []book `json:"books"`
-}
-
 type paragraph struct {
 	ID           string `json:"id"`
 	SortOrder    int    `json:"sort_order"`
 	StartPage    int    `json:"start_page"`
 	RawText      string `json:"raw_text,omitempty"`
 	PolishedText string `json:"polished_text,omitempty"`
-	WordCount    int    `json:"word_count"`
 }
 
 type chapter struct {
@@ -43,9 +38,7 @@ type chapter struct {
 	MatterType     string      `json:"matter_type"`
 	ContentType    string      `json:"content_type,omitempty"`
 	SortOrder      int         `json:"sort_order"`
-	Source         string      `json:"source,omitempty"`
 	WordCount      int         `json:"word_count,omitempty"`
-	PageCount      int         `json:"page_count"`
 	PolishComplete bool        `json:"polish_complete"`
 	PolishFailed   bool        `json:"polish_failed"`
 	PolishedText   string      `json:"polished_text,omitempty"`
@@ -53,11 +46,7 @@ type chapter struct {
 }
 
 type chaptersResponse struct {
-	BookID      string    `json:"book_id"`
-	BookTitle   string    `json:"book_title,omitempty"`
-	TotalPages  int       `json:"total_pages"`
-	Chapters    []chapter `json:"chapters"`
-	HasChapters bool      `json:"has_chapters"`
+	Chapters []chapter `json:"chapters"`
 }
 
 type passage struct {
@@ -65,9 +54,7 @@ type passage struct {
 	ParagraphID  string
 	ChapterTitle string
 	MatterType   string
-	ContentType  string
 	StartPage    int
-	SortOrder    int
 	Text         string
 	ContentHash  string
 }

@@ -2,8 +2,6 @@ package researchmcp
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"regexp"
 	"strings"
@@ -82,7 +80,6 @@ type SearchPassagesInput struct {
 }
 
 type PassageMatch struct {
-	MatchID      string `json:"match_id"`
 	ChapterID    string `json:"chapter_id"`
 	ParagraphID  string `json:"paragraph_id,omitempty"`
 	ChapterTitle string `json:"chapter_title"`
@@ -213,7 +210,7 @@ func (c *Client) listStructure(ctx context.Context, _ *mcp.CallToolRequest, in L
 	if end > len(filtered) {
 		end = len(filtered)
 	}
-	out := ListStructureOutput{BookID: s.Book.ID, SourceSHA256: s.Book.SourceSHA256, StructureDigest: s.StructureDigest, Total: len(filtered), Offset: offset}
+	out := ListStructureOutput{BookID: s.Book.ID, SourceSHA256: s.Book.SourceSHA256, StructureDigest: s.StructureDigest, Total: len(filtered), Offset: offset, Chapters: make([]ChapterView, 0, end-offset)}
 	for _, ch := range filtered[offset:end] {
 		out.Chapters = append(out.Chapters, ChapterView{ChapterID: ch.ID, ParentID: ch.ParentID, EntryID: ch.EntryID, Title: ch.Title, Level: ch.Level, LevelName: ch.LevelName, EntryNumber: ch.EntryNumber, StartPage: ch.StartPage, EndPage: ch.EndPage, MatterType: ch.MatterType, ContentType: ch.ContentType, SortOrder: ch.SortOrder, WordCount: ch.WordCount, Paragraphs: len(ch.Paragraphs), PolishComplete: ch.PolishComplete, PolishFailed: ch.PolishFailed})
 	}
@@ -257,7 +254,7 @@ func (c *Client) searchPassages(ctx context.Context, _ *mcp.CallToolRequest, in 
 	if err != nil {
 		return nil, SearchPassagesOutput{}, err
 	}
-	out := SearchPassagesOutput{BookID: s.Book.ID, SourceSHA256: s.Book.SourceSHA256, StructureDigest: s.StructureDigest, Query: in.Query}
+	out := SearchPassagesOutput{BookID: s.Book.ID, SourceSHA256: s.Book.SourceSHA256, StructureDigest: s.StructureDigest, Query: in.Query, Matches: make([]PassageMatch, 0, topK)}
 	for _, p := range s.Passages {
 		if len(chapterScope) > 0 && !chapterScope[p.ChapterID] {
 			continue
@@ -284,7 +281,7 @@ func (c *Client) searchPassages(ctx context.Context, _ *mcp.CallToolRequest, in 
 					ss = 0
 				}
 			}
-			out.Matches = append(out.Matches, PassageMatch{MatchID: matchID(s, p, loc[0], loc[1]), ChapterID: p.ChapterID, ParagraphID: p.ParagraphID, ChapterTitle: p.ChapterTitle, MatterType: p.MatterType, Page: p.StartPage, StartChar: loc[0], EndChar: loc[1], SnippetStart: ss, SnippetEnd: se, Snippet: string(runes[ss:se]), ContentHash: p.ContentHash})
+			out.Matches = append(out.Matches, PassageMatch{ChapterID: p.ChapterID, ParagraphID: p.ParagraphID, ChapterTitle: p.ChapterTitle, MatterType: p.MatterType, Page: p.StartPage, StartChar: loc[0], EndChar: loc[1], SnippetStart: ss, SnippetEnd: se, Snippet: string(runes[ss:se]), ContentHash: p.ContentHash})
 		}
 	}
 	return nil, out, nil
@@ -342,7 +339,7 @@ func (c *Client) validateQuote(ctx context.Context, _ *mcp.CallToolRequest, in V
 		return nil, ValidateQuoteOutput{}, fmt.Errorf("quote is required")
 	}
 	versionMatch := (in.ExpectedSourceSHA256 == "" || in.ExpectedSourceSHA256 == s.Book.SourceSHA256) && (in.ExpectedStructureDigest == "" || in.ExpectedStructureDigest == s.StructureDigest)
-	out := ValidateQuoteOutput{BookID: s.Book.ID, SourceSHA256: s.Book.SourceSHA256, StructureDigest: s.StructureDigest, VersionMatch: versionMatch}
+	out := ValidateQuoteOutput{BookID: s.Book.ID, SourceSHA256: s.Book.SourceSHA256, StructureDigest: s.StructureDigest, VersionMatch: versionMatch, Occurrences: make([]QuoteOccurrence, 0, 1)}
 	if !versionMatch {
 		out.Message = "source version mismatch; refresh the assignment before citing"
 		return nil, out, nil
@@ -429,10 +426,6 @@ func compileMatcher(query string, isRegex, caseSensitive bool) (func(string) [][
 	}, nil
 }
 
-func matchID(s *snapshot, p passage, start, end int) string {
-	sum := sha256.Sum256([]byte(strings.Join([]string{s.Book.ID, s.Book.SourceSHA256, s.StructureDigest, p.ChapterID, p.ParagraphID, fmt.Sprint(start), fmt.Sprint(end)}, "\x00")))
-	return "match_" + hex.EncodeToString(sum[:12])
-}
 func clamp(v, lo, hi int) int {
 	if v < lo {
 		return lo

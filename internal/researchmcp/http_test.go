@@ -13,18 +13,20 @@ import (
 func fakeShelf(t *testing.T) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/books", func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(booksResponse{Books: []book{{
+	mux.HandleFunc("/api/books", func(http.ResponseWriter, *http.Request) {
+		t.Fatal("research MCP must use the existing point book endpoint")
+	})
+	mux.HandleFunc("/api/books/book-1", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(book{
 			ID: "book-1", Title: "A History", Author: "A. Historian", Status: "complete",
 			SourceSHA256: "source-abc", StructureComplete: true,
-		}}})
+		})
 	})
 	mux.HandleFunc("/api/books/book-1/chapters", func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Query().Get("include_paragraphs"); got != "true" {
 			t.Fatalf("include_paragraphs = %q", got)
 		}
 		_ = json.NewEncoder(w).Encode(chaptersResponse{
-			BookID: "book-1", HasChapters: true,
 			Chapters: []chapter{{
 				ID: "chapter-1", Title: "Origins", MatterType: "body", SortOrder: 1,
 				StartPage: 10, EndPage: 12, PolishComplete: true,
@@ -64,6 +66,10 @@ func TestResearchToolsPinSearchReadAndValidate(t *testing.T) {
 	}
 	if len(searchOut.Matches) != 1 || searchOut.Matches[0].ParagraphID != "paragraph-1" {
 		t.Fatalf("unexpected matches: %#v", searchOut.Matches)
+	}
+	_, emptySearch, err := client.searchPassages(ctx, nil, SearchPassagesInput{BookID: "book-1", Query: "absent"})
+	if err != nil || emptySearch.Matches == nil {
+		t.Fatalf("empty matches must encode as an empty array: %#v, %v", emptySearch.Matches, err)
 	}
 
 	match := searchOut.Matches[0]

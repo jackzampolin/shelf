@@ -51,19 +51,13 @@ func (c *Client) loadSnapshot(ctx context.Context, bookID string) (*snapshot, er
 	if strings.TrimSpace(bookID) == "" {
 		return nil, fmt.Errorf("book_id is required")
 	}
-	var books booksResponse
-	if err := c.get(ctx, "/api/books", &books); err != nil {
+	var selected book
+	bookPath := "/api/books/" + url.PathEscape(bookID)
+	if err := c.get(ctx, bookPath, &selected); err != nil {
 		return nil, err
 	}
-	var selected *book
-	for i := range books.Books {
-		if books.Books[i].ID == bookID {
-			selected = &books.Books[i]
-			break
-		}
-	}
-	if selected == nil {
-		return nil, fmt.Errorf("book %q not found", bookID)
+	if selected.ID != bookID {
+		return nil, fmt.Errorf("Shelf returned book %q for requested book %q", selected.ID, bookID)
 	}
 
 	var chapters chaptersResponse
@@ -88,7 +82,7 @@ func (c *Client) loadSnapshot(ctx context.Context, bookID string) (*snapshot, er
 			if text == "" {
 				continue
 			}
-			p := makePassage(ch, "", ch.SortOrder, ch.StartPage, text)
+			p := makePassage(ch, "", ch.StartPage, text)
 			passages = append(passages, p)
 			fmt.Fprintf(h, "passage\x00%s\x00%s\x00%s\x00", p.ChapterID, p.ParagraphID, p.Text)
 			continue
@@ -101,30 +95,28 @@ func (c *Client) loadSnapshot(ctx context.Context, bookID string) (*snapshot, er
 			if text == "" {
 				continue
 			}
-			p := makePassage(ch, para.ID, para.SortOrder, para.StartPage, text)
+			p := makePassage(ch, para.ID, para.StartPage, text)
 			passages = append(passages, p)
 			fmt.Fprintf(h, "passage\x00%s\x00%s\x00%s\x00", p.ChapterID, p.ParagraphID, p.Text)
 		}
 	}
 
 	return &snapshot{
-		Book:            *selected,
+		Book:            selected,
 		Chapters:        chapters.Chapters,
 		Passages:        passages,
 		StructureDigest: "sha256:" + hex.EncodeToString(h.Sum(nil)),
 	}, nil
 }
 
-func makePassage(ch chapter, paragraphID string, sortOrder, startPage int, text string) passage {
+func makePassage(ch chapter, paragraphID string, startPage int, text string) passage {
 	sum := sha256.Sum256([]byte(text))
 	return passage{
 		ChapterID:    ch.ID,
 		ParagraphID:  paragraphID,
 		ChapterTitle: ch.Title,
 		MatterType:   ch.MatterType,
-		ContentType:  ch.ContentType,
 		StartPage:    startPage,
-		SortOrder:    sortOrder,
 		Text:         text,
 		ContentHash:  "sha256:" + hex.EncodeToString(sum[:]),
 	}
