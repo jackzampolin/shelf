@@ -11,6 +11,11 @@ type ToC {
     end_page: Int
     structure_summary: JSON
 
+    # Durable provenance for a human/agent verified finder override.
+    finder_override: Boolean
+    finder_override_reason: String
+    finder_override_at: DateTime
+
     # Processing state
     finder_started: Boolean
     finder_complete: Boolean

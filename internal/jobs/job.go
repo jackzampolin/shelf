@@ -43,6 +43,7 @@ type WorkUnit struct {
 	Provider string       // Specific provider name, or "" for any of this type
 	JobID    string       // Which job this belongs to
 	Priority int          // Higher = processed first
+	BookSeq  int64        // Earlier job created_at unix nanos ranks first; 0 sorts after real sequences
 
 	// Request data (one of these will be set based on Type)
 	ChatRequest *providers.ChatRequest
@@ -183,17 +184,40 @@ type Job interface {
 type Status string
 
 const (
-	StatusQueued    Status = "queued"
-	StatusRunning   Status = "running"
-	StatusCompleted Status = "completed"
-	StatusFailed    Status = "failed"
-	StatusCancelled Status = "cancelled"
+	StatusQueued          Status = "queued"
+	StatusRunning         Status = "running"
+	StatusWaitingProvider Status = "waiting_provider"
+	StatusCompleted       Status = "completed"
+	StatusFailed          Status = "failed"
+	StatusCancelled       Status = "cancelled"
 )
 
 // BookIDProvider is implemented by jobs that process a specific book.
 // Used by Scheduler.GetJobByBookID to find active jobs.
 type BookIDProvider interface {
 	BookID() string
+}
+
+// JobMetadataProvider is implemented by jobs that need additional durable
+// metadata to reconstruct the same execution plan after a process restart.
+// Values are persisted with the Job record and passed back to its factory.
+type JobMetadataProvider interface {
+	JobMetadata() map[string]any
+}
+
+// BookFailer is an optional interface for jobs that can mark their book
+// terminally failed with a reason. The scheduler calls this when a job dies so
+// the book does not remain stuck in "processing".
+type BookFailer interface {
+	FailBook(ctx context.Context, reason string)
+}
+
+// NoWorkFailureProvider is implemented by jobs that can explain why a phase
+// drained its final work unit without reaching Done. The scheduler uses this
+// detail when it converts that otherwise-stranded state into an actionable
+// failed job record.
+type NoWorkFailureProvider interface {
+	NoWorkFailure() string
 }
 
 // LiveStatusProvider is implemented by jobs that can provide real-time
@@ -208,6 +232,7 @@ type LiveStatusProvider interface {
 type LiveStatus struct {
 	TotalPages        int
 	OcrComplete       int
+	OcrQuarantined    int
 	MetadataComplete  bool
 	TocFound          bool
 	TocExtracted      bool
@@ -227,15 +252,18 @@ type LiveStatus struct {
 // Record represents a job record stored in DefraDB.
 // This maps to the Job schema.
 type Record struct {
-	ID          string         `json:"_docID,omitempty"`
-	JobType     string         `json:"job_type"`
-	BookID      string         `json:"book_id,omitempty"`
-	Status      Status         `json:"status"`
-	CreatedAt   time.Time      `json:"created_at"`
-	StartedAt   *time.Time     `json:"started_at,omitempty"`
-	CompletedAt *time.Time     `json:"completed_at,omitempty"`
-	Error       string         `json:"error,omitempty"`
-	Metadata    map[string]any `json:"metadata,omitempty"`
+	ID             string         `json:"_docID,omitempty"`
+	JobType        string         `json:"job_type"`
+	BookID         string         `json:"book_id,omitempty"`
+	Status         Status         `json:"status"`
+	StatusReason   string         `json:"status_reason,omitempty"`
+	CreatedAt      time.Time      `json:"created_at"`
+	StartedAt      *time.Time     `json:"started_at,omitempty"`
+	CompletedAt    *time.Time     `json:"completed_at,omitempty"`
+	HeartbeatAt    *time.Time     `json:"heartbeat_at,omitempty"`
+	LastProgressAt *time.Time     `json:"last_progress_at,omitempty"`
+	Error          string         `json:"error,omitempty"`
+	Metadata       map[string]any `json:"metadata,omitempty"`
 }
 
 // Duration returns the job duration if started and completed.

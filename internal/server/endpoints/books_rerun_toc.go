@@ -112,7 +112,7 @@ func (e *RerunTocEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 
 	// Count pages with ocr_complete
 	pageQuery := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, ocr_complete: {_eq: true}}) {
+		Page(filter: {_bookID: {_eq: "%s"}, ocr_complete: {_eq: true}}) {
 			_docID
 		}
 	}`, bookID)
@@ -183,7 +183,7 @@ func (e *RerunTocEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 
 		// Delete existing ToC entries
 		entriesQuery := fmt.Sprintf(`{
-			TocEntry(filter: {toc_id: {_eq: "%s"}}) {
+			TocEntry(filter: {_tocID: {_eq: "%s"}}) {
 				_docID
 			}
 		}`, tocDocID)

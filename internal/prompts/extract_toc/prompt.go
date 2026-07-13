@@ -84,13 +84,3 @@ type ToCPage struct {
 	PageNum int    `json:"page_num"`
 	OCRText string `json:"ocr_text"`
 }
-
-// BuildUserPrompt builds the user prompt for ToC extraction.
-// Deprecated: Use UserPrompt(UserPromptData) instead.
-func BuildUserPrompt(tocPages []ToCPage, structureSummary *StructureSummary) string {
-	return UserPrompt(UserPromptData{
-		TocPages:         tocPages,
-		TotalPages:       len(tocPages),
-		StructureSummary: structureSummary,
-	})
-}

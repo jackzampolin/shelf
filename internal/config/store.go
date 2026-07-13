@@ -273,7 +273,7 @@ func (s *DefraStore) parseConfigEntries(data map[string]any) ([]Entry, error) {
 
 // StoreToProviderRegistryConfig builds a ProviderRegistryConfig from the Store.
 // It reads all config entries and constructs the provider configuration,
-// resolving ${ENV_VAR} references in API keys.
+// resolving ${ENV_VAR} references in API keys and base URLs.
 func StoreToProviderRegistryConfig(ctx context.Context, store Store) (providers.RegistryConfig, error) {
 	cfg := providers.RegistryConfig{
 		OCRProviders: make(map[string]providers.OCRProviderConfig),
@@ -289,11 +289,19 @@ func StoreToProviderRegistryConfig(ctx context.Context, store Store) (providers.
 	ocrProviders := extractProviders(all, "providers.ocr.")
 	for name, fields := range ocrProviders {
 		cfg.OCRProviders[name] = providers.OCRProviderConfig{
-			Type:          getString(fields, "type"),
-			APIKey:        ResolveEnvVars(getString(fields, "api_key")),
-			RateLimit:     getFloat(fields, "rate_limit"),
-			Enabled:       getBool(fields, "enabled"),
-			IncludeImages: getBool(fields, "include_images"),
+			Type:                  getString(fields, "type"),
+			APIKey:                ResolveEnvVars(getString(fields, "api_key")),
+			RateLimit:             getFloat(fields, "rate_limit"),
+			Enabled:               getBool(fields, "enabled"),
+			IncludeImages:         getBool(fields, "include_images"),
+			IncludeHeadersFooters: getBool(fields, "include_headers_footers"),
+			MaxOutputTokens:       getInt(fields, "max_output_tokens"),
+			TimeoutSeconds:        getInt(fields, "timeout_seconds"),
+			Temperature:           getFloat(fields, "temperature"),
+			TopP:                  getFloat(fields, "top_p"),
+			BaseURLs:              resolveEnvVarsSlice(getStringSlice(fields, "base_urls")),
+			MaxConcurrency:        getInt(fields, "max_concurrency"),
+			MaxRetries:            getInt(fields, "max_retries"),
 		}
 	}
 
@@ -301,11 +309,15 @@ func StoreToProviderRegistryConfig(ctx context.Context, store Store) (providers.
 	llmProviders := extractProviders(all, "providers.llm.")
 	for name, fields := range llmProviders {
 		cfg.LLMProviders[name] = providers.LLMProviderConfig{
-			Type:      getString(fields, "type"),
-			Model:     getString(fields, "model"),
-			APIKey:    ResolveEnvVars(getString(fields, "api_key")),
-			RateLimit: getFloat(fields, "rate_limit"),
-			Enabled:   getBool(fields, "enabled"),
+			Type:           getString(fields, "type"),
+			Model:          getString(fields, "model"),
+			APIKey:         ResolveEnvVars(getString(fields, "api_key")),
+			RateLimit:      getFloat(fields, "rate_limit"),
+			Enabled:        getBool(fields, "enabled"),
+			BaseURLs:       resolveEnvVarsSlice(getStringSlice(fields, "base_urls")),
+			MaxConcurrency: getInt(fields, "max_concurrency"),
+			TimeoutSeconds: getInt(fields, "timeout_seconds"),
+			MaxRetries:     getInt(fields, "max_retries"),
 		}
 	}
 
@@ -361,9 +373,38 @@ func getFloat(m map[string]any, key string) float64 {
 	return 0
 }
 
+func getInt(m map[string]any, key string) int {
+	switch v := m[key].(type) {
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	}
+	return 0
+}
+
 func getBool(m map[string]any, key string) bool {
 	if v, ok := m[key].(bool); ok {
 		return v
 	}
 	return false
+}
+
+func getStringSlice(m map[string]any, key string) []string {
+	switch v := m[key].(type) {
+	case []string:
+		return v
+	case []any:
+		result := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				result = append(result, s)
+			}
+		}
+		return result
+	default:
+		return nil
+	}
 }

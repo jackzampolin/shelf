@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -65,8 +66,13 @@ func TestGet(t *testing.T) {
 func TestInitialize(t *testing.T) {
 	t.Run("successful initialization", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/api/v0/schema" {
+			if r.URL.Path == "/api/v0/collections" && r.Method == http.MethodPost {
 				w.WriteHeader(http.StatusOK)
+				return
+			}
+			if r.URL.Path == "/api/v0/collections" && r.Method == http.MethodGet {
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(`[{"Name":"Job","Fields":[{"Name":"status_reason","Typ":1},{"Name":"heartbeat_at","Typ":1},{"Name":"last_progress_at","Typ":1}]},{"Name":"Book","Fields":[{"Name":"source_format","Typ":1},{"Name":"source_filename","Typ":1},{"Name":"source_sha256","Typ":1},{"Name":"source_identifier","Typ":1},{"Name":"source_imported_at","Typ":1}]},{"Name":"Page","Fields":[{"Name":"ocr_quarantined","Typ":1},{"Name":"ocr_quarantine_reason","Typ":1}]},{"Name":"ToC","Fields":[{"Name":"finder_override","Typ":1},{"Name":"finder_override_reason","Typ":1},{"Name":"finder_override_at","Typ":1}]},{"Name":"TocEntry","Fields":[{"Name":"link_retries","Typ":1},{"Name":"link_failed","Typ":1},{"Name":"link_failure_reason","Typ":1},{"Name":"link_failed_at","Typ":1},{"Name":"link_repair_reason","Typ":1},{"Name":"link_repaired_at","Typ":1},{"Name":"link_excluded","Typ":1},{"Name":"link_exclusion_reason","Typ":1},{"Name":"link_excluded_at","Typ":1}]}]`))
 				return
 			}
 			t.Errorf("unexpected path: %s", r.URL.Path)
@@ -83,10 +89,22 @@ func TestInitialize(t *testing.T) {
 	})
 
 	t.Run("handles already exists error", func(t *testing.T) {
+		var patchBody string
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/api/v0/schema" {
+			if r.URL.Path == "/api/v0/collections" && r.Method == http.MethodPost {
 				w.WriteHeader(http.StatusBadRequest)
 				w.Write([]byte("collection already exists. Name: Job"))
+				return
+			}
+			if r.URL.Path == "/api/v0/collections" && r.Method == http.MethodGet {
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(`[{"Name":"Job","Fields":[{"Name":"status"}]},{"Name":"Book","Fields":[{"Name":"status"}]},{"Name":"Page","Fields":[{"Name":"ocr_complete"}]},{"Name":"ToC","Fields":[{"Name":"toc_found"}]},{"Name":"TocEntry","Fields":[{"Name":"title"}]}]`))
+				return
+			}
+			if r.URL.Path == "/api/v0/collections" && r.Method == http.MethodPatch {
+				body, _ := io.ReadAll(r.Body)
+				patchBody = string(body)
+				w.WriteHeader(http.StatusOK)
 				return
 			}
 		}))
@@ -100,11 +118,45 @@ func TestInitialize(t *testing.T) {
 		if err != nil {
 			t.Errorf("Initialize() should handle already exists, got error = %v", err)
 		}
+		for _, field := range []string{"status_reason", "heartbeat_at", "last_progress_at", "source_format", "source_filename", "source_sha256", "source_identifier", "source_imported_at", "ocr_quarantined", "ocr_quarantine_reason", "finder_override", "finder_override_reason", "finder_override_at", "link_retries", "link_failed", "link_failure_reason", "link_failed_at", "link_repair_reason", "link_repaired_at", "link_excluded", "link_exclusion_reason", "link_excluded_at"} {
+			if !strings.Contains(patchBody, field) {
+				t.Errorf("additive patch missing %s: %s", field, patchBody)
+			}
+		}
+		if !strings.Contains(patchBody, `\"Typ\":1`) {
+			t.Errorf("additive patch does not assign a CRDT type: %s", patchBody)
+		}
+	})
+
+	t.Run("repairs additive field missing CRDT type", func(t *testing.T) {
+		var patchBody string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodPost:
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte("collection already exists"))
+			case http.MethodGet:
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(`[{"Name":"Job","Fields":[{"Name":"status_reason","Typ":1},{"Name":"heartbeat_at","Typ":1},{"Name":"last_progress_at","Typ":1}]},{"Name":"Book","Fields":[{"Name":"source_format","Typ":1},{"Name":"source_filename","Typ":1},{"Name":"source_sha256","Typ":1},{"Name":"source_identifier","Typ":1},{"Name":"source_imported_at","Typ":1}]},{"Name":"Page","Fields":[{"Name":"ocr_quarantined","Typ":0},{"Name":"ocr_quarantine_reason","Typ":0}]},{"Name":"ToC","Fields":[{"Name":"finder_override","Typ":1},{"Name":"finder_override_reason","Typ":1},{"Name":"finder_override_at","Typ":1}]},{"Name":"TocEntry","Fields":[{"Name":"link_retries","Typ":1},{"Name":"link_failed","Typ":1},{"Name":"link_failure_reason","Typ":1},{"Name":"link_failed_at","Typ":1},{"Name":"link_repair_reason","Typ":1},{"Name":"link_repaired_at","Typ":1}]}]`))
+			case http.MethodPatch:
+				body, _ := io.ReadAll(r.Body)
+				patchBody = string(body)
+				w.WriteHeader(http.StatusOK)
+			}
+		}))
+		defer server.Close()
+
+		if err := Initialize(context.Background(), defra.NewClient(server.URL), slog.Default()); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(patchBody, `remove`) || !strings.Contains(patchBody, `/Page/Fields/1`) || !strings.Contains(patchBody, `/Page/Fields/0`) || !strings.Contains(patchBody, `\"Typ\":1`) {
+			t.Fatalf("missing CRDT type repair operations: %s", patchBody)
+		}
 	})
 
 	t.Run("fails on other errors", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/api/v0/schema" {
+			if r.URL.Path == "/api/v0/collections" {
 				w.WriteHeader(http.StatusBadRequest)
 				w.Write([]byte("invalid schema syntax"))
 				return

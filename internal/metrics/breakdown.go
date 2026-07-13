@@ -70,4 +70,3 @@ func (q *Query) MetricForOutput(ctx context.Context, docID, cid string) (*Metric
 	}
 	return &metrics[0], nil
 }
-

@@ -2,6 +2,7 @@ package job
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
@@ -17,6 +18,12 @@ func (j *Job) GeneratePageWorkUnits(ctx context.Context, pageNum int, state *Pag
 
 	// Check if OCR is needed (only if enabled)
 	if j.Book.EnableOCR {
+		if state.IsOCRComplete() {
+			return units
+		}
+		if quarantined, _ := state.OCRQuarantine(); quarantined {
+			return units
+		}
 		for _, provider := range j.Book.OcrProviders {
 			if !state.OcrComplete(provider) {
 				unit := j.CreateOcrWorkUnit(ctx, pageNum, provider)
@@ -43,15 +50,14 @@ func (j *Job) GeneratePageWorkUnits(ctx context.Context, pageNum int, state *Pag
 // Must be called with j.mu held.
 // Respects pipeline stage toggles for each operation.
 func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
-	ocrCount := j.CountOcrPages()
-
 	var units []jobs.WorkUnit
 
-	// Start metadata extraction after threshold pages have OCR complete
-	// Metadata only needs OCR text, so it can start early
+	// Metadata reads the first N OCR pages. Require that exact prefix rather than
+	// any N pages so a targeted repair in front matter cannot be silently skipped
+	// in favor of later pages while the repaired OCR is still queued.
 	// IMPORTANT: Call Start() before creating work unit to prevent duplicate agents
 	// if work unit creation has side effects (like creating agent logs)
-	if j.Book.EnableMetadata && ocrCount >= OcrThresholdForMetadata && j.Book.MetadataCanStart() {
+	if j.Book.EnableMetadata && j.Book.ConsecutivePagesComplete(OcrThresholdForMetadata) && j.Book.MetadataCanStart() {
 		if err := j.Book.MetadataStart(); err == nil {
 			unit := j.CreateMetadataWorkUnit(ctx)
 			if unit != nil {
@@ -174,8 +180,10 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 }
 
 // CheckCompletion checks if the entire job is complete.
-// A job is complete when all enabled pages stages are done AND enabled book-level operations
-// are either complete or permanently failed.
+// A job is complete when all enabled page stages and every required enabled
+// book-level operation completed successfully. A permanently failed operation
+// remains nonterminal here so the scheduler's zero-work invariant marks the
+// job and book failed instead of laundering degraded output into "complete".
 // Disabled stages are skipped in the completion check.
 func (j *Job) CheckCompletion(ctx context.Context) {
 	// All pages must complete OCR (the only page-level stage)
@@ -185,13 +193,13 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 		}
 	}
 
-	// Metadata must be complete or permanently failed (if enabled)
-	if j.Book.EnableMetadata && !j.Book.MetadataIsDone() {
+	// Metadata must complete successfully (if enabled).
+	if j.Book.EnableMetadata && !j.Book.MetadataIsComplete() {
 		return
 	}
 
-	// ToC finder must be complete or permanently failed (if enabled)
-	if j.Book.EnableTocFinder && !j.Book.TocFinderIsDone() {
+	// ToC finder must complete successfully (if enabled).
+	if j.Book.EnableTocFinder && !j.Book.TocFinderIsComplete() {
 		return
 	}
 
@@ -206,7 +214,7 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 			if logger != nil {
 				logger.Debug("ToC extract enabled but finder disabled - extraction skipped")
 			}
-		} else if j.Book.GetTocFound() && !j.Book.TocExtractIsDone() {
+		} else if j.Book.GetTocFound() && !j.Book.TocExtractIsComplete() {
 			return
 		}
 	}
@@ -219,7 +227,7 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 			if logger != nil {
 				logger.Debug("ToC link enabled but extract disabled - linking skipped")
 			}
-		} else if j.Book.TocExtractIsDone() && !j.Book.TocLinkIsDone() {
+		} else if j.Book.TocExtractIsComplete() && !j.Book.TocLinkIsComplete() {
 			return
 		}
 	}
@@ -231,7 +239,7 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 			if logger != nil {
 				logger.Debug("ToC finalize enabled but link disabled - finalize skipped")
 			}
-		} else if j.Book.TocLinkIsComplete() && !j.Book.TocFinalizeIsDone() {
+		} else if j.Book.TocLinkIsComplete() && !j.Book.TocFinalizeIsComplete() {
 			return
 		}
 	}
@@ -243,15 +251,31 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 			if logger != nil {
 				logger.Debug("Structure enabled but finalize disabled - structure skipped")
 			}
-		} else if j.Book.TocFinalizeIsComplete() && !j.Book.StructureIsDone() {
+		} else if j.Book.TocFinalizeIsComplete() && !j.Book.StructureIsComplete() {
 			return
 		}
 	}
 
 	j.IsDone = true
 
-	// Persist the complete status to DefraDB
-	j.PersistBookStatus(ctx, BookStatusComplete)
+	// Persist the terminal status synchronously. A dropped async write
+	// here would leave the book stuck in "processing" with only a completed job
+	// record, which the reconciler cannot rescue (it flags failed records only).
+	// The sync write also clears any stale status_reason from a prior failure.
+	status := BookStatusComplete
+	reason := ""
+	if pages := j.Book.QuarantinedOCRPages(); len(pages) > 0 {
+		status = BookStatusDegraded
+		reason = fmt.Sprintf(
+			"completed with %d quarantined OCR page(s); page=%d remains degraded; repair before certification",
+			len(pages), pages[0],
+		)
+	}
+	if _, err := j.Book.PersistBookStatusWithReason(ctx, string(status), reason); err != nil {
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Warn("failed to persist terminal status", "book_id", j.Book.BookID, "status", status, "error", err)
+		}
+	}
 }
 
 // PersistBookStatus persists book status to DefraDB (async - memory is authoritative).

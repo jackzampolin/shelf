@@ -48,7 +48,7 @@ func CreateWorkUnit(input Input) *jobs.WorkUnit {
 			},
 			ResponseFormat: buildResponseFormat(),
 			Temperature:    0.1,
-			MaxTokens:      8192, // ToC can be lengthy
+			MaxTokens:      32768, // Multi-page scholarly ToCs can contain 80+ chapters and nested sections.
 		},
 	}
 }

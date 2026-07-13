@@ -58,7 +58,11 @@ definitions:
         type: string
       error:
         type: string
+      heartbeat_at:
+        type: string
       job_type:
+        type: string
+      last_progress_at:
         type: string
       metadata:
         additionalProperties: {}
@@ -67,11 +71,14 @@ definitions:
         type: string
       status:
         $ref: '#/definitions/github_com_jackzampolin_shelf_internal_jobs.Status'
+      status_reason:
+        type: string
     type: object
   github_com_jackzampolin_shelf_internal_jobs.Status:
     enum:
     - queued
     - running
+    - waiting_provider
     - completed
     - failed
     - cancelled
@@ -79,17 +86,32 @@ definitions:
     x-enum-varnames:
     - StatusQueued
     - StatusRunning
+    - StatusWaitingProvider
     - StatusCompleted
     - StatusFailed
     - StatusCancelled
   github_com_jackzampolin_shelf_internal_jobs.WorkerStatusInfo:
     properties:
+      health:
+        type: string
+      in_flight:
+        type: integer
+      job_in_flight:
+        type: integer
+      job_parked:
+        type: integer
+      job_queued:
+        type: integer
+      parked_units:
+        type: integer
       queue_depth:
         type: integer
       rate_limiter:
         $ref: '#/definitions/github_com_jackzampolin_shelf_internal_jobs.RateLimiterStatus'
       type:
         type: string
+      workers:
+        type: integer
     type: object
   github_com_jackzampolin_shelf_internal_llmcall.Call:
     properties:
@@ -329,6 +351,8 @@ definitions:
         items:
           $ref: '#/definitions/internal_server_endpoints.ChapterAudioStatus'
         type: array
+      error_message:
+        type: string
       format:
         type: string
       provider:
@@ -352,12 +376,18 @@ definitions:
         type: string
       id:
         type: string
+      metadata_complete:
+        type: boolean
       page_count:
         type: integer
-      page_pattern_analysis_json:
-        type: string
       status:
         type: string
+      status_reason:
+        type: string
+      structure_complete:
+        type: boolean
+      structure_failed:
+        type: boolean
       title:
         type: string
     type: object
@@ -638,7 +668,10 @@ definitions:
   internal_server_endpoints.GenerateAudioRequest:
     properties:
       format:
-        description: 'Optional: output format (mp3, wav)'
+        description: 'Optional: output format (mp3)'
+        type: string
+      provider:
+        description: 'Optional: provider override ("elevenlabs" or "openai")'
         type: string
       voice:
         description: 'Optional: voice ID'
@@ -669,7 +702,11 @@ definitions:
         type: string
       error:
         type: string
+      heartbeat_at:
+        type: string
       job_type:
+        type: string
+      last_progress_at:
         type: string
       live_status:
         additionalProperties:
@@ -689,6 +726,8 @@ definitions:
         type: string
       status:
         $ref: '#/definitions/github_com_jackzampolin_shelf_internal_jobs.Status'
+      status_reason:
+        type: string
       worker_status:
         additionalProperties:
           $ref: '#/definitions/github_com_jackzampolin_shelf_internal_jobs.WorkerStatusInfo'
@@ -722,6 +761,8 @@ definitions:
         items:
           type: string
         type: array
+      stitch:
+        type: boolean
       title:
         type: string
     type: object
@@ -910,6 +951,15 @@ definitions:
       reasoning:
         type: string
     type: object
+  internal_server_endpoints.PoolHealthInfo:
+    properties:
+      health:
+        type: string
+      parked_units:
+        type: integer
+      queue_depth:
+        type: integer
+    type: object
   internal_server_endpoints.PromptResponse:
     properties:
       description:
@@ -1037,6 +1087,10 @@ definitions:
     properties:
       defra:
         $ref: '#/definitions/internal_server_endpoints.DefraStatus'
+      pools:
+        additionalProperties:
+          $ref: '#/definitions/internal_server_endpoints.PoolHealthInfo'
+        type: object
       providers:
         $ref: '#/definitions/internal_server_endpoints.ProvidersStatus'
       server:
@@ -1100,6 +1154,10 @@ definitions:
     type: object
   internal_server_endpoints.TTSConfigResponse:
     properties:
+      available_providers:
+        items:
+          type: string
+        type: array
       default_format:
         type: string
       default_voice:
@@ -1611,6 +1669,10 @@ paths:
             $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
         "404":
           description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "409":
+          description: Conflict
           schema:
             $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
         "500":
@@ -2305,7 +2367,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: Start processing job (OCR, blend, label) for a book
+      description: Start processing job for a book
       parameters:
       - description: Book ID
         in: path
@@ -2869,6 +2931,11 @@ paths:
   /api/tts/config:
     get:
       description: Get available TTS voices, models, and formats
+      parameters:
+      - description: TTS provider override
+        in: query
+        name: provider
+        type: string
       produces:
       - application/json
       responses:
@@ -2876,6 +2943,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/internal_server_endpoints.TTSConfigResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:

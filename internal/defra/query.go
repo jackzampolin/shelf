@@ -1,7 +1,6 @@
 package defra
 
 import (
-	"context"
 	"fmt"
 	"regexp"
 	"strings"
@@ -26,34 +25,12 @@ func ValidateID(id string) error {
 	return nil
 }
 
-// SanitizeID validates an ID and returns it if safe, or panics if not.
-// Use this for IDs that should always be valid (internal system IDs).
-// For user-provided IDs, use ValidateID and handle the error.
-func SanitizeID(id string) string {
-	if err := ValidateID(id); err != nil {
-		panic(fmt.Sprintf("invalid ID %q: %v", id, err))
-	}
-	return id
-}
-
-// SafeID validates an ID and returns it if safe, or returns empty string and error.
-// This is the preferred function for validating IDs before use in queries.
-func SafeID(id string) (string, error) {
-	if err := ValidateID(id); err != nil {
-		return "", err
-	}
-	return id, nil
-}
-
 // QueryBuilder helps construct safe, parameterized GraphQL queries.
 // It uses GraphQL variables to prevent injection attacks.
 type QueryBuilder struct {
 	collection string
 	filters    []filterDef
 	fields     []string
-	order      string
-	limit      int
-	offset     int
 	cid        string
 	cidVarName string
 	cidVarType string
@@ -84,10 +61,21 @@ func (q *QueryBuilder) Filter(field string, value any) *QueryBuilder {
 		field:   field,
 		op:      "_eq",
 		varName: varName,
-		varType: inferGraphQLType(value),
+		varType: filterVarType(field, value),
 		value:   value,
 	})
 	return q
+}
+
+// filterVarType returns the GraphQL variable type for an equality filter on a
+// field. DefraDB v1.0 types relation foreign-key fields (_docID and the
+// auto-generated _<rel>ID fields like _bookID, _tocID, _actual_pageID) as ID,
+// not String — a String variable in an ID position is a query type error.
+func filterVarType(field string, value any) string {
+	if field == "_docID" || (strings.HasPrefix(field, "_") && strings.HasSuffix(field, "ID")) {
+		return "ID"
+	}
+	return inferGraphQLType(value)
 }
 
 // WithCID scopes the query to a specific commit CID (historical version).
@@ -98,98 +86,16 @@ func (q *QueryBuilder) WithCID(cid string) *QueryBuilder {
 	}
 	if q.cidVarName == "" {
 		q.cidVarName = q.nextVarName()
-		q.cidVarType = "String"
+		// DefraDB v1.0 types the top-level `cid` argument as [ID!], not String.
+		q.cidVarType = "[ID!]"
 	}
 	q.cid = cid
-	return q
-}
-
-// FilterIn adds an _in filter for matching any of the values.
-func (q *QueryBuilder) FilterIn(field string, values []string) *QueryBuilder {
-	varName := q.nextVarName()
-	q.filters = append(q.filters, filterDef{
-		field:   field,
-		op:      "_in",
-		varName: varName,
-		varType: "[String!]",
-		value:   values,
-	})
-	return q
-}
-
-// FilterGT adds a greater-than filter.
-func (q *QueryBuilder) FilterGT(field string, value any) *QueryBuilder {
-	varName := q.nextVarName()
-	q.filters = append(q.filters, filterDef{
-		field:   field,
-		op:      "_gt",
-		varName: varName,
-		varType: inferGraphQLType(value),
-		value:   value,
-	})
-	return q
-}
-
-// FilterLT adds a less-than filter.
-func (q *QueryBuilder) FilterLT(field string, value any) *QueryBuilder {
-	varName := q.nextVarName()
-	q.filters = append(q.filters, filterDef{
-		field:   field,
-		op:      "_lt",
-		varName: varName,
-		varType: inferGraphQLType(value),
-		value:   value,
-	})
-	return q
-}
-
-// FilterGTE adds a greater-than-or-equal filter.
-func (q *QueryBuilder) FilterGTE(field string, value any) *QueryBuilder {
-	varName := q.nextVarName()
-	q.filters = append(q.filters, filterDef{
-		field:   field,
-		op:      "_gte",
-		varName: varName,
-		varType: inferGraphQLType(value),
-		value:   value,
-	})
-	return q
-}
-
-// FilterLTE adds a less-than-or-equal filter.
-func (q *QueryBuilder) FilterLTE(field string, value any) *QueryBuilder {
-	varName := q.nextVarName()
-	q.filters = append(q.filters, filterDef{
-		field:   field,
-		op:      "_lte",
-		varName: varName,
-		varType: inferGraphQLType(value),
-		value:   value,
-	})
 	return q
 }
 
 // Fields sets the fields to return (replaces default of just _docID).
 func (q *QueryBuilder) Fields(fields ...string) *QueryBuilder {
 	q.fields = fields
-	return q
-}
-
-// OrderBy sets the ordering.
-func (q *QueryBuilder) OrderBy(field string, direction string) *QueryBuilder {
-	q.order = fmt.Sprintf("{%s: %s}", field, direction)
-	return q
-}
-
-// Limit sets the maximum number of results.
-func (q *QueryBuilder) Limit(n int) *QueryBuilder {
-	q.limit = n
-	return q
-}
-
-// Offset sets the offset for pagination.
-func (q *QueryBuilder) Offset(n int) *QueryBuilder {
-	q.offset = n
 	return q
 }
 
@@ -205,7 +111,8 @@ func (q *QueryBuilder) Build() (string, map[string]any) {
 	}
 	if q.cidVarName != "" {
 		varDefs = append(varDefs, fmt.Sprintf("$%s: %s", q.cidVarName, q.cidVarType))
-		vars[q.cidVarName] = q.cid
+		// cid is typed [ID!]; pass the single CID as a one-element list.
+		vars[q.cidVarName] = []string{q.cid}
 	}
 
 	// Build filter clause
@@ -232,15 +139,6 @@ func (q *QueryBuilder) Build() (string, map[string]any) {
 	if q.cidVarName != "" {
 		args = append(args, fmt.Sprintf("cid: $%s", q.cidVarName))
 	}
-	if q.order != "" {
-		args = append(args, fmt.Sprintf("order: %s", q.order))
-	}
-	if q.limit > 0 {
-		args = append(args, fmt.Sprintf("limit: %d", q.limit))
-	}
-	if q.offset > 0 {
-		args = append(args, fmt.Sprintf("offset: %d", q.offset))
-	}
 	if len(args) > 0 {
 		query.WriteString(fmt.Sprintf("(%s)", strings.Join(args, ", ")))
 	}
@@ -251,12 +149,6 @@ func (q *QueryBuilder) Build() (string, map[string]any) {
 	query.WriteString(" } }")
 
 	return query.String(), vars
-}
-
-// Execute builds and executes the query on the given client.
-func (q *QueryBuilder) Execute(ctx context.Context, client *Client) (*GQLResponse, error) {
-	query, vars := q.Build()
-	return client.Execute(ctx, query, vars)
 }
 
 // nextVarName generates the next variable name.
@@ -280,19 +172,4 @@ func inferGraphQLType(v any) string {
 	default:
 		return "String" // Default to String
 	}
-}
-
-// SafeQuery executes a parameterized query with a single filter.
-// This is a convenience function for simple single-filter queries.
-func SafeQuery(ctx context.Context, client *Client, collection, filterField string, filterValue any, fields ...string) (*GQLResponse, error) {
-	qb := NewQuery(collection).Filter(filterField, filterValue)
-	if len(fields) > 0 {
-		qb.Fields(fields...)
-	}
-	return qb.Execute(ctx, client)
-}
-
-// SafeQueryByDocID executes a parameterized query filtering by _docID.
-func SafeQueryByDocID(ctx context.Context, client *Client, collection, docID string, fields ...string) (*GQLResponse, error) {
-	return SafeQuery(ctx, client, collection, "_docID", docID, fields...)
 }

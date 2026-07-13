@@ -12,14 +12,18 @@ import (
 
 // TocEntryFinderTools implements agent.Tools for the ToC entry finder agent.
 type TocEntryFinderTools struct {
-	book  *common.BookState
-	entry *toc_entry_finder.TocEntry
+	book               *common.BookState
+	entry              *toc_entry_finder.TocEntry
+	backMatterStart    int
+	backMatterTypes    string
+	targetIsBackMatter bool
 
 	// State
-	currentPageNum   *int
-	currentImages    [][]byte
-	pageObservations []PageObservation
-	pendingResult    *toc_entry_finder.Result
+	currentPageNum    *int
+	currentImages     [][]byte
+	pageObservations  []PageObservation
+	pendingResult     *toc_entry_finder.Result
+	ocrEvidenceByPage map[int]PageEvidence
 }
 
 // PageObservation records what the agent saw on a page.
@@ -30,16 +34,23 @@ type PageObservation struct {
 
 // Config configures the ToC entry finder tools.
 type Config struct {
-	Book  *common.BookState
-	Entry *toc_entry_finder.TocEntry
+	Book               *common.BookState
+	Entry              *toc_entry_finder.TocEntry
+	BackMatterStart    int
+	BackMatterTypes    string
+	TargetIsBackMatter bool
 }
 
 // New creates a new ToC entry finder tools instance.
 func New(cfg Config) *TocEntryFinderTools {
 	return &TocEntryFinderTools{
-		book:             cfg.Book,
-		entry:            cfg.Entry,
-		pageObservations: make([]PageObservation, 0),
+		book:               cfg.Book,
+		entry:              cfg.Entry,
+		backMatterStart:    cfg.BackMatterStart,
+		backMatterTypes:    cfg.BackMatterTypes,
+		targetIsBackMatter: cfg.TargetIsBackMatter,
+		pageObservations:   make([]PageObservation, 0),
+		ocrEvidenceByPage:  make(map[int]PageEvidence),
 	}
 }
 
@@ -100,9 +111,26 @@ func (t *TocEntryFinderTools) GetResult() any {
 	return t.pendingResult
 }
 
+func (t *TocEntryFinderTools) effectiveBackMatterStart() int {
+	if t.backMatterStart > 0 {
+		return t.backMatterStart
+	}
+	if t.book == nil || t.book.TotalPages <= 0 {
+		return 0
+	}
+	start := int(float64(t.book.TotalPages) * 0.9)
+	if start < 1 {
+		return 1
+	}
+	if start > t.book.TotalPages {
+		return t.book.TotalPages
+	}
+	return start
+}
+
 // getPageOcrMarkdown retrieves OCR markdown text from BookState.
 func (t *TocEntryFinderTools) getPageOcrMarkdown(ctx context.Context, pageNum int) (string, error) {
-	text, err := t.book.GetOcrMarkdown(ctx, pageNum)
+	text, err := t.book.GetOcrMarkdownWithPageFurniture(ctx, pageNum)
 	if err != nil {
 		return "", err
 	}

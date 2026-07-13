@@ -1,6 +1,7 @@
 package endpoints
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -70,22 +71,30 @@ func (e *StartJobEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	resp, status, err := startJobForBook(r.Context(), bookID, req)
+	if err != nil {
+		writeError(w, status, err.Error())
+		return
+	}
+
+	writeJSON(w, status, resp)
+}
+
+func startJobForBook(ctx context.Context, bookID string, req StartJobRequest) (*StartJobResponse, int, error) {
 	jobType := req.JobType
 	if jobType == "" {
 		jobType = process_book.JobType
 	}
 
-	scheduler := svcctx.SchedulerFrom(r.Context())
+	scheduler := svcctx.SchedulerFrom(ctx)
 	if scheduler == nil {
-		writeError(w, http.StatusServiceUnavailable, "scheduler not initialized")
-		return
+		return nil, http.StatusServiceUnavailable, fmt.Errorf("scheduler not initialized")
 	}
 
 	// Get config store and create builder to read configs at request time
-	configStore := svcctx.ConfigStoreFrom(r.Context())
+	configStore := svcctx.ConfigStoreFrom(ctx)
 	if configStore == nil {
-		writeError(w, http.StatusServiceUnavailable, "config store not initialized")
-		return
+		return nil, http.StatusServiceUnavailable, fmt.Errorf("config store not initialized")
 	}
 	builder := jobcfg.NewBuilder(configStore)
 
@@ -94,14 +103,16 @@ func (e *StartJobEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	var err error
 
 	if jobType != process_book.JobType {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown job type: %s (only 'process-book' is supported)", jobType))
-		return
+		return nil, http.StatusBadRequest, fmt.Errorf("unknown job type: %s (only 'process-book' is supported)", jobType)
 	}
 
-	cfg, cfgErr := builder.ProcessBookConfig(r.Context())
+	if status, err := prepareBookJobStart(ctx, scheduler, bookID, jobType, req.Force); err != nil {
+		return nil, status, err
+	}
+
+	cfg, cfgErr := builder.ProcessBookConfig(ctx)
 	if cfgErr != nil {
-		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to load config: %v", cfgErr))
-		return
+		return nil, http.StatusInternalServerError, fmt.Errorf("failed to load config: %v", cfgErr)
 	}
 	// Apply reset_from from request
 	cfg.ResetFrom = req.ResetFrom
@@ -109,35 +120,86 @@ func (e *StartJobEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	if req.Variant != "" {
 		variant := process_book.PipelineVariant(req.Variant)
 		if !variant.IsValid() {
-			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid variant: %s (valid variants: standard, photo-book, text-only, ocr-only)", req.Variant))
-			return
+			return nil, http.StatusBadRequest, fmt.Errorf("invalid variant: %s (valid variants: standard, photo-book, text-only, ocr-only)", req.Variant)
 		}
 		cfg.ApplyVariant(variant)
 	}
-	job, err = process_book.NewJob(r.Context(), cfg, bookID)
+	job, err = process_book.NewJob(ctx, cfg, bookID)
 
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create job: %v", err))
-		return
+		return nil, http.StatusInternalServerError, fmt.Errorf("failed to create job: %v", err)
 	}
 
 	// Submit to scheduler
-	if err := scheduler.Submit(r.Context(), job); err != nil {
-		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to submit job: %v", err))
-		return
+	if err := scheduler.Submit(ctx, job); err != nil {
+		return nil, http.StatusInternalServerError, fmt.Errorf("failed to submit job: %v", err)
 	}
 
-	writeJSON(w, http.StatusAccepted, StartJobResponse{
+	return &StartJobResponse{
 		JobID:   job.ID(),
 		JobType: jobType,
 		BookID:  bookID,
 		Status:  "queued",
-	})
+	}, http.StatusAccepted, nil
+}
+
+// prepareBookJobStart rejects an active job unless force is set. A forced start
+// removes in-memory scheduler state and marks every durable running record
+// cancelled before callers mutate book state or submit a replacement.
+func prepareBookJobStart(ctx context.Context, scheduler *jobs.Scheduler, bookID, jobType string, force bool) (int, error) {
+	if !force {
+		if existing := scheduler.GetJobByBookIDAndType(bookID, jobType); existing != nil {
+			return http.StatusConflict, fmt.Errorf("%s job already active for book %s: %s", jobType, bookID, existing.ID())
+		}
+		if jobManager := svcctx.JobManagerFrom(ctx); jobManager != nil {
+			for _, activeStatus := range []jobs.Status{jobs.StatusRunning, jobs.StatusWaitingProvider} {
+				active, err := jobManager.List(ctx, jobs.ListFilter{
+					Status:  activeStatus,
+					JobType: jobType,
+					BookID:  bookID,
+					Limit:   1,
+				})
+				if err != nil {
+					return http.StatusInternalServerError, fmt.Errorf("failed to check active jobs: %v", err)
+				}
+				if len(active) > 0 {
+					return http.StatusConflict, fmt.Errorf("%s job already %s for book %s: %s", jobType, activeStatus, bookID, active[0].ID)
+				}
+			}
+		}
+		return 0, nil
+	}
+
+	reason := fmt.Sprintf("cancelled by forced %s restart for book %s", jobType, bookID)
+	scheduler.CancelActiveJobsByBookIDAndType(ctx, bookID, jobType, reason)
+	if jobManager := svcctx.JobManagerFrom(ctx); jobManager != nil {
+		for _, activeStatus := range []jobs.Status{jobs.StatusRunning, jobs.StatusWaitingProvider} {
+			active, err := jobManager.List(ctx, jobs.ListFilter{
+				Status:  activeStatus,
+				JobType: jobType,
+				BookID:  bookID,
+				Limit:   100,
+			})
+			if err != nil {
+				return http.StatusInternalServerError, fmt.Errorf("failed to list active jobs for forced restart: %v", err)
+			}
+			for _, record := range active {
+				if record == nil {
+					continue
+				}
+				if err := jobManager.UpdateStatus(ctx, record.ID, jobs.StatusCancelled, reason); err != nil {
+					return http.StatusInternalServerError, fmt.Errorf("failed to cancel active job %s: %v", record.ID, err)
+				}
+			}
+		}
+	}
+	return 0, nil
 }
 
 func (e *StartJobEndpoint) Command(getServerURL func() string) *cobra.Command {
 	var resetFrom string
 	var variant string
+	var force bool
 	cmd := &cobra.Command{
 		Use:   "start <book_id>",
 		Short: "Start job processing for a book",
@@ -168,6 +230,7 @@ Use 'shelf api jobs get <job-id>' to check progress.`,
 			var resp StartJobResponse
 			if err := client.Post(ctx, "/api/jobs/start/"+bookID, StartJobRequest{
 				JobType:   process_book.JobType,
+				Force:     force,
 				ResetFrom: resetFrom,
 				Variant:   variant,
 			}, &resp); err != nil {
@@ -179,5 +242,6 @@ Use 'shelf api jobs get <job-id>' to check progress.`,
 	}
 	cmd.Flags().StringVar(&resetFrom, "reset-from", "", "Reset this operation and downstream deps before starting")
 	cmd.Flags().StringVar(&variant, "variant", "", "Pipeline variant (standard, photo-book, text-only, ocr-only)")
+	cmd.Flags().BoolVar(&force, "force", false, "Start even if a running job exists for this book")
 	return cmd
 }

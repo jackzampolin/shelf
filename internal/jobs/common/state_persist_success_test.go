@@ -123,11 +123,11 @@ func TestPersistChapterClassifications_Success(t *testing.T) {
 	book.Store = store
 	book.SetStructureChapters([]*ChapterState{
 		{
-			EntryID:          "e1",
-			DocID:            "ch1",
-			MatterType:       "body",
-			ContentType:      "prose",
-			AudioInclude:     true,
+			EntryID:           "e1",
+			DocID:             "ch1",
+			MatterType:        "body",
+			ContentType:       "prose",
+			AudioInclude:      true,
 			ClassifyReasoning: "This is main content",
 		},
 	})
@@ -159,11 +159,12 @@ func TestPersistChapterPolish_Success(t *testing.T) {
 	book.Store = store
 	book.SetStructureChapters([]*ChapterState{
 		{
-			EntryID:      "e1",
-			DocID:        "ch1",
-			PolishDone:   true,
-			PolishedText: "Polished content here",
-			WordCount:    100,
+			EntryID:          "e1",
+			DocID:            "ch1",
+			PolishDone:       true,
+			PolishedText:     "Polished content here",
+			WordCount:        100,
+			EditsAppliedJSON: `[{"old_text":"Pol1shed","new_text":"Polished","reason":"OCR correction"}]`,
 		},
 	})
 
@@ -179,6 +180,15 @@ func TestPersistChapterPolish_Success(t *testing.T) {
 	}
 	if doc["word_count"] != 100 {
 		t.Errorf("word_count = %v, want 100", doc["word_count"])
+	}
+	if doc["edits_applied_json"] != `[{"old_text":"Pol1shed","new_text":"Polished","reason":"OCR correction"}]` {
+		t.Errorf("edits_applied_json = %v", doc["edits_applied_json"])
+	}
+	if doc["polish_complete"] != true {
+		t.Errorf("polish_complete = %v, want true", doc["polish_complete"])
+	}
+	if _, ok := doc["polish_done"]; ok {
+		t.Errorf("polish_done should not be persisted; doc = %#v", doc)
 	}
 }
 
@@ -257,10 +267,10 @@ func TestPersistTocEntryLink_Success(t *testing.T) {
 		t.Error("CID should not be empty")
 	}
 
-	// Verify DB was updated (only actual_page_id is stored, not actual_page)
+	// Verify DB was updated (only the _actual_pageID FK is stored, not actual_page)
 	doc := store.GetDoc("TocEntry", "te1")
-	if doc["actual_page_id"] != "page1" {
-		t.Errorf("actual_page_id = %v, want 'page1'", doc["actual_page_id"])
+	if doc["_actual_pageID"] != "page1" {
+		t.Errorf("_actual_pageID = %v, want 'page1'", doc["_actual_pageID"])
 	}
 
 	// Verify entry was updated in linkedEntries
@@ -279,7 +289,7 @@ func TestPersistTocEntryLink_Success(t *testing.T) {
 // TestPersistOcrResult_Success tests successful OCR result persistence.
 func TestPersistOcrResult_Success(t *testing.T) {
 	store := NewMemoryStateStore()
-	store.SetDoc("Page", "page1", map[string]any{"page_num": 1, "book_id": "book1"})
+	store.SetDoc("Page", "page1", map[string]any{"page_num": 1, "_bookID": "book1"})
 
 	book := NewBookState("book1")
 	book.Store = store
@@ -358,9 +368,9 @@ func TestPersistOcrMarkdown_Success(t *testing.T) {
 // TestResetAllOcr_Success tests successful OCR reset.
 func TestResetAllOcr_Success(t *testing.T) {
 	store := NewMemoryStateStore()
-	store.SetDoc("Page", "page1", map[string]any{"book_id": "book1", "ocr_complete": true, "ocr_markdown": "old"})
-	store.SetDoc("Page", "page2", map[string]any{"book_id": "book1", "ocr_complete": true, "ocr_markdown": "old"})
-	store.SetDoc("Page", "page3", map[string]any{"book_id": "book1", "ocr_complete": false}) // Not complete
+	store.SetDoc("Page", "page1", map[string]any{"_bookID": "book1", "ocr_complete": true, "ocr_markdown": "old"})
+	store.SetDoc("Page", "page2", map[string]any{"_bookID": "book1", "ocr_complete": true, "ocr_markdown": "old"})
+	store.SetDoc("Page", "page3", map[string]any{"_bookID": "book1", "ocr_complete": false}) // Not complete
 
 	book := NewBookState("book1")
 	book.Store = store
@@ -429,9 +439,9 @@ func TestPersistNewAgentStates_Success(t *testing.T) {
 // TestDeleteAllAgentStates_Success tests deleting all agent states.
 func TestDeleteAllAgentStates_Success(t *testing.T) {
 	store := NewMemoryStateStore()
-	store.SetDoc("AgentState", "as1", map[string]any{"book_id": "book1", "agent_type": "toc_finder"})
-	store.SetDoc("AgentState", "as2", map[string]any{"book_id": "book1", "agent_type": "chapter_finder"})
-	store.SetDoc("AgentState", "as3", map[string]any{"book_id": "book2", "agent_type": "toc_finder"}) // Other book
+	store.SetDoc("AgentState", "as1", map[string]any{"_bookID": "book1", "agent_type": "toc_finder"})
+	store.SetDoc("AgentState", "as2", map[string]any{"_bookID": "book1", "agent_type": "chapter_finder"})
+	store.SetDoc("AgentState", "as3", map[string]any{"_bookID": "book2", "agent_type": "toc_finder"}) // Other book
 
 	book := NewBookState("book1")
 	book.Store = store

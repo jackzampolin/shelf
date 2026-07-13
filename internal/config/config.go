@@ -80,6 +80,10 @@ func (cm *Manager) load() (*Config, error) {
 	if err := viper.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
+	if viper.ConfigFileUsed() != "" && !viper.InConfig("defaults.require_healthy_providers") {
+		// Existing config files predate strict startup checks, so omitted means warn-only.
+		cfg.Defaults.RequireHealthyProviders = false
+	}
 	return &cfg, nil
 }
 
@@ -130,8 +134,27 @@ func ResolveEnvVars(value string) string {
 	})
 }
 
+// resolveEnvVarsSlice applies ResolveEnvVars to each element and drops empty results.
+func resolveEnvVarsSlice(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		resolved := ResolveEnvVars(v)
+		if resolved == "" {
+			continue
+		}
+		out = append(out, resolved)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // ToProviderRegistryConfig converts the config to a format suitable for providers.Registry.
-// It resolves all ${ENV_VAR} references in API keys.
+// It resolves all ${ENV_VAR} references in API keys and base URLs.
 func (c *Config) ToProviderRegistryConfig() providers.RegistryConfig {
 	cfg := providers.RegistryConfig{
 		OCRProviders: make(map[string]providers.OCRProviderConfig),
@@ -141,21 +164,33 @@ func (c *Config) ToProviderRegistryConfig() providers.RegistryConfig {
 
 	for name, ocr := range c.OCRProviders {
 		cfg.OCRProviders[name] = providers.OCRProviderConfig{
-			Type:          ocr.Type,
-			APIKey:        ResolveEnvVars(ocr.APIKey),
-			RateLimit:     ocr.RateLimit,
-			Enabled:       ocr.Enabled,
-			IncludeImages: ocr.IncludeImages,
+			Type:                  ocr.Type,
+			APIKey:                ResolveEnvVars(ocr.APIKey),
+			RateLimit:             ocr.RateLimit,
+			Enabled:               ocr.Enabled,
+			IncludeImages:         ocr.IncludeImages,
+			IncludeHeadersFooters: ocr.IncludeHeadersFooters,
+			MaxOutputTokens:       ocr.MaxOutputTokens,
+			TimeoutSeconds:        ocr.TimeoutSeconds,
+			Temperature:           ocr.Temperature,
+			TopP:                  ocr.TopP,
+			BaseURLs:              resolveEnvVarsSlice(ocr.BaseURLs),
+			MaxConcurrency:        ocr.MaxConcurrency,
+			MaxRetries:            ocr.MaxRetries,
 		}
 	}
 
 	for name, llm := range c.LLMProviders {
 		cfg.LLMProviders[name] = providers.LLMProviderConfig{
-			Type:      llm.Type,
-			Model:     llm.Model,
-			APIKey:    ResolveEnvVars(llm.APIKey),
-			RateLimit: llm.RateLimit,
-			Enabled:   llm.Enabled,
+			Type:           llm.Type,
+			Model:          llm.Model,
+			APIKey:         ResolveEnvVars(llm.APIKey),
+			RateLimit:      llm.RateLimit,
+			Enabled:        llm.Enabled,
+			BaseURLs:       resolveEnvVarsSlice(llm.BaseURLs),
+			MaxConcurrency: llm.MaxConcurrency,
+			TimeoutSeconds: llm.TimeoutSeconds,
+			MaxRetries:     llm.MaxRetries,
 		}
 	}
 

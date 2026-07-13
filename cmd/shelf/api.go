@@ -32,7 +32,6 @@ var booksCmd = &cobra.Command{
 	Short: "Book management commands",
 }
 
-
 var metricsCmd = &cobra.Command{
 	Use:   "metrics",
 	Short: "Metrics and cost tracking commands",
@@ -68,20 +67,36 @@ func init() {
 	apiCmd.AddCommand((&endpoints.HealthEndpoint{}).Command(getServerURL))
 	apiCmd.AddCommand((&endpoints.ReadyEndpoint{}).Command(getServerURL))
 	apiCmd.AddCommand((&endpoints.StatusEndpoint{}).Command(getServerURL))
+	apiCmd.AddCommand((&endpoints.RunSummaryEndpoint{}).Command(getServerURL))
 
 	// Jobs as subcommand group
 	jobsCmd.AddCommand((&endpoints.CreateJobEndpoint{}).Command(getServerURL))
 	jobsCmd.AddCommand((&endpoints.ListJobsEndpoint{}).Command(getServerURL))
 	jobsCmd.AddCommand((&endpoints.GetJobEndpoint{}).Command(getServerURL))
 	jobsCmd.AddCommand((&endpoints.UpdateJobEndpoint{}).Command(getServerURL))
+	jobsCmd.AddCommand((&endpoints.RetryJobEndpoint{}).Command(getServerURL))
 	jobsCmd.AddCommand((&endpoints.DeleteJobEndpoint{}).Command(getServerURL))
 	jobsCmd.AddCommand((&endpoints.StartJobEndpoint{}).Command(getServerURL))
 	jobsCmd.AddCommand((&endpoints.JobStatusEndpoint{}).Command(getServerURL))
+	jobsCmd.AddCommand((&endpoints.DetailedJobStatusEndpoint{}).Command(getServerURL))
 
 	// Books as subcommand group
 	booksCmd.AddCommand((&endpoints.IngestEndpoint{}).Command(getServerURL))
+	booksCmd.AddCommand((&endpoints.ImportEPUBEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.ListBooksEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.GetBookEndpoint{}).Command(getServerURL))
+	booksCmd.AddCommand((&endpoints.GetBookChaptersEndpoint{}).Command(getServerURL))
+	booksCmd.AddCommand((&endpoints.RepairOCREndpoint{}).Command(getServerURL))
+	booksCmd.AddCommand((&endpoints.RepairOCRTextEndpoint{}).Command(getServerURL))
+	booksCmd.AddCommand((&endpoints.RepairPDFTextEndpoint{}).Command(getServerURL))
+	booksCmd.AddCommand((&endpoints.RepairTocRangeEndpoint{}).Command(getServerURL))
+	booksCmd.AddCommand((&endpoints.RepairTocEntryEndpoint{}).Command(getServerURL))
+	booksCmd.AddCommand((&endpoints.RepairSamePageAudioEndpoint{}).Command(getServerURL))
+	booksCmd.AddCommand((&endpoints.ResolveTocEntryEndpoint{}).Command(getServerURL))
+	booksCmd.AddCommand((&endpoints.ResolveTocEntriesEndpoint{}).Command(getServerURL))
+	booksCmd.AddCommand((&endpoints.InsertTocEntryEndpoint{}).Command(getServerURL))
+	booksCmd.AddCommand((&endpoints.ExcludeTocEntryEndpoint{}).Command(getServerURL))
+	booksCmd.AddCommand((&endpoints.QuarantineOCREndpoint{}).Command(getServerURL))
 
 	// Metrics as subcommand group
 	metricsCmd.AddCommand((&endpoints.ListMetricsEndpoint{}).Command(getServerURL))

@@ -52,7 +52,7 @@ Examples:
 		ctx := cmd.Context()
 
 		// Set up logger with configured level
-		logLvl := GetLogLevel()
+		logLvl := config.ResolveLogLevel(logLevel)
 		logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 			Level: logLvl,
 		}))

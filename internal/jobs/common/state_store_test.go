@@ -23,9 +23,9 @@ func TestMemoryStateStore_SendManySync(t *testing.T) {
 
 	// Test multiple creates
 	ops := []defra.WriteOp{
-		{Collection: "Page", Document: map[string]any{"page_num": 1, "book_id": "book1"}, Op: defra.OpCreate},
-		{Collection: "Page", Document: map[string]any{"page_num": 2, "book_id": "book1"}, Op: defra.OpCreate},
-		{Collection: "Page", Document: map[string]any{"page_num": 3, "book_id": "book1"}, Op: defra.OpCreate},
+		{Collection: "Page", Document: map[string]any{"page_num": 1, "_bookID": "book1"}, Op: defra.OpCreate},
+		{Collection: "Page", Document: map[string]any{"page_num": 2, "_bookID": "book1"}, Op: defra.OpCreate},
+		{Collection: "Page", Document: map[string]any{"page_num": 3, "_bookID": "book1"}, Op: defra.OpCreate},
 	}
 
 	results, err = store.SendManySync(ctx, ops)
@@ -67,7 +67,7 @@ func TestMemoryStateStore_UpsertWithVersion(t *testing.T) {
 
 	// Test create (no existing doc)
 	filter := map[string]any{"unique_key": "ch1"}
-	createInput := map[string]any{"unique_key": "ch1", "title": "Chapter 1", "book_id": "book1"}
+	createInput := map[string]any{"unique_key": "ch1", "title": "Chapter 1", "_bookID": "book1"}
 	updateInput := map[string]any{"title": "Chapter 1 Updated"}
 
 	result, err := store.UpsertWithVersion(ctx, "Chapter", filter, createInput, updateInput)

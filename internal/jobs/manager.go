@@ -32,13 +32,20 @@ func NewManager(client *defra.Client, logger *slog.Logger) *Manager {
 // Create creates a new job record in DefraDB.
 func (m *Manager) Create(ctx context.Context, jobType string, metadata map[string]any) (string, error) {
 	record := NewRecord(jobType, metadata)
+	return m.CreateRecord(ctx, record)
+}
 
+// CreateRecord creates the provided job record in DefraDB.
+func (m *Manager) CreateRecord(ctx context.Context, record *Record) (string, error) {
+	if record.CreatedAt.IsZero() {
+		record.CreatedAt = time.Now().UTC()
+	}
 	id, err := m.createJob(ctx, record)
 	if err != nil {
 		return "", fmt.Errorf("failed to create job: %w", err)
 	}
 
-	m.logger.Debug("job created", "id", id, "type", jobType)
+	m.logger.Debug("job created", "id", id, "type", record.JobType)
 	return id, nil
 }
 
@@ -55,6 +62,27 @@ func (m *Manager) List(ctx context.Context, filter ListFilter) ([]*Record, error
 // UpdateStatus updates a job's status.
 func (m *Manager) UpdateStatus(ctx context.Context, jobID string, status Status, errMsg string) error {
 	return m.updateJobStatus(ctx, jobID, status, errMsg)
+}
+
+// UpdateRuntimeStatus changes a non-terminal runtime state without rewriting
+// started_at/completed_at. It is used for running <-> waiting_provider.
+func (m *Manager) UpdateRuntimeStatus(ctx context.Context, jobID string, status Status, reason string) error {
+	return m.defra.Update(ctx, "Job", jobID, map[string]any{
+		"status":        string(status),
+		"status_reason": reason,
+	})
+}
+
+// UpdateHeartbeat persists scheduler liveness for an active job. lastProgress
+// is the last time a work result was handled, not merely the last poll time.
+func (m *Manager) UpdateHeartbeat(ctx context.Context, jobID string, heartbeat, lastProgress time.Time) error {
+	updates := map[string]any{
+		"heartbeat_at": heartbeat.UTC().Format(time.RFC3339Nano),
+	}
+	if !lastProgress.IsZero() {
+		updates["last_progress_at"] = lastProgress.UTC().Format(time.RFC3339Nano)
+	}
+	return m.defra.Update(ctx, "Job", jobID, updates)
 }
 
 // UpdateMetadata updates a job's metadata (for progress tracking).
@@ -81,7 +109,7 @@ func (m *Manager) createJob(ctx context.Context, record *Record) (string, error)
 	input := map[string]any{
 		"job_type":   record.JobType,
 		"status":     string(record.Status),
-		"created_at": record.CreatedAt.Format(time.RFC3339),
+		"created_at": record.CreatedAt.Format(time.RFC3339Nano),
 	}
 	if record.BookID != "" {
 		input["book_id"] = record.BookID
@@ -105,9 +133,12 @@ func (m *Manager) getJob(ctx context.Context, jobID string) (*Record, error) {
 			book_id
 			status
 			created_at
-			started_at
-			completed_at
-			error
+				started_at
+				completed_at
+				heartbeat_at
+				last_progress_at
+				status_reason
+				error
 			metadata
 		}
 	}`, jobID)
@@ -155,9 +186,12 @@ func (m *Manager) listJobs(ctx context.Context, filter ListFilter) ([]*Record, e
 			book_id
 			status
 			created_at
-			started_at
-			completed_at
-			error
+				started_at
+				completed_at
+				heartbeat_at
+				last_progress_at
+				status_reason
+				error
 			metadata
 		}
 	}`, filterStr, limit)
@@ -187,6 +221,7 @@ func (m *Manager) listJobs(ctx context.Context, filter ListFilter) ([]*Record, e
 func (m *Manager) updateJobStatus(ctx context.Context, jobID string, status Status, errMsg string) error {
 	updates := []string{
 		fmt.Sprintf(`status: %q`, status),
+		fmt.Sprintf(`status_reason: %q`, errMsg),
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -197,8 +232,10 @@ func (m *Manager) updateJobStatus(ctx context.Context, jobID string, status Stat
 		updates = append(updates, fmt.Sprintf(`completed_at: %q`, now))
 	}
 
-	if errMsg != "" {
+	if status == StatusFailed || status == StatusCancelled {
 		updates = append(updates, fmt.Sprintf(`error: %q`, errMsg))
+	} else {
+		updates = append(updates, `error: ""`)
 	}
 
 	mutation := fmt.Sprintf(`mutation {
@@ -263,21 +300,34 @@ func parseJobRecord(data map[string]any) (*Record, error) {
 	if e, ok := data["error"].(string); ok {
 		record.Error = e
 	}
+	if reason, ok := data["status_reason"].(string); ok {
+		record.StatusReason = reason
+	}
 
 	// Parse timestamps
 	if ca, ok := data["created_at"].(string); ok && ca != "" {
-		if t, err := time.Parse(time.RFC3339, ca); err == nil {
+		if t, err := parseJobTime(ca); err == nil {
 			record.CreatedAt = t
 		}
 	}
 	if sa, ok := data["started_at"].(string); ok && sa != "" {
-		if t, err := time.Parse(time.RFC3339, sa); err == nil {
+		if t, err := parseJobTime(sa); err == nil {
 			record.StartedAt = &t
 		}
 	}
 	if ca, ok := data["completed_at"].(string); ok && ca != "" {
-		if t, err := time.Parse(time.RFC3339, ca); err == nil {
+		if t, err := parseJobTime(ca); err == nil {
 			record.CompletedAt = &t
+		}
+	}
+	if ha, ok := data["heartbeat_at"].(string); ok && ha != "" {
+		if t, err := parseJobTime(ha); err == nil {
+			record.HeartbeatAt = &t
+		}
+	}
+	if lp, ok := data["last_progress_at"].(string); ok && lp != "" {
+		if t, err := parseJobTime(lp); err == nil {
+			record.LastProgressAt = &t
 		}
 	}
 
@@ -290,6 +340,13 @@ func parseJobRecord(data map[string]any) (*Record, error) {
 	}
 
 	return record, nil
+}
+
+func parseJobTime(value string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339Nano, value); err == nil {
+		return t, nil
+	}
+	return time.Parse(time.RFC3339, value)
 }
 
 func joinParts(parts []string) string {

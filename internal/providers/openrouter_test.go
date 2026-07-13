@@ -330,7 +330,11 @@ func TestOpenRouterClient_Chat(t *testing.T) {
 	})
 
 	t.Run("tool calls", func(t *testing.T) {
+		var gotReq openRouterRequest
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
+				t.Fatalf("failed to decode request: %v", err)
+			}
 			resp := map[string]any{
 				"id":    "test-id",
 				"model": "test-model",
@@ -374,7 +378,8 @@ func TestOpenRouterClient_Chat(t *testing.T) {
 		}
 
 		result, err := client.ChatWithTools(context.Background(), &ChatRequest{
-			Messages: []Message{{Role: "user", Content: "What's the weather in NYC?"}},
+			Messages:   []Message{{Role: "user", Content: "What's the weather in NYC?"}},
+			ToolChoice: "required",
 		}, tools)
 
 		if err != nil {
@@ -385,6 +390,9 @@ func TestOpenRouterClient_Chat(t *testing.T) {
 		}
 		if result.ToolCalls[0].Function.Name != "get_weather" {
 			t.Errorf("tool name = %s, want get_weather", result.ToolCalls[0].Function.Name)
+		}
+		if gotReq.ToolChoice != "required" {
+			t.Errorf("tool_choice = %#v, want required", gotReq.ToolChoice)
 		}
 	})
 
@@ -477,7 +485,7 @@ func TestOpenRouterClient_Config(t *testing.T) {
 	})
 
 	t.Run("interface compliance", func(t *testing.T) {
-		var _ LLMClient = (*OpenRouterClient)(nil)
+		var _ LLMClient = (*OpenAIChatClient)(nil)
 	})
 }
 
@@ -500,7 +508,7 @@ func TestOpenRouterIntegration(t *testing.T) {
 		defer cancel()
 
 		result, err := client.Chat(ctx, &ChatRequest{
-			Model: "x-ai/grok-4.1-fast",
+			Model: "anthropic/claude-opus-4.6",
 			Messages: []Message{
 				{Role: "user", Content: "Say 'hello' and nothing else."},
 			},
@@ -529,7 +537,7 @@ func TestOpenRouterIntegration(t *testing.T) {
 
 		// Use json_object format with explicit instructions for better compatibility
 		result, err := client.Chat(ctx, &ChatRequest{
-			Model: "x-ai/grok-4.1-fast",
+			Model: "anthropic/claude-opus-4.6",
 			Messages: []Message{
 				{Role: "system", Content: "You are a helpful assistant that responds only with valid JSON. No explanations, no markdown, just the JSON object."},
 				{Role: "user", Content: `Return exactly this JSON: {"greeting": "hello", "count": 42}`},

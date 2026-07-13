@@ -2,8 +2,10 @@ package defra
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -155,7 +157,7 @@ func TestClient_Execute_ContextCancellation(t *testing.T) {
 func TestClient_AddSchema(t *testing.T) {
 	var receivedSchema string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v0/schema" {
+		if r.URL.Path != "/api/v0/collections" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 		if r.Method != "POST" {
@@ -200,10 +202,50 @@ func TestClient_AddSchema_Error(t *testing.T) {
 	}
 }
 
+func TestClient_ListCollectionDescriptions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v0/collections" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"Name":"Job","Fields":[{"Name":"status"},{"Name":"heartbeat_at"}]}]`))
+	}))
+	defer server.Close()
+
+	descriptions, err := NewClient(server.URL).ListCollectionDescriptions(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(descriptions) != 1 || descriptions[0].Name != "Job" || len(descriptions[0].Fields) != 2 {
+		t.Fatalf("descriptions = %#v", descriptions)
+	}
+}
+
+func TestClient_PatchCollection(t *testing.T) {
+	var requestBody string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch || r.URL.Path != "/api/v0/collections" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		body, _ := io.ReadAll(r.Body)
+		requestBody = string(body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	patch := `[{"op":"add","path":"/Job/Fields/-","value":{"Name":"heartbeat_at","Kind":10}}]`
+	if err := NewClient(server.URL).PatchCollection(context.Background(), patch); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(requestBody, `"Patch"`) || !strings.Contains(requestBody, `heartbeat_at`) {
+		t.Fatalf("patch request body = %s", requestBody)
+	}
+}
+
 func TestClient_Create(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"data": {"create_Book": [{"_docID": "bae-abc123"}]}}`))
+		w.Write([]byte(`{"data": {"add_Book": [{"_docID": "bae-abc123"}]}}`))
 	}))
 	defer server.Close()
 
@@ -218,6 +260,19 @@ func TestClient_Create(t *testing.T) {
 	}
 	if docID != "bae-abc123" {
 		t.Errorf("unexpected docID: %s", docID)
+	}
+}
+
+func TestClient_DeleteIsIdempotentForTombstone(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"errors":[{"message":"a document with the given ID has been deleted. DocID: bae-old"}]}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL)
+	if err := client.Delete(context.Background(), "AgentState", "bae-old"); err != nil {
+		t.Fatalf("Delete tombstone: %v", err)
 	}
 }
 
@@ -260,6 +315,19 @@ func TestMapToGraphQLInput(t *testing.T) {
 			name:  "empty map",
 			input: map[string]any{},
 			want:  []string{`{}`},
+		},
+		{
+			name: "nested map array",
+			input: map[string]any{
+				"provider_metadata": map[string]any{
+					"images": []map[string]any{{
+						"id": "img-1.jpg",
+					}},
+				},
+			},
+			want: []string{
+				`{provider_metadata: {images: [{id: "img-1.jpg"}]}}`,
+			},
 		},
 	}
 

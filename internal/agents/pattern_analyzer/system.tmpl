@@ -29,14 +29,19 @@ Example - DO output pattern:
 
 Each pattern represents a structural element type that should be searched for.
 
+Only report a globally unique sequence that this pipeline can represent. Do
+NOT report subsection numbering that restarts inside every chapter (for
+example, sections I, II, III repeated in chapters 1 through 12); those entries
+need parent-scoped identities and are not a single missing ToC sequence.
+
 ### sequential patterns
 Numbered sequences like chapters, parts, appendices:
 - pattern_type: "sequential"
 - level_name: "chapter", "part", "appendix", "section", etc.
 - range_start/range_end: The FULL sequence bounds (e.g., "1" to "38")
 - level: Structural depth (1=part, 2=chapter, 3=section)
-- heading_format: The ACTUAL format from candidate_headings, using {n} as placeholder:
-  - If candidates show "1", "2", "3" -> heading_format is "{n}"
+- heading_format: The ACTUAL globally identifying format from candidate_headings, using {n} as placeholder:
+  - If candidates show only "1", "2", "3" or only Roman numerals, OMIT the pattern. Bare identifiers are ambiguous and may restart inside every chapter.
   - If candidates show "CHAPTER 1", "CHAPTER 2" -> heading_format is "CHAPTER {n}"
   - If candidates show "Chapter 1", "Chapter 2" -> heading_format is "Chapter {n}"
   - If candidates show "Part I", "Part II" -> heading_format is "Part {n}"
@@ -49,6 +54,11 @@ IMPORTANT:
 - Missing candidates (like chapter 3) are expected - we'll search for them
 - Look at the actual heading_text in candidate_headings to determine heading_format
 - heading_format MUST match what you see in the candidate headings
+- heading_format MUST contain a lexical anchor besides {n}, such as CHAPTER,
+  Part, or Appendix. Identifier-only formats like {n}, ({n}), and {n}. are
+  rejected because they are not globally addressable.
+- Every pattern field is required. If a complete level name, range, depth, and
+  heading format cannot be stated, omit the pattern instead of emitting blanks.
 
 Look at:
 - The ToC structure (does it have Parts I-V suggesting chapters within?)
@@ -63,6 +73,10 @@ Page ranges to skip during discovery. Always exclude:
 - Index section (from "Index" ToC entry to end)
 - Acknowledgments section
 - Photo/Image sections (if clearly separate from text)
+
+Do not exclude front matter or main-text ranges. Exclusions are only for late
+material that begins in the latter half of the scan; the application rejects
+earlier ranges even when their explanation mentions a later appendix or index.
 
 **IMPORTANT: start_page and end_page must be ACTUAL scan page numbers (integers), not 0**
 - Look at ToC entries to find the actual_page for each back matter section

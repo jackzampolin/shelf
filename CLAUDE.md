@@ -69,21 +69,21 @@ shelf/
 │   │       ├── pages.go           # Page operations
 │   │       ├── prompts.go         # Prompt management
 │   │       ├── settings.go        # Settings management
+│   │       ├── voices.go          # TTS voice management
+│   │       ├── run_summary.go     # Fleet scoreboard (books by status)
+│   │       ├── tts_config.go      # TTS configuration
+│   │       ├── swagger.go         # OpenAPI spec + Swagger UI
+│   │       ├── static.go          # Static web assets (frontend)
 │   │       └── registry.go        # All() helper
 │   ├── home/            # Home directory (~/.shelf)
 │   ├── config/          # Config with hot-reload
 │   ├── defra/           # DefraDB client + Docker management
 │   ├── providers/       # LLM/OCR provider workers
-│   ├── jobs/            # Job implementations
-│   │   ├── common/            # Shared job utilities
-│   │   ├── metadata_book/     # Book metadata extraction
-│   │   ├── ocr_book/          # OCR processing
-│   │   ├── label_book/        # Page labeling
-│   │   ├── toc_book/          # ToC extraction
-│   │   ├── link_toc/          # ToC linking
-│   │   ├── common_structure/  # Structure extraction
-│   │   ├── finalize_toc/      # ToC finalization
-│   │   └── process_book/      # Full pipeline orchestration
+│   ├── jobs/            # Job system (scheduler, pools) + implementations
+│   │   ├── common/              # Shared job utilities (state, persistence, OCR/extract helpers)
+│   │   ├── process_book/        # Full pipeline orchestration
+│   │   │   └── job/             # Pipeline stages: metadata, extract, ocr, toc find/extract/link, structure, finalize
+│   │   └── tts_generate/        # TTS audio generation (ElevenLabs + OpenAI provider strategies)
 │   ├── agent/           # LLM agent with tool use
 │   ├── agents/          # Specialized agents
 │   │   ├── toc_finder/        # ToC detection
@@ -94,6 +94,9 @@ shelf/
 │   ├── llmcall/         # LLM call tracking
 │   ├── metrics/         # Cost and usage metrics
 │   ├── prompts/         # Prompt templates
+│   ├── epub/            # ePub 3.0 generation (incl. media overlays)
+│   ├── voices/          # TTS voice management (sync with providers)
+│   ├── types/           # Shared types (no internal deps, avoids import cycles)
 │   ├── schema/          # DefraDB schemas
 │   │   └── schemas/     # GraphQL schema definitions
 │   ├── ingest/          # PDF ingestion
@@ -165,11 +168,18 @@ func (e *ListJobsEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 }
 
 // Available extractors in internal/svcctx/:
-// - svcctx.DefraClientFrom(ctx)
-// - svcctx.JobManagerFrom(ctx)
-// - svcctx.RegistryFrom(ctx)
-// - svcctx.SchedulerFrom(ctx)
-// - svcctx.LoggerFrom(ctx)
+// - svcctx.ServicesFrom(ctx)       // full *Services struct
+// - svcctx.DefraClientFrom(ctx)    // *defra.Client
+// - svcctx.DefraSinkFrom(ctx)      // *defra.Sink (async writes)
+// - svcctx.JobManagerFrom(ctx)     // *jobs.Manager
+// - svcctx.RegistryFrom(ctx)       // *providers.Registry
+// - svcctx.SchedulerFrom(ctx)      // *jobs.Scheduler
+// - svcctx.LoggerFrom(ctx)         // *slog.Logger
+// - svcctx.HomeFrom(ctx)           // *home.Dir
+// - svcctx.ConfigStoreFrom(ctx)    // config.Store
+// - svcctx.MetricsQueryFrom(ctx)   // *metrics.Query
+// - svcctx.LLMCallStoreFrom(ctx)   // *llmcall.Store
+// - svcctx.PromptResolverFrom(ctx) // *prompts.Resolver
 ```
 
 ### CLI Commands
@@ -184,32 +194,62 @@ shelf serve                    # Start server (with DefraDB)
 shelf api health               # Basic health check
 shelf api ready                # Readiness check (includes DefraDB)
 shelf api status               # Detailed status
+shelf api run-summary          # Fleet scoreboard: books by status + recovery hints
+shelf api tts-config           # Get TTS configuration and available voices
 
 # Book management
-shelf api books list           # List all books
-shelf api books get <id>       # Get book details
-shelf api books ingest <pdf>   # Ingest a PDF scan
-shelf api books cost <id>      # Get book processing cost
+shelf api books list                     # List all books
+shelf api books get <id>                 # Get book details
+shelf api books ingest <pdf-files...>    # Ingest PDF scans (--title, --author, --stitch)
+shelf api books cost <book_id>           # Get book processing cost
+
+# Book exports
+shelf api books export-epub <book_id>            # Export book as ePub
+shelf api books download-epub <book_id>          # Download ePub file
+shelf api books export-storyteller <book_id>     # Export EPUB with Media Overlays for Storyteller
+shelf api books download-storyteller <book_id>   # Download Storyteller EPUB
+
+# Book audio (TTS) - COSTS MONEY
+shelf api books generate-audio <book_id>              # Start TTS audiobook generation (--provider elevenlabs|openai, --voice)
+shelf api books audio <book_id>                       # Get audio status and files
+shelf api books download-audio <book_id> <chapter_idx> # Download chapter audio (-o output path)
 
 # Job management
-shelf api jobs list            # List all jobs
-shelf api jobs list --status running --type ocr-pages
+shelf api jobs list            # List all jobs (--status, --type, --book)
+shelf api jobs list --status running --type process-book
 shelf api jobs get <id>        # Get job details
-shelf api jobs start <book-id> # Start processing a book
-shelf api jobs status <book-id> # Get job status for a book
-shelf api jobs create --type ocr-pages
+shelf api jobs start <book_id> # Start processing a book (--variant, --reset-from, --force)
+shelf api jobs status <book_id> # Get job status for a book
+shelf api jobs create --type process-book
 shelf api jobs update <id> --status completed
+shelf api jobs retry <id>      # Retry a failed job
 shelf api jobs delete <id>     # Delete a job
 
 # Metrics and monitoring
 shelf api metrics list         # List all metrics
 shelf api metrics summary      # Get metrics summary
-shelf api llmcalls list        # List LLM call history
+shelf api metrics cost         # Get total cost
+shelf api llmcalls list        # List LLM call history (--book-id, --job-id, --provider, --failed, ...)
+shelf api llmcalls get <id>    # Get a single LLM call
+shelf api llmcalls counts <book-id> # LLM call counts for a book
+
+# TTS voice management
+shelf api voices list                  # List voices
+shelf api voices sync                  # Sync voices from provider
+shelf api voices create <voice_id>     # Add a voice
+shelf api voices set-default <voice_id> # Set default voice
+shelf api voices delete <voice_id>     # Remove a voice
 
 # Settings and configuration
-shelf api settings get         # Get current settings
-shelf api settings update      # Update settings
+shelf api settings list        # List all settings
+shelf api settings get <key>   # Get a setting
+shelf api settings set <key>   # Update a setting
+shelf api settings reset <key> # Reset a setting to default
 ```
+
+**HTTP-only endpoints (no CLI wiring in `cmd/shelf/api.go`; used by the web UI):**
+book chapters, rerun-toc, book upload, jobs status-detailed, detailed metrics,
+agent logs, prompts (global + per-book), pages/page images, and `/swagger.json` + Swagger UI.
 
 **Debug config:** Agent logs are only saved when `defaults.debug_agents` is `true` in job config.
 
@@ -287,6 +327,9 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 - **006 (Worker Architecture)** - Pool-based worker architecture
 - **007 (Services Context)** - Dependency injection via context, unified endpoint pattern
 - **008 (Config and Prompts in Database)** - Store configuration in DefraDB
+- **009 (BookState Repository Pattern)** - Repository pattern for book pipeline state
+- **010 (Async-Only DB Writes for Per-Book Operations)** - Per-book writes go through the async sink
+- **011 (Zero Marginal Cost for Local Inference)** - Local inference treated as zero marginal cost
 
 Read the ADRs in `docs/decisions/` to understand design rationale.
 </architecture_decisions>
@@ -297,7 +340,7 @@ Read the ADRs in `docs/decisions/` to understand design rationale.
 **1. COST AWARENESS**
 - NEVER run LLM operations without approval
 - Test with mocks, not real API calls
-- Jobs that call LLMs: `ocr_book`, `label_book`, `toc_book`, `link_toc`, `common_structure`, `finalize_toc`
+- Jobs that call LLMs: `process-book` (all pipeline stages), `tts-generate`, `tts-generate-openai`
 
 **2. DEFRADB**
 - All state in DefraDB, not files

@@ -2,7 +2,8 @@ type TocEntry {
     # Many-to-one: TocEntry belongs to ToC
     toc: ToC
 
-    # Unique key for content-based DocID uniqueness (toc_id:sort_order)
+    # Unique key for replace-set identity (toc_id:generation:sort_order).
+    # Generation avoids reusing Defra tombstoned IDs after extraction reset.
     unique_key: String
 
     # Core fields
@@ -14,6 +15,21 @@ type TocEntry {
     # Page references (optional link to actual page)
     printed_page_number: String
     actual_page: Page
+
+    # Durable per-entry link budget. A failed entry remains visibly unresolved
+    # across process restarts until an explicit repair clears it.
+    link_retries: Int
+    link_failed: Boolean
+    link_failure_reason: String
+    link_failed_at: DateTime
+    link_repair_reason: String
+    link_repaired_at: DateTime
+
+    # Explicit operator exclusion for a non-content ToC item that is absent
+    # from the source artifact. This is distinct from an exhausted failure.
+    link_excluded: Boolean
+    link_exclusion_reason: String
+    link_excluded_at: DateTime
 
     # Source tracking
     source: String

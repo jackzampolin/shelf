@@ -32,6 +32,9 @@ func TestDefaultConfig(t *testing.T) {
 	if openrouter.APIKey != "${OPENROUTER_API_KEY}" {
 		t.Error("expected openrouter API key placeholder")
 	}
+	if !cfg.Defaults.RequireHealthyProviders {
+		t.Error("expected default config to require healthy providers")
+	}
 }
 
 func TestResolveEnvVars(t *testing.T) {
@@ -88,6 +91,51 @@ ocr_providers:
 		}
 		if ocr.APIKey != "test-api-key" {
 			t.Errorf("expected test-api-key, got %s", ocr.APIKey)
+		}
+	})
+
+	t.Run("missing require healthy flag stays warn-only for existing config", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		configFile := filepath.Join(tmpDir, "config.yaml")
+
+		configContent := `
+ocr_providers:
+  test_ocr:
+    type: "mistral-ocr"
+    api_key: "test-api-key"
+    enabled: true
+`
+		if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+			t.Fatalf("failed to write config file: %v", err)
+		}
+
+		mgr, err := NewManager(configFile)
+		if err != nil {
+			t.Fatalf("failed to create manager: %v", err)
+		}
+		if mgr.Get().Defaults.RequireHealthyProviders {
+			t.Fatal("existing config without require_healthy_providers should load warn-only")
+		}
+	})
+
+	t.Run("explicit require healthy flag is honored", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		configFile := filepath.Join(tmpDir, "config.yaml")
+
+		configContent := `
+defaults:
+  require_healthy_providers: true
+`
+		if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+			t.Fatalf("failed to write config file: %v", err)
+		}
+
+		mgr, err := NewManager(configFile)
+		if err != nil {
+			t.Fatalf("failed to create manager: %v", err)
+		}
+		if !mgr.Get().Defaults.RequireHealthyProviders {
+			t.Fatal("explicit require_healthy_providers=true should be honored")
 		}
 	})
 }
@@ -299,6 +347,44 @@ func TestConfig_ToProviderRegistryConfig(t *testing.T) {
 			t.Errorf("expected instructions to be mapped, got %q", openai.Instructions)
 		}
 	})
+}
+
+func TestToProviderRegistryConfig_ResolvesBaseURLs(t *testing.T) {
+	os.Setenv("SPARK1", "http://100.74.68.88:8000/v1")
+	defer os.Unsetenv("SPARK1")
+
+	c := &Config{
+		LLMProviders: map[string]LLMProviderCfg{
+			"local-llm": {
+				Type:           "openai-compat",
+				Model:          "nvidia/Qwen3.6-35B-A3B-NVFP4",
+				BaseURLs:       []string{"${SPARK1}", "${SPARK_MISSING}", "http://100.86.62.91:8000/v1"},
+				TimeoutSeconds: 900,
+				MaxRetries:     1,
+				Enabled:        true,
+			},
+		},
+		OCRProviders: map[string]OCRProviderCfg{
+			"local-ocr": {Type: "chandra", BaseURLs: []string{"${SPARK1}"}, Enabled: true},
+		},
+	}
+
+	rc := c.ToProviderRegistryConfig()
+
+	llm := rc.LLMProviders["local-llm"].BaseURLs
+	if len(llm) != 2 || llm[0] != "http://100.74.68.88:8000/v1" || llm[1] != "http://100.86.62.91:8000/v1" {
+		t.Fatalf("LLM BaseURLs = %v, want resolved spark URLs", llm)
+	}
+	if got := rc.LLMProviders["local-llm"].TimeoutSeconds; got != 900 {
+		t.Fatalf("LLM TimeoutSeconds = %d, want 900", got)
+	}
+	if got := rc.LLMProviders["local-llm"].MaxRetries; got != 1 {
+		t.Fatalf("LLM MaxRetries = %d, want 1", got)
+	}
+	ocr := rc.OCRProviders["local-ocr"].BaseURLs
+	if len(ocr) != 1 || ocr[0] != "http://100.74.68.88:8000/v1" {
+		t.Fatalf("OCR BaseURLs = %v, want resolved spark URL", ocr)
+	}
 }
 
 func TestManager_WatchConfig(t *testing.T) {

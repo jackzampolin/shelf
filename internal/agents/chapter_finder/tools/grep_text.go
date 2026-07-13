@@ -18,6 +18,11 @@ type GrepMatch struct {
 	InExcludedRange bool     `json:"in_excluded_range"`
 }
 
+// maxGrepMatches bounds how many per-page match records are serialized back to
+// the agent. Clusters are computed over the full match set first; only the
+// output list is capped, so broad queries cannot exceed the model context.
+const maxGrepMatches = 50
+
 func grepTextTool() providers.Tool {
 	return providers.Tool{
 		Type: "function",
@@ -116,13 +121,89 @@ func (t *ChapterFinderTools) grepText(ctx context.Context, query string) (string
 	clusters := identifyClusters(validMatches)
 	summary := buildGrepSummary(matches, clusters, len(t.excludedRanges) > 0)
 
+	totalMatchPages := len(matches)
+	matchesTruncated := false
+	if len(matches) > maxGrepMatches {
+		matchesTruncated = true
+		matches = capMatches(matches, clusters, t.entryNearPage())
+	}
+
 	return jsonSuccess(map[string]any{
-		"query":    query,
-		"matches":  matches,
-		"clusters": clusters,
-		"summary":  summary,
-		"message":  fmt.Sprintf("Found %d matches across %d pages", sumMatchCounts(matches), len(matches)),
+		"query":               query,
+		"matches":             matches,
+		"matches_truncated":   matchesTruncated,
+		"total_match_pages":   totalMatchPages,
+		"dropped_match_pages": totalMatchPages - len(matches),
+		"clusters":            clusters,
+		"summary":             summary,
+		"message":             fmt.Sprintf("Found matches on %d pages (showing %d)", totalMatchPages, len(matches)),
 	}), nil
+}
+
+// entryNearPage returns the entry's expected page (0 if unknown), used to bias
+// which matches survive truncation toward where the chapter is expected.
+func (t *ChapterFinderTools) entryNearPage() int {
+	if t.entry != nil {
+		return t.entry.ExpectedNearPage
+	}
+	return 0
+}
+
+// capMatches bounds the returned match set to maxGrepMatches without dropping
+// chapter-start candidates. It always keeps every cluster's first page and every
+// isolated (non-clustered) non-excluded match — those are the likely chapter
+// starts — then fills the remaining slots with pages nearest the expected page.
+// Result is returned sorted by page number.
+func capMatches(matches []GrepMatch, clusters []Cluster, near int) []GrepMatch {
+	inCluster := func(p int) bool {
+		for _, c := range clusters {
+			if p >= c.StartPage && p <= c.EndPage {
+				return true
+			}
+		}
+		return false
+	}
+	clusterStart := make(map[int]bool, len(clusters))
+	for _, c := range clusters {
+		clusterStart[c.StartPage] = true
+	}
+
+	byNear := func(s []GrepMatch) {
+		sort.Slice(s, func(i, j int) bool {
+			li, lj := absInt(s[i].ScanPage-near), absInt(s[j].ScanPage-near)
+			if li == lj {
+				return s[i].ScanPage < s[j].ScanPage
+			}
+			return li < lj
+		})
+	}
+
+	var mustKeep, rest []GrepMatch
+	for _, m := range matches {
+		if !m.InExcludedRange && (clusterStart[m.ScanPage] || !inCluster(m.ScanPage)) {
+			mustKeep = append(mustKeep, m)
+		} else {
+			rest = append(rest, m)
+		}
+	}
+
+	var kept []GrepMatch
+	if len(mustKeep) >= maxGrepMatches {
+		byNear(mustKeep)
+		kept = mustKeep[:maxGrepMatches]
+	} else {
+		byNear(rest)
+		kept = mustKeep
+		for _, m := range rest {
+			if len(kept) >= maxGrepMatches {
+				break
+			}
+			kept = append(kept, m)
+		}
+	}
+
+	sort.Slice(kept, func(i, j int) bool { return kept[i].ScanPage < kept[j].ScanPage })
+	return kept
 }
 
 // Cluster represents a contiguous group of pages with matches.
@@ -214,10 +295,9 @@ func buildGrepSummary(matches []GrepMatch, clusters []Cluster, hasExcludedRanges
 	return strings.Join(lines, "\n")
 }
 
-func sumMatchCounts(matches []GrepMatch) int {
-	total := 0
-	for _, m := range matches {
-		total += m.MatchCount
+func absInt(x int) int {
+	if x < 0 {
+		return -x
 	}
-	return total
+	return x
 }

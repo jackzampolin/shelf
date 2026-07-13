@@ -112,7 +112,7 @@ func (e *ExportEpubEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 
 	// Load chapters
 	chapterQuery := fmt.Sprintf(`{
-		Chapter(filter: {book_id: {_eq: "%s"}}) {
+		Chapter(filter: {_bookID: {_eq: "%s"}}) {
 			_docID
 			entry_id
 			title

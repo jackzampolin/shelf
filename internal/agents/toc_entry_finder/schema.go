@@ -2,8 +2,8 @@ package toc_entry_finder
 
 // Result represents the result from the ToC entry finder agent.
 type Result struct {
-	ScanPage  *int   `json:"scan_page"`  // Actual page number where entry starts (nil if not found)
-	Reasoning string `json:"reasoning"`  // How the agent found it or why not found
+	ScanPage  *int   `json:"scan_page"` // Actual page number where entry starts (nil if not found)
+	Reasoning string `json:"reasoning"` // How the agent found it or why not found
 }
 
 // TocEntry represents a ToC entry to find.
@@ -15,4 +15,6 @@ type TocEntry struct {
 	LevelName         string `json:"level_name"`          // "chapter", "part", "section"
 	PrintedPageNumber string `json:"printed_page_number"` // From original ToC
 	SortOrder         int    `json:"sort_order"`          // Position in ToC
+	LinkRetries       int    `json:"link_retries"`        // Durable failed-attempt count
+	LinkFailureReason string `json:"link_failure_reason"` // Feedback retained across restart
 }

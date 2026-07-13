@@ -1,4 +1,16 @@
-Find: "{{.SearchTerm}}"{{if .PrintedPage}} (printed page {{.PrintedPage}}, but use scan pages){{end}} [{{.TotalPages}} pages in book]
+TARGET ENTRY
+Find only this ToC entry: "{{.SearchTerm}}"{{if .PrintedPage}}
+Printed page: {{.PrintedPage}} (use scan pages for the final answer){{end}}
+Total scan pages: {{.TotalPages}}
+
+DECISION RULE
+If grep_text shows a dense title cluster near the expected scan range, verify the first cluster page with get_page_ocr. Prefer a formal section/chapter header. For appendix/diagram entries, evidence.title_prefix_in_section_header is valid when the remaining title continues on an adjacent page. A page-header title is valid only on the first page of the cluster; later repeated running headers are not entry starts. If get_page_ocr reports expected_printed_page_missing at the start of a title-header cluster, use that first available scanned page.
+
 {{if .BackMatterStart}}
-BOOK STRUCTURE: Back matter (including {{.BackMatterTypes}}) starts around page {{.BackMatterStart}}. Results from pages {{.BackMatterStart}}+ are likely footnote references, not chapter starts.
+PAGE CONTEXT
+Late-section labels in this book: {{.BackMatterTypes}}.
+{{if .TargetIsBackMatter}}This target is a late/back-matter ToC entry, so pages around or after scan page {{.BackMatterStart}} may be valid.
+Do not return a generic late-section label; the only target is "{{.SearchTerm}}".{{else}}Pages {{.BackMatterStart}}+ are likely late notes, appendices, glossary, or index material.
+For this non-back-matter target, treat matches there as references unless OCR clearly shows this exact entry starts there.
+Do not search for or return the late-section labels; the only target is "{{.SearchTerm}}".{{end}}
 {{end}}

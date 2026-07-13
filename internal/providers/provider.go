@@ -52,6 +52,21 @@ type OCRProvider interface {
 	RetryDelayBase() time.Duration
 }
 
+// RetryManaged is implemented by providers that already apply their configured
+// retry budget inside a single Chat, ProcessImage, or Generate call. Worker
+// pools must not wrap those calls in the same retry budget again: doing so
+// multiplies attempts and can turn one timeout-bound unit into an hour-long
+// apparent stall.
+type RetryManaged interface {
+	ManagesRetries() bool
+}
+
+// EndpointStatusReporter is implemented by multi-endpoint providers that can
+// expose their live client-side request distribution for operations.
+type EndpointStatusReporter interface {
+	EndpointStatuses() []EndpointStatus
+}
+
 // DefaultMaxConcurrency is used when provider returns 0 for MaxConcurrency.
 const DefaultMaxConcurrency = 50
 
@@ -114,12 +129,18 @@ type ChatRequest struct {
 	Model string `json:"model,omitempty"`
 
 	// Generation parameters
-	Temperature float64 `json:"temperature,omitempty"`
-	MaxTokens   int     `json:"max_tokens,omitempty"`
-	Timeout     time.Duration
+	Temperature    float64 `json:"temperature,omitempty"`
+	TemperatureSet bool    `json:"-"`
+	TopP           float64 `json:"top_p,omitempty"`
+	MaxTokens      int     `json:"max_tokens,omitempty"`
+	Timeout        time.Duration
 
 	// Structured output
 	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
+
+	// Tool selection. OpenAI-compatible providers accept "auto", "required",
+	// "none", or a provider-specific function choice object.
+	ToolChoice any `json:"tool_choice,omitempty"`
 
 	// Request tracking
 	RequestID string `json:"-"`
@@ -151,6 +172,10 @@ type ChatResult struct {
 	// Provider info
 	Provider  string `json:"provider"`
 	ModelUsed string `json:"model_used"`
+	// FinishReason is the provider's terminal reason (for example "stop",
+	// "tool_calls", or "length"). Callers must never treat "length" as a
+	// complete response.
+	FinishReason string `json:"finish_reason,omitempty"`
 
 	// Request tracking
 	RequestID string `json:"request_id"`

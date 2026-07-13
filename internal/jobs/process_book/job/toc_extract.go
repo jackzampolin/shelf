@@ -15,7 +15,8 @@ func (j *Job) CreateTocExtractWorkUnit(ctx context.Context) *jobs.WorkUnit {
 	unit, unitID := common.CreateTocExtractWorkUnit(ctx, j, j.TocDocID)
 	if unit != nil {
 		j.RegisterWorkUnit(unitID, WorkUnitInfo{
-			UnitType: WorkUnitTypeTocExtract,
+			UnitType:   WorkUnitTypeTocExtract,
+			RetryCount: j.Book.GetTocExtractState().Retries(),
 		})
 	}
 	return unit

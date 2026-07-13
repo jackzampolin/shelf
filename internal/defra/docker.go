@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	DefaultImage         = "sourcenetwork/defradb:latest"
+	DefaultImage         = "sourcenetwork/defradb:1.0.0-rc1"
 	DefaultContainerName = "shelf-defra"
 	DefaultPort          = "9181"
 	ContainerPort        = "9181/tcp"
@@ -41,11 +41,11 @@ func GenerateContainerName(homePath string) string {
 type ContainerStatus string
 
 const (
-	StatusRunning    ContainerStatus = "running"
-	StatusStopped    ContainerStatus = "stopped"
-	StatusNotFound   ContainerStatus = "not_found"
-	StatusUnhealthy  ContainerStatus = "unhealthy"
-	StatusStarting   ContainerStatus = "starting"
+	StatusRunning   ContainerStatus = "running"
+	StatusStopped   ContainerStatus = "stopped"
+	StatusNotFound  ContainerStatus = "not_found"
+	StatusUnhealthy ContainerStatus = "unhealthy"
+	StatusStarting  ContainerStatus = "starting"
 )
 
 // DockerManager manages the DefraDB Docker container lifecycle.
@@ -310,13 +310,7 @@ func (m *DockerManager) createAndStart(ctx context.Context) error {
 		ExposedPorts: nat.PortSet{
 			ContainerPort: struct{}{},
 		},
-		Healthcheck: &container.HealthConfig{
-			Test:        []string{"CMD", "curl", "-sf", "http://localhost:9181/health-check"},
-			Interval:    2 * time.Second,
-			Timeout:     5 * time.Second,
-			Retries:     10,
-			StartPeriod: 5 * time.Second,
-		},
+		Healthcheck: defraHealthcheck(),
 	}
 
 	hostConfig := &container.HostConfig{
@@ -352,6 +346,22 @@ func (m *DockerManager) createAndStart(ctx context.Context) error {
 	return m.waitForReady(ctx, 30*time.Second)
 }
 
+func defraHealthcheck() *container.HealthConfig {
+	// The published DefraDB image includes bash but not curl or wget. Use
+	// bash's /dev/tcp support so Docker health reflects the endpoint Shelf
+	// itself waits on instead of permanently reporting a false unhealthy state.
+	return &container.HealthConfig{
+		Test: []string{
+			"CMD", "bash", "-c",
+			`exec 3<>/dev/tcp/127.0.0.1/9181 && printf 'GET /health-check HTTP/1.0\r\nHost: localhost\r\n\r\n' >&3 && IFS= read -r status <&3 && [[ "$status" == *" 200 "* ]]`,
+		},
+		Interval:    2 * time.Second,
+		Timeout:     5 * time.Second,
+		Retries:     10,
+		StartPeriod: 5 * time.Second,
+	}
+}
+
 // getContainerStatus returns the status and ID of the container.
 func (m *DockerManager) getContainerStatus(ctx context.Context) (ContainerStatus, string, error) {
 	filterArgs := filters.NewArgs()
@@ -365,11 +375,11 @@ func (m *DockerManager) getContainerStatus(ctx context.Context) (ContainerStatus
 		return "", "", fmt.Errorf("failed to list containers: %w", err)
 	}
 
-	if len(containers) == 0 {
+	c, ok := findContainerByExactName(containers, m.containerName)
+	if !ok {
 		return StatusNotFound, "", nil
 	}
 
-	c := containers[0]
 	switch c.State {
 	case "running":
 		return StatusRunning, c.ID, nil
@@ -380,6 +390,20 @@ func (m *DockerManager) getContainerStatus(ctx context.Context) (ContainerStatus
 	default:
 		return ContainerStatus(c.State), c.ID, nil
 	}
+}
+
+// findContainerByExactName filters Docker's substring-based name results.
+// Without this check, "shelf-defra" also matches "shelf-defra-am-hist" and
+// one Shelf home can validate, start, or stop another home's database.
+func findContainerByExactName(containers []container.Summary, name string) (container.Summary, bool) {
+	for _, c := range containers {
+		for _, candidate := range c.Names {
+			if candidate == name || candidate == "/"+name {
+				return c, true
+			}
+		}
+	}
+	return container.Summary{}, false
 }
 
 // waitForReady polls DefraDB's health endpoint until ready.

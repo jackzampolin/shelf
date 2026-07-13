@@ -1,10 +1,14 @@
 # Shelf
 
-Turn physical books into digital libraries using vision-powered OCR and LLMs.
+Turn owned book sources into structured books and audiobooks. Shelf accepts
+native EPUB text directly, embedded-text PDFs, and image-only scans; OCR is a
+source adapter, not a requirement for every book.
 
 ## Overview
 
-Shelf is a book digitization pipeline that transforms scanned book pages into structured ePub files using:
+Shelf is a book digitization pipeline that transforms source books into structured ePub files using:
+- Direct EPUB package/navigation/spine import with no inference
+- Embedded PDF text recovery when a scan already carries a faithful text layer
 - Multi-provider OCR with consensus blending
 - LLM-powered content analysis and structure extraction
 - DefraDB for data storage with versioning and attribution
@@ -46,6 +50,20 @@ shelf serve
 
 The web UI will be available at http://localhost:8080
 
+### Read-only research MCP
+
+Run a separate, mutation-free MCP boundary over an existing Shelf server:
+
+```bash
+shelf mcp --shelf-url http://127.0.0.1:8080 --port 18081
+```
+
+Defra and other MCP clients connect at `http://127.0.0.1:18081/mcp`. The server
+exposes only bounded book metadata, structure listing, lexical/regex passage
+search, bounded passage reads, and exact quotation validation. Every text result
+includes the current canonical structure digest; processing, repair, raw
+DefraDB, whole-book dumps, and other mutations are intentionally absent.
+
 ### Development
 
 ```bash
@@ -73,7 +91,19 @@ make help
 
 See [CLAUDE.md](CLAUDE.md) for detailed development context and patterns.
 
-## Pipeline Stages
+## Source paths
+
+| Source | Shelf path | Inference |
+|---|---|---|
+| EPUB | `books import-epub` → terminal metadata/navigation/chapters | None |
+| PDF with embedded text | PDF ingest → `books repair-pdf-text` → downstream structure | Structure only |
+| Image-only PDF scan | PDF ingest → OCR → ToC → structure | OCR + structure |
+
+`import-epub` preflights the complete archive, preserves the original bytes and
+SHA-256, and runs synchronously to a terminal `complete` book. Re-importing the
+same bytes returns the existing Shelf book.
+
+## Scan pipeline stages
 
 The book processing pipeline includes:
 
@@ -93,8 +123,12 @@ shelf serve                      # Start server
 
 # Books
 shelf api books list             # List all books
+shelf api books import-epub <epub> # Direct terminal import; skip OCR/LLMs
 shelf api books ingest <pdf>     # Ingest a PDF scan
+shelf api books ingest --stitch <dir> # Ingest a directory of numbered PDF parts as books
 shelf api books get <id>         # Get book details
+shelf api books chapters <id>    # Inspect imported/structured chapters
+shelf api books repair-toc-range <id> --start 1052 --end 1053 --reason "verified printed contents"
 
 # Jobs
 shelf api jobs start <book-id>   # Start processing a book
@@ -119,10 +153,11 @@ Configuration lives in `~/.shelf/config.yaml` with hot-reload support.
 Example configuration:
 
 ```yaml
-providers:
+llm_providers:
   openrouter:
     api_key: "your-key"
     rate_limit: 10  # requests per second
+    max_concurrency: 32  # concurrent in-flight requests
 
 defaults:
   debug_agents: false
@@ -130,6 +165,8 @@ defaults:
 ```
 
 See the web UI settings page or `shelf api settings get` for current configuration.
+For batch runs, `rate_limit` and per-provider `max_concurrency` are the hardware/API
+capacity knobs; the scheduler allocates those slots across queued books.
 
 ## Documentation
 

@@ -14,8 +14,19 @@ import (
 // JobType is the identifier for this job type.
 const JobType = "process-book"
 
+// OCR dependency windows are re-exported for callers that must invalidate
+// only the pipeline stages whose inputs include a repaired page.
+const (
+	OcrThresholdForMetadata = pjob.OcrThresholdForMetadata
+	FrontMatterPageCount    = pjob.FrontMatterPageCount
+)
+
 // Config configures the process pages job.
 type Config struct {
+	// Variant identifies the durable execution plan. It is persisted with the
+	// job so a resumed job cannot silently expand into the standard pipeline.
+	Variant PipelineVariant
+
 	// Provider settings
 	OcrProviders     []string
 	MetadataProvider string
@@ -69,6 +80,11 @@ func (v PipelineVariant) IsValid() bool {
 // ApplyVariant applies predefined settings for a pipeline variant.
 // This sets the Enable* flags appropriately for the variant.
 func (c *Config) ApplyVariant(variant PipelineVariant) {
+	if !variant.IsValid() {
+		variant = VariantStandard
+	}
+	c.Variant = variant
+
 	switch variant {
 	case VariantPhotoBook:
 		// Photo books: OCR + metadata only, no ToC or structure
@@ -135,16 +151,22 @@ func (c Config) Validate() error {
 
 // Status represents the status of page processing for a book.
 type Status struct {
-	TotalPages       int  `json:"total_pages"`
-	OcrComplete      int  `json:"ocr_complete"`
-	MetadataComplete bool `json:"metadata_complete"`
-	TocFound         bool `json:"toc_found"`
-	TocExtracted     bool `json:"toc_extracted"`
+	TotalPages        int  `json:"total_pages"`
+	OcrComplete       int  `json:"ocr_complete"`
+	OcrQuarantined    int  `json:"ocr_quarantined"`
+	MetadataComplete  bool `json:"metadata_complete"`
+	TocFound          bool `json:"toc_found"`
+	TocExtracted      bool `json:"toc_extracted"`
+	BookComplete      bool `json:"-"`
+	StructureComplete bool `json:"-"`
 }
 
 // IsComplete returns whether processing is complete for this book.
 func (st *Status) IsComplete() bool {
-	allPagesComplete := st.OcrComplete >= st.TotalPages
+	allPagesComplete := st.OcrComplete >= st.TotalPages && st.OcrQuarantined == 0
+	if st.BookComplete && st.StructureComplete {
+		return allPagesComplete && st.MetadataComplete
+	}
 	return allPagesComplete && st.MetadataComplete && st.TocExtracted
 }
 
@@ -164,7 +186,13 @@ func GetStatusWithClient(ctx context.Context, client *defra.Client, bookID strin
 	bookQuery := fmt.Sprintf(`{
 		Book(filter: {_docID: {_eq: "%s"}}) {
 			page_count
+			status
 			metadata_complete
+			structure_complete
+			toc {
+				toc_found
+				extract_complete
+			}
 		}
 	}`, bookID)
 
@@ -183,13 +211,26 @@ func GetStatusWithClient(ctx context.Context, client *defra.Client, bookID strin
 			if mc, ok := book["metadata_complete"].(bool); ok {
 				status.MetadataComplete = mc
 			}
+			status.BookComplete = getStatusString(book, "status") == "complete"
+			if complete, ok := book["structure_complete"].(bool); ok {
+				status.StructureComplete = complete
+			}
+			if toc, ok := book["toc"].(map[string]any); ok {
+				if found, ok := toc["toc_found"].(bool); ok {
+					status.TocFound = found
+				}
+				if extracted, ok := toc["extract_complete"].(bool); ok {
+					status.TocExtracted = extracted
+				}
+			}
 		}
 	}
 
 	// Query page completion counts
 	pageQuery := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}}) {
+		Page(filter: {_bookID: {_eq: "%s"}}) {
 			ocr_complete
+			ocr_quarantined
 		}
 	}`, bookID)
 
@@ -206,33 +247,18 @@ func GetStatusWithClient(ctx context.Context, client *defra.Client, bookID strin
 			}
 			if ocrComplete, ok := page["ocr_complete"].(bool); ok && ocrComplete {
 				status.OcrComplete++
-			}
-		}
-	}
-
-	// Query ToC status
-	tocQuery := fmt.Sprintf(`{
-		ToC(filter: {book_id: {_eq: "%s"}}) {
-			toc_found
-			extract_complete
-		}
-	}`, bookID)
-
-	tocResp, err := client.Execute(ctx, tocQuery, nil)
-	if err == nil {
-		if tocs, ok := tocResp.Data["ToC"].([]any); ok && len(tocs) > 0 {
-			if toc, ok := tocs[0].(map[string]any); ok {
-				if found, ok := toc["toc_found"].(bool); ok {
-					status.TocFound = found
-				}
-				if extracted, ok := toc["extract_complete"].(bool); ok {
-					status.TocExtracted = extracted
-				}
+			} else if quarantined, ok := page["ocr_quarantined"].(bool); ok && quarantined {
+				status.OcrQuarantined++
 			}
 		}
 	}
 
 	return status, nil
+}
+
+func getStatusString(values map[string]any, key string) string {
+	value, _ := values[key].(string)
+	return value
 }
 
 // NewJob creates a new process pages job for the given book.
@@ -300,13 +326,7 @@ func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
 			"ocr_providers", cfg.OcrProviders)
 	}
 
-	return pjob.NewFromLoadResult(result), nil
-}
-
-// JobFactory returns a factory function for recreating jobs from stored metadata.
-// Used by the scheduler to resume interrupted jobs after restart.
-func JobFactory(cfg Config) jobs.JobFactory {
-	return common.MakeJobFactory(func(ctx context.Context, bookID string) (jobs.Job, error) {
-		return NewJob(ctx, cfg, bookID)
-	})
+	job := pjob.NewFromLoadResult(result)
+	job.PipelineVariant = string(cfg.Variant)
+	return job, nil
 }

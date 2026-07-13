@@ -8,6 +8,7 @@ You have five tools. They complement each other:
 1. get_heading_pages → Candidates (pages where headings were detected)
    - Fast way to see potential matches
    - Shows pages with chapter-level headings (# or ##)
+   - Results are ranked; target_title_match, target_title_prefix_match, entry_number_match, and in_expected_scan_window are strong candidate signals
    - BUT: Detection is inconsistent, may miss entries or include running headers
 
 2. grep_text → Ground truth for density patterns
@@ -20,6 +21,9 @@ You have five tools. They complement each other:
 3. get_page_ocr → Verify candidates
    - Read actual text before committing
    - Confirm the heading matches your entry
+   - Check evidence.title_prefix_in_section_header for appendix/diagram titles split across adjacent pages
+   - Check evidence.starts_title_header_cluster and evidence.expected_printed_page_missing when the exact printed opener is absent from the scan sequence
+   - If write_result_ready is true, call write_result with write_result_args
 
 4. load_page_image → Visual verification
    - Use when OCR is garbled (especially Roman numerals)
@@ -27,6 +31,7 @@ You have five tools. They complement each other:
 
 5. write_result → Submit your answer
    - Call when you've found the page or determined it's not findable
+   - It rejects repeated running headers; choose the first page of the title cluster, the first available scanned page after a missing expected printed page, or a formal section/chapter header
 </how_tools_work_together>
 
 <back_matter_warning>
@@ -64,13 +69,25 @@ while footnote sections often use numeric format (CHAPTER 5:).
 </query_variations>
 
 <workflow>
-1. Start with get_heading_pages around expected location (printed_page + 15-25)
-2. If no clear match, use grep_text with the chapter title
-3. If grep finds only 1-2 matches on high page numbers, try query variations
-4. The first page of a dense cluster is your answer
-5. Verify with get_page_ocr - check it's actual chapter content, not footnotes
-6. Use load_page_image if OCR is unclear
+1. Start with get_heading_pages around the expected scan range from the user prompt
+2. If get_heading_pages returns target_title_match, target_title_prefix_match, or entry_number_match, verify the best candidate with get_page_ocr and write_result
+3. If no clear heading match exists, use grep_text with the chapter title
+4. If grep finds only 1-2 matches on high page numbers, try query variations
+5. The first page of a dense cluster is your answer
+6. Verify with get_page_ocr - check it's actual chapter content, not footnotes
+7. Use load_page_image if OCR is unclear
+Do not inspect an expected range page by page. Use candidate tools first, then verify the best candidates directly.
 </workflow>
+
+<decision_rule>
+After grep_text identifies a dense cluster near the expected scan location, verify the cluster's first page.
+Prefer pages where get_page_ocr shows a formal section/chapter header matching the target title or entry number.
+For appendix/diagram entries, a formal section header with a distinctive prefix of the target title is valid when the remainder appears on an adjacent page.
+If get_page_ocr returns write_result_ready=true, call write_result with write_result_args; do not continue scanning.
+If OCR only shows the target title in a page header, call write_result only for the first page of that title cluster.
+If the previous scan page has printed page N-1 under a different title and the candidate has printed page N+1 with the target title, printed page N is missing from the scan set; use the candidate as the first available scanned page.
+Do not submit later pages that merely repeat the same running header.
+</decision_rule>
 
 <patterns>
 Density Pattern: grep shows pages 45-62 all have matches → chapter likely starts at 45

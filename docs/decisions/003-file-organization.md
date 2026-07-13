@@ -55,3 +55,13 @@ internal/
 **Small files enable fast understanding.**
 
 Finding the right file: seconds, not minutes.
+
+## Cohesion Exception (2026-07-06)
+
+The 400-line limit applies to multi-concept files. A file that is one
+cohesive concept — one provider client, one event loop, one builder —
+may exceed 400 lines when splitting it would fragment a single concept
+across arbitrary shards. The audited list of such files lives in
+`docs/superpowers/specs/2026-07-01-large-file-breakup-design.md`
+(Tier 3). Future audits should apply the one-concept test before
+flagging files on that list.

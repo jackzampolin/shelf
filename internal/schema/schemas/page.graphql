@@ -14,6 +14,10 @@ type Page {
     # Status
     extract_complete: Boolean
     ocr_complete: Boolean
+    # Explicit terminal exception. Quarantined pages are skipped by OCR and
+    # remain distinguishable from successfully OCR'd pages.
+    ocr_quarantined: Boolean
+    ocr_quarantine_reason: String
 
     # Relationships
     # One-to-many: Page has many OcrResults

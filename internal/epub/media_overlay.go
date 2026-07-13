@@ -17,8 +17,8 @@ type MediaOverlayBuilder struct {
 	book          Book
 	chapters      []Chapter
 	chapterAudios map[string]ChapterAudio // keyed by chapter ID
-	narrator      string                   // Optional narrator name
-	coverImage    string                   // Optional path to cover image file
+	narrator      string                  // Optional narrator name
+	coverImage    string                  // Optional path to cover image file
 }
 
 // NewMediaOverlayBuilder creates a new builder for EPUBs with audio sync.
@@ -57,11 +57,11 @@ func (b *MediaOverlayBuilder) Build(outputPath string) error {
 	}
 	defer f.Close()
 
-	return b.WriteTo(f)
+	return b.Write(f)
 }
 
-// WriteTo writes the EPUB with Media Overlays to a writer.
-func (b *MediaOverlayBuilder) WriteTo(w io.Writer) error {
+// Write writes the EPUB with Media Overlays to a writer.
+func (b *MediaOverlayBuilder) Write(w io.Writer) error {
 	zw := zip.NewWriter(w)
 	defer zw.Close()
 

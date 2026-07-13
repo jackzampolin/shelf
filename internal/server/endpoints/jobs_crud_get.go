@@ -71,7 +71,7 @@ func (e *GetJobEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	resp := GetJobResponse{Record: job}
 
 	// If job is running, try to get live status from scheduler
-	if job.Status == jobs.StatusRunning {
+	if job.Status == jobs.StatusRunning || job.Status == jobs.StatusWaitingProvider {
 		scheduler := svcctx.SchedulerFrom(r.Context())
 		if scheduler != nil {
 			// Get live job status (includes pending_units)
@@ -88,7 +88,7 @@ func (e *GetJobEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 			}
 
 			// Get worker status (queue depths, rate limiters)
-			resp.WorkerStatus = scheduler.WorkerStatus()
+			resp.WorkerStatus = scheduler.WorkerStatusForJob(id)
 		}
 	}
 

@@ -3,12 +3,58 @@ package jobs
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/jackzampolin/shelf/internal/providers"
 )
+
+type shutdownBlockingPool struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (p *shutdownBlockingPool) Name() string   { return "shutdown-blocking" }
+func (p *shutdownBlockingPool) Type() PoolType { return PoolTypeCPU }
+func (p *shutdownBlockingPool) Start(ctx context.Context) {
+	close(p.started)
+	<-ctx.Done()
+	<-p.release
+}
+func (p *shutdownBlockingPool) Submit(*WorkUnit) error   { return nil }
+func (p *shutdownBlockingPool) Status() PoolStatus       { return PoolStatus{} }
+func (p *shutdownBlockingPool) init(chan<- workerResult) {}
+
+func TestSchedulerStartWaitsForWorkerPools(t *testing.T) {
+	pool := &shutdownBlockingPool{started: make(chan struct{}), release: make(chan struct{})}
+	scheduler := NewScheduler(SchedulerConfig{Logger: slog.Default()})
+	scheduler.RegisterPool(pool)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		scheduler.Start(ctx)
+		close(done)
+	}()
+	select {
+	case <-pool.started:
+	case <-time.After(time.Second):
+		t.Fatal("worker pool did not start")
+	}
+	cancel()
+	select {
+	case <-done:
+		t.Fatal("scheduler returned while a worker pool was still running")
+	case <-time.After(25 * time.Millisecond):
+	}
+	close(pool.release)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("scheduler did not return after worker pools stopped")
+	}
+}
 
 // TestScheduler_NoPoolForType tests error handling when no pool available.
 func TestScheduler_NoPoolForType(t *testing.T) {
@@ -193,6 +239,91 @@ func TestScheduler_PoolQueueDepth(t *testing.T) {
 	}
 }
 
+func TestCancelActiveJobPurgesProviderQueue(t *testing.T) {
+	scheduler := NewScheduler(SchedulerConfig{})
+	llmClient := providers.NewMockClient()
+	pool, err := NewProviderWorkerPool(ProviderWorkerPoolConfig{Name: "llm", LLMClient: llmClient})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scheduler.RegisterPool(pool)
+
+	job := &stubFailJob{bookID: "book-1"}
+	scheduler.mu.Lock()
+	scheduler.jobs[job.ID()] = job
+	scheduler.pending[job.ID()] = 2
+	scheduler.mu.Unlock()
+	if err := pool.Submit(&WorkUnit{ID: "queued", JobID: job.ID(), Type: WorkUnitTypeLLM}); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.circuit.park(&WorkUnit{ID: "parked", JobID: job.ID(), Type: WorkUnitTypeLLM}, fmt.Errorf("connection refused")); err != nil {
+		t.Fatal(err)
+	}
+
+	if cancelled := scheduler.CancelActiveJobsByBookIDAndType(context.Background(), "book-1", "stub", "repair restart"); cancelled != 1 {
+		t.Fatalf("cancelled = %d, want 1", cancelled)
+	}
+	if pool.queue.Len() != 0 {
+		t.Fatalf("provider queue depth = %d, want cancelled work purged", pool.queue.Len())
+	}
+	if _, parked := pool.circuit.status(); parked != 0 {
+		t.Fatalf("parked units = %d, want cancelled work purged", parked)
+	}
+}
+
+func TestScheduler_BookAwareQueueOrdering(t *testing.T) {
+	scheduler := NewScheduler(SchedulerConfig{})
+
+	llmClient := providers.NewMockClient()
+	llmPool, _ := NewProviderWorkerPool(ProviderWorkerPoolConfig{Name: "llm", LLMClient: llmClient, RPS: 100.0})
+	scheduler.RegisterPool(llmPool)
+
+	earlier := &priorityTestJob{priority: PriorityLow}
+	later := &priorityTestJob{priority: PriorityHigh}
+
+	ctx := context.Background()
+	if err := scheduler.Submit(ctx, earlier); err != nil {
+		t.Fatalf("Submit earlier error = %v", err)
+	}
+	time.Sleep(time.Millisecond)
+	if err := scheduler.Submit(ctx, later); err != nil {
+		t.Fatalf("Submit later error = %v", err)
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for llmPool.queue.Len() < 2 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if llmPool.queue.Len() != 2 {
+		t.Fatalf("queue length = %d, want 2", llmPool.queue.Len())
+	}
+
+	first := llmPool.queue.TryPop()
+	if first == nil {
+		t.Fatal("expected first work unit")
+	}
+	if first.JobID != earlier.ID() {
+		t.Fatalf("first JobID = %q, want earlier job %q", first.JobID, earlier.ID())
+	}
+	if first.BookSeq == 0 {
+		t.Fatal("first BookSeq was not stamped")
+	}
+
+	second := llmPool.queue.TryPop()
+	if second == nil {
+		t.Fatal("expected second work unit")
+	}
+	if second.JobID != later.ID() {
+		t.Fatalf("second JobID = %q, want later job %q", second.JobID, later.ID())
+	}
+	if second.BookSeq == 0 {
+		t.Fatal("second BookSeq was not stamped")
+	}
+	if first.BookSeq >= second.BookSeq {
+		t.Fatalf("BookSeq ordering = %d then %d, want increasing created_at", first.BookSeq, second.BookSeq)
+	}
+}
+
 // TestScheduler_RegisterFactory tests job factory registration.
 func TestScheduler_RegisterFactory(t *testing.T) {
 	scheduler := NewScheduler(SchedulerConfig{})
@@ -206,6 +337,33 @@ func TestScheduler_RegisterFactory(t *testing.T) {
 	scheduler.RegisterFactory("test-type", factory)
 
 	// No direct way to verify registration, but it shouldn't panic
+}
+
+type durableMetadataJob struct {
+	*CountingJob
+}
+
+func (j *durableMetadataJob) JobMetadata() map[string]any {
+	return map[string]any{
+		"variant": "ocr-only",
+		"book_id": "wrong-book",
+	}
+}
+
+func (j *durableMetadataJob) MetricsFor() *WorkUnitMetrics {
+	return &WorkUnitMetrics{BookID: "book-1"}
+}
+
+func TestSubmissionMetadataPreservesJobInputs(t *testing.T) {
+	job := &durableMetadataJob{CountingJob: NewCountingJob(1)}
+	metadata := submissionMetadata(job)
+
+	if got := metadata["variant"]; got != "ocr-only" {
+		t.Fatalf("variant = %v, want ocr-only", got)
+	}
+	if got := metadata["book_id"]; got != "book-1" {
+		t.Fatalf("book_id = %v, want authoritative metrics book-1", got)
+	}
 }
 
 // TestScheduler_GetPool tests pool lookup.
@@ -353,6 +511,138 @@ func TestScheduler_InitFromRegistry(t *testing.T) {
 	}
 }
 
+func TestScheduler_RefreshProviderClients(t *testing.T) {
+	oldProvider := newCtrlProvider()
+	newProvider := newCtrlProvider()
+	scheduler := NewScheduler(SchedulerConfig{Logger: slog.Default()})
+	pool, err := NewProviderWorkerPool(ProviderWorkerPoolConfig{
+		Name:        "ocr",
+		OCRProvider: oldProvider,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scheduler.RegisterPool(pool)
+
+	registry := providers.NewRegistry()
+	registry.RegisterOCR("ocr", newProvider)
+	if got := scheduler.RefreshProviderClients(registry); got != 1 {
+		t.Fatalf("RefreshProviderClients() = %d, want 1", got)
+	}
+	_, current, _ := pool.providerSnapshot()
+	if current != newProvider {
+		t.Fatal("scheduler pool retained old OCR provider")
+	}
+}
+
+func TestInitFromRegistry_FailFastOnUnhealthy(t *testing.T) {
+	reg := providers.NewRegistry()
+	bad := providers.NewMockClient()
+	bad.ShouldFail = true
+	reg.RegisterLLM("bad", bad)
+
+	s1 := NewScheduler(SchedulerConfig{Logger: slog.Default()})
+	if err := s1.InitFromRegistryWithHealthCheck(context.Background(), reg, true, true); err == nil {
+		t.Fatal("expected error when health check fails and failFast=true")
+	}
+
+	s2 := NewScheduler(SchedulerConfig{Logger: slog.Default()})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := s2.InitFromRegistryWithHealthCheck(ctx, reg, true, false); err != nil {
+		t.Fatalf("expected no error with failFast=false, got %v", err)
+	}
+	pool, ok := s2.GetPool("bad")
+	if !ok {
+		t.Fatal("expected unhealthy provider pool to be registered")
+	}
+	if got := pool.Status().Health; got == healthHealthy {
+		t.Fatalf("unhealthy startup pool reported %q, want open circuit", got)
+	}
+}
+
+func TestInitFromRegistry_FailFastOnUnhealthyOCRAndTTS(t *testing.T) {
+	t.Run("OCR", func(t *testing.T) {
+		reg := providers.NewRegistry()
+		bad := providers.NewMockOCRProvider()
+		bad.ShouldFail = true
+		reg.RegisterOCR("bad-ocr", bad)
+
+		scheduler := NewScheduler(SchedulerConfig{Logger: slog.Default()})
+		if err := scheduler.InitFromRegistryWithHealthCheck(context.Background(), reg, true, true); err == nil {
+			t.Fatal("expected error when OCR health check fails and failFast=true")
+		}
+	})
+
+	t.Run("TTS", func(t *testing.T) {
+		reg := providers.NewRegistry()
+		reg.RegisterTTS("bad-tts", failingTTSProvider{})
+
+		scheduler := NewScheduler(SchedulerConfig{Logger: slog.Default()})
+		if err := scheduler.InitFromRegistryWithHealthCheck(context.Background(), reg, true, true); err == nil {
+			t.Fatal("expected error when TTS health check fails and failFast=true")
+		}
+	})
+}
+
+func TestInitFromRegistry_HealthCheckTimeout(t *testing.T) {
+	oldTimeout := providerHealthCheckTimeout
+	providerHealthCheckTimeout = 10 * time.Millisecond
+	t.Cleanup(func() { providerHealthCheckTimeout = oldTimeout })
+
+	reg := providers.NewRegistry()
+	reg.RegisterLLM("slow", &slowHealthClient{
+		MockClient: providers.NewMockClient(),
+		delay:      time.Hour,
+	})
+
+	scheduler := NewScheduler(SchedulerConfig{Logger: slog.Default()})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	start := time.Now()
+	if err := scheduler.InitFromRegistryWithHealthCheck(ctx, reg, true, false); err != nil {
+		t.Fatalf("expected warn-only timeout to still initialize pool, got %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+		t.Fatalf("health check took %v, expected per-provider timeout to cap it", elapsed)
+	}
+	if _, ok := scheduler.GetPool("slow"); !ok {
+		t.Fatal("expected pool to register after warn-only timeout")
+	}
+	pool, _ := scheduler.GetPool("slow")
+	if got := pool.Status().Health; got == healthHealthy {
+		t.Fatalf("timed-out startup pool reported %q, want open circuit", got)
+	}
+}
+
+type slowHealthClient struct {
+	*providers.MockClient
+	delay time.Duration
+}
+
+func (c *slowHealthClient) HealthCheck(ctx context.Context) error {
+	select {
+	case <-time.After(c.delay):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+type failingTTSProvider struct{}
+
+func (failingTTSProvider) Name() string { return "failing-tts" }
+func (failingTTSProvider) Generate(ctx context.Context, req *providers.TTSRequest) (*providers.TTSResult, error) {
+	return nil, errors.New("failing TTS generate")
+}
+func (failingTTSProvider) HealthCheck(ctx context.Context) error {
+	return errors.New("failing TTS health check")
+}
+func (failingTTSProvider) RequestsPerSecond() float64    { return 1 }
+func (failingTTSProvider) MaxConcurrency() int           { return 0 }
+func (failingTTSProvider) MaxRetries() int               { return 1 }
+func (failingTTSProvider) RetryDelayBase() time.Duration { return time.Millisecond }
+
 // SyncCompleteJob is a job that completes synchronously with zero work units.
 // This mimics the behavior of ingest jobs.
 type SyncCompleteJob struct {
@@ -361,10 +651,45 @@ type SyncCompleteJob struct {
 	done    bool
 }
 
+type ZeroWorkNotDoneJob struct {
+	id string
+}
+
 type OnCompleteErrorJob struct {
 	id            string
 	doneCh        chan struct{}
 	onCompleteErr error
+}
+
+type priorityTestJob struct {
+	id       string
+	priority int
+}
+
+func (j *priorityTestJob) ID() string                   { return j.id }
+func (j *priorityTestJob) SetRecordID(id string)        { j.id = id }
+func (j *priorityTestJob) Type() string                 { return "priority-test" }
+func (j *priorityTestJob) Done() bool                   { return false }
+func (j *priorityTestJob) MetricsFor() *WorkUnitMetrics { return nil }
+func (j *priorityTestJob) Status(ctx context.Context) (map[string]string, error) {
+	return map[string]string{"done": "false"}, nil
+}
+func (j *priorityTestJob) Progress() map[string]ProviderProgress { return nil }
+func (j *priorityTestJob) OnComplete(ctx context.Context, result WorkResult) ([]WorkUnit, error) {
+	return nil, nil
+}
+func (j *priorityTestJob) Start(ctx context.Context) ([]WorkUnit, error) {
+	return []WorkUnit{
+		{
+			ID:       j.id + "-unit",
+			Type:     WorkUnitTypeLLM,
+			Provider: "llm",
+			Priority: j.priority,
+			ChatRequest: &providers.ChatRequest{
+				Messages: []providers.Message{{Role: "user", Content: "test"}},
+			},
+		},
+	}, nil
 }
 
 func (j *OnCompleteErrorJob) ID() string                   { return j.id }
@@ -418,6 +743,22 @@ func (j *SyncCompleteJob) Start(ctx context.Context) ([]WorkUnit, error) {
 	return nil, nil // Zero work units
 }
 
+func (j *ZeroWorkNotDoneJob) ID() string                   { return j.id }
+func (j *ZeroWorkNotDoneJob) SetRecordID(id string)        { j.id = id }
+func (j *ZeroWorkNotDoneJob) Type() string                 { return "zero-work-not-done" }
+func (j *ZeroWorkNotDoneJob) Done() bool                   { return false }
+func (j *ZeroWorkNotDoneJob) MetricsFor() *WorkUnitMetrics { return nil }
+func (j *ZeroWorkNotDoneJob) Status(ctx context.Context) (map[string]string, error) {
+	return map[string]string{"done": "false"}, nil
+}
+func (j *ZeroWorkNotDoneJob) Progress() map[string]ProviderProgress { return nil }
+func (j *ZeroWorkNotDoneJob) OnComplete(ctx context.Context, result WorkResult) ([]WorkUnit, error) {
+	return nil, nil
+}
+func (j *ZeroWorkNotDoneJob) Start(ctx context.Context) ([]WorkUnit, error) {
+	return nil, nil
+}
+
 // TestScheduler_SyncCompleteJob tests jobs that complete synchronously with no work units.
 // This verifies the fix for ingest jobs that never completed.
 func TestScheduler_SyncCompleteJob(t *testing.T) {
@@ -448,4 +789,30 @@ func TestScheduler_SyncCompleteJob(t *testing.T) {
 	if !job.Done() {
 		t.Error("job.Done() = false, want true")
 	}
+}
+
+func TestScheduler_ZeroWorkNotDoneRemovesJob(t *testing.T) {
+	scheduler := NewScheduler(SchedulerConfig{
+		Logger: slog.Default(),
+	})
+
+	job := &ZeroWorkNotDoneJob{}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	go scheduler.Start(ctx)
+
+	if err := scheduler.Submit(ctx, job); err != nil {
+		t.Fatalf("Submit() error = %v", err)
+	}
+
+	for i := 0; i < 100; i++ {
+		if scheduler.ActiveJobs() == 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatalf("ActiveJobs() = %d, want 0 for zero-work non-done job", scheduler.ActiveJobs())
 }

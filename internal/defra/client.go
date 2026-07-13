@@ -28,11 +28,30 @@ type Client struct {
 }
 
 // NewClient creates a new DefraDB client.
+//
+// The HTTP client uses a custom transport tuned for long pipeline runs behind
+// Docker Desktop's port-forwarder, which silently drops idle TCP flows. We
+// clone http.DefaultTransport (preserving ForceAttemptHTTP2/Proxy defaults) and
+// override the pooling/timeout knobs so pooled connections are retired before
+// the forwarder kills them.
 func NewClient(url string) *Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	// Retire idle pooled conns quickly so we never reuse a flow the
+	// port-forwarder has already silently dropped.
+	transport.IdleConnTimeout = 25 * time.Second
+	// Allow a healthy pool per host for parallel pipeline workers.
+	transport.MaxIdleConnsPerHost = 100
+	// Do not cap concurrent conns per host.
+	transport.MaxConnsPerHost = 0
+	// Bound the wait for response headers so a wedged conn fails fast.
+	transport.ResponseHeaderTimeout = 60 * time.Second
+
 	return &Client{
 		url: strings.TrimSuffix(url, "/"),
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			// Overall safety net; per-request context deadlines still apply.
+			Timeout:   30 * time.Second,
+			Transport: transport,
 		},
 	}
 }
@@ -128,9 +147,11 @@ func (c *Client) Execute(ctx context.Context, query string, variables map[string
 	return &gqlResp, nil
 }
 
-// AddSchema adds a GraphQL schema to DefraDB.
+// AddSchema adds a GraphQL/SDL schema to DefraDB.
+// As of DefraDB v1.0 (the "Schema -> Collection" rename), the SDL is POSTed to
+// /api/v0/collections (formerly /api/v0/schema); the body format is unchanged (raw SDL).
 func (c *Client) AddSchema(ctx context.Context, schema string) error {
-	req, err := http.NewRequestWithContext(ctx, "POST", c.url+"/api/v0/schema", strings.NewReader(schema))
+	req, err := http.NewRequestWithContext(ctx, "POST", c.url+"/api/v0/collections", strings.NewReader(schema))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -145,6 +166,69 @@ func (c *Client) AddSchema(ctx context.Context, schema string) error {
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("schema error (status %d): %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+// CollectionDescription is the subset of DefraDB's collection metadata needed
+// for additive startup migrations.
+type CollectionDescription struct {
+	Name   string                       `json:"Name"`
+	Fields []CollectionFieldDescription `json:"Fields"`
+}
+
+type CollectionFieldDescription struct {
+	Name string `json:"Name"`
+	Typ  int    `json:"Typ"`
+}
+
+// ListCollectionDescriptions returns active collection definitions.
+func (c *Client) ListCollectionDescriptions(ctx context.Context) ([]CollectionDescription, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url+"/api/v0/collections", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("describe collections error (status %d): %s", resp.StatusCode, string(body))
+	}
+	var descriptions []CollectionDescription
+	if err := json.Unmarshal(body, &descriptions); err != nil {
+		return nil, fmt.Errorf("failed to decode collection descriptions: %w", err)
+	}
+	return descriptions, nil
+}
+
+// PatchCollection applies a JSON Patch string to active collection versions.
+// Additive fields become queryable immediately; existing documents read null.
+func (c *Client) PatchCollection(ctx context.Context, patch string) error {
+	body, err := json.Marshal(struct {
+		Patch string `json:"Patch"`
+	}{Patch: patch})
+	if err != nil {
+		return fmt.Errorf("failed to encode collection patch: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, c.url+"/api/v0/collections", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("collection patch error (status %d): %s", resp.StatusCode, string(respBody))
 	}
 	return nil
 }
@@ -204,7 +288,7 @@ func (c *Client) CreateMany(ctx context.Context, collection string, inputs []map
 		fields += " " + f
 	}
 
-	query := fmt.Sprintf(`mutation { create_%s(input: %s) { %s } }`, collection, inputArray, fields)
+	query := fmt.Sprintf(`mutation { add_%s(input: %s) { %s } }`, collection, inputArray, fields)
 
 	resp, err := c.Execute(ctx, query, nil)
 	if err != nil {
@@ -215,7 +299,7 @@ func (c *Client) CreateMany(ctx context.Context, collection string, inputs []map
 	}
 
 	// Extract results from response
-	createKey := fmt.Sprintf("create_%s", collection)
+	createKey := fmt.Sprintf("add_%s", collection)
 	docs, ok := resp.Data[createKey].([]any)
 	if !ok {
 		return nil, fmt.Errorf("unexpected response format: %+v", resp.Data)
@@ -267,6 +351,12 @@ func (c *Client) Delete(ctx context.Context, collection string, docID string) er
 		return err
 	}
 	if errMsg := resp.Error(); errMsg != "" {
+		// DefraDB retains tombstones in some filtered query results. Cleanup and
+		// reset operations are intentionally idempotent, so deleting a document
+		// whose tombstone says it was already deleted is success.
+		if strings.Contains(strings.ToLower(errMsg), "has been deleted") {
+			return nil
+		}
 		return fmt.Errorf("delete error: %s", errMsg)
 	}
 	return nil
@@ -283,118 +373,6 @@ func (c *Client) Upsert(ctx context.Context, collection string, filter, createIn
 		return "", err
 	}
 	return result.DocID, nil
-}
-
-// CreateWithVersion creates a document and returns DocID + commit CIDs.
-func (c *Client) CreateWithVersion(ctx context.Context, collection string, input map[string]any) (WriteResult, error) {
-	inputGQL, err := mapToGraphQLInput(input)
-	if err != nil {
-		return WriteResult{}, fmt.Errorf("failed to build input: %w", err)
-	}
-	query := fmt.Sprintf(`mutation { create_%s(input: %s) { _docID _version { cid } } }`, collection, inputGQL)
-
-	resp, err := c.Execute(ctx, query, nil)
-	if err != nil {
-		return WriteResult{}, err
-	}
-	if errMsg := resp.Error(); errMsg != "" {
-		return WriteResult{}, fmt.Errorf("create error: %s", errMsg)
-	}
-
-	createKey := fmt.Sprintf("create_%s", collection)
-	if docs, ok := resp.Data[createKey].([]any); ok && len(docs) > 0 {
-		if doc, ok := docs[0].(map[string]any); ok {
-			result := WriteResult{}
-			if docID, ok := doc["_docID"].(string); ok {
-				result.DocID = docID
-			}
-			if cids := extractVersionCIDs(doc); len(cids) > 0 {
-				result.CIDs = cids
-				result.CID = cids[0]
-			}
-			return result, nil
-		}
-	}
-
-	return WriteResult{}, fmt.Errorf("unexpected response format: %+v", resp.Data)
-}
-
-// UpdateWithVersion updates a document and returns DocID + commit CIDs.
-func (c *Client) UpdateWithVersion(ctx context.Context, collection string, docID string, input map[string]any) (WriteResult, error) {
-	inputGQL, err := mapToGraphQLInput(input)
-	if err != nil {
-		return WriteResult{}, fmt.Errorf("failed to build input: %w", err)
-	}
-	query := fmt.Sprintf(`mutation { update_%s(docID: %q, input: %s) { _docID _version { cid } } }`, collection, docID, inputGQL)
-
-	resp, err := c.Execute(ctx, query, nil)
-	if err != nil {
-		return WriteResult{}, err
-	}
-	if errMsg := resp.Error(); errMsg != "" {
-		return WriteResult{}, fmt.Errorf("update error: %s", errMsg)
-	}
-
-	updateKey := fmt.Sprintf("update_%s", collection)
-	if docs, ok := resp.Data[updateKey].([]any); ok && len(docs) > 0 {
-		if doc, ok := docs[0].(map[string]any); ok {
-			result := WriteResult{DocID: docID}
-			if docIDResp, ok := doc["_docID"].(string); ok && docIDResp != "" {
-				result.DocID = docIDResp
-			}
-			if cids := extractVersionCIDs(doc); len(cids) > 0 {
-				result.CIDs = cids
-				result.CID = cids[0]
-			}
-			return result, nil
-		}
-	}
-
-	return WriteResult{DocID: docID}, nil
-}
-
-// UpsertWithVersion creates or updates a document and returns DocID + commit CIDs.
-func (c *Client) UpsertWithVersion(ctx context.Context, collection string, filter, createInput, updateInput map[string]any) (WriteResult, error) {
-	filterGQL, err := mapToGraphQLInput(filter)
-	if err != nil {
-		return WriteResult{}, fmt.Errorf("failed to build filter: %w", err)
-	}
-	createGQL, err := mapToGraphQLInput(createInput)
-	if err != nil {
-		return WriteResult{}, fmt.Errorf("failed to build create input: %w", err)
-	}
-	updateGQL, err := mapToGraphQLInput(updateInput)
-	if err != nil {
-		return WriteResult{}, fmt.Errorf("failed to build update input: %w", err)
-	}
-
-	query := fmt.Sprintf(`mutation { upsert_%s(filter: %s, create: %s, update: %s) { _docID _version { cid } } }`,
-		collection, filterGQL, createGQL, updateGQL)
-
-	resp, err := c.Execute(ctx, query, nil)
-	if err != nil {
-		return WriteResult{}, err
-	}
-	if errMsg := resp.Error(); errMsg != "" {
-		return WriteResult{}, fmt.Errorf("upsert error: %s", errMsg)
-	}
-
-	upsertKey := fmt.Sprintf("upsert_%s", collection)
-	if docs, ok := resp.Data[upsertKey].([]any); ok && len(docs) > 0 {
-		if doc, ok := docs[0].(map[string]any); ok {
-			result := WriteResult{}
-			if docID, ok := doc["_docID"].(string); ok {
-				result.DocID = docID
-			}
-			if cids := extractVersionCIDs(doc); len(cids) > 0 {
-				result.CIDs = cids
-				result.CID = cids[0]
-			}
-			return result, nil
-		}
-	}
-
-	return WriteResult{}, fmt.Errorf("unexpected response format: %+v", resp.Data)
 }
 
 func extractVersionCIDs(doc map[string]any) []string {
@@ -451,6 +429,16 @@ func valueToGraphQL(v any) (string, error) {
 	case map[string]any:
 		// Recursively convert nested maps
 		return mapToGraphQLInput(val)
+	case []map[string]any:
+		var items []string
+		for _, item := range val {
+			itemStr, err := mapToGraphQLInput(item)
+			if err != nil {
+				return "", err
+			}
+			items = append(items, itemStr)
+		}
+		return "[" + strings.Join(items, ", ") + "]", nil
 	case []any:
 		// Handle arrays
 		var items []string

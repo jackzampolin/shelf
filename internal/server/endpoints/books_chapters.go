@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -15,6 +16,7 @@ import (
 type Chapter struct {
 	ID                      string `json:"id"`
 	EntryID                 string `json:"entry_id,omitempty"`
+	ParentID                string `json:"parent_id,omitempty"`
 	Title                   string `json:"title"`
 	Level                   int    `json:"level"`
 	LevelName               string `json:"level_name,omitempty"`
@@ -27,6 +29,7 @@ type Chapter struct {
 	AudioInclude            bool   `json:"audio_include"`
 	AudioIncludeReasoning   string `json:"audio_include_reasoning,omitempty"`
 	SortOrder               int    `json:"sort_order"`
+	Source                  string `json:"source,omitempty"`
 	WordCount               int    `json:"word_count,omitempty"`
 	PageCount               int    `json:"page_count"`
 	PolishComplete          bool   `json:"polish_complete"`
@@ -120,6 +123,10 @@ func (e *GetBookChaptersEndpoint) handler(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if errMsg := bookResp.Error(); errMsg != "" {
+		writeError(w, http.StatusInternalServerError, errMsg)
+		return
+	}
 
 	bookData, ok := bookResp.Data["Book"].([]any)
 	if !ok || len(bookData) == 0 {
@@ -139,6 +146,7 @@ func (e *GetBookChaptersEndpoint) handler(w http.ResponseWriter, r *http.Request
 		Chapter(filter: {book: {_docID: {_eq: %q}}}) {
 			_docID
 			entry_id
+			parent_id
 			title
 			level
 			level_name
@@ -151,6 +159,7 @@ func (e *GetBookChaptersEndpoint) handler(w http.ResponseWriter, r *http.Request
 			audio_include
 			audio_include_reasoning
 			sort_order
+			source
 			word_count
 			polish_complete
 			polish_failed
@@ -162,6 +171,10 @@ func (e *GetBookChaptersEndpoint) handler(w http.ResponseWriter, r *http.Request
 	chapterResp, err := client.Query(r.Context(), chapterQuery)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if errMsg := chapterResp.Error(); errMsg != "" {
+		writeError(w, http.StatusInternalServerError, errMsg)
 		return
 	}
 
@@ -182,6 +195,7 @@ func (e *GetBookChaptersEndpoint) handler(w http.ResponseWriter, r *http.Request
 			Chapter: Chapter{
 				ID:                      chapterDocID,
 				EntryID:                 getString(cm, "entry_id"),
+				ParentID:                getString(cm, "parent_id"),
 				Title:                   getString(cm, "title"),
 				Level:                   getInt(cm, "level"),
 				LevelName:               getString(cm, "level_name"),
@@ -194,6 +208,7 @@ func (e *GetBookChaptersEndpoint) handler(w http.ResponseWriter, r *http.Request
 				AudioInclude:            getBool(cm, "audio_include"),
 				AudioIncludeReasoning:   getString(cm, "audio_include_reasoning"),
 				SortOrder:               getInt(cm, "sort_order"),
+				Source:                  getString(cm, "source"),
 				WordCount:               getInt(cm, "word_count"),
 				PageCount:               endPage - startPage + 1,
 				PolishComplete:          getBool(cm, "polish_complete"),
@@ -207,7 +222,7 @@ func (e *GetBookChaptersEndpoint) handler(w http.ResponseWriter, r *http.Request
 		if includeText && startPage > 0 && endPage > 0 {
 			pageQuery := fmt.Sprintf(`{
 				Page(filter: {
-					book_id: {_eq: %q},
+					_bookID: {_eq: %q},
 					page_num: {_ge: %d, _le: %d}
 				}) {
 					page_num
@@ -216,58 +231,33 @@ func (e *GetBookChaptersEndpoint) handler(w http.ResponseWriter, r *http.Request
 			}`, bookID, startPage, endPage)
 
 			pageResp, err := client.Query(r.Context(), pageQuery)
-			if err == nil {
-				if pageData, ok := pageResp.Data["Page"].([]any); ok {
-					for _, p := range pageData {
-						pm, ok := p.(map[string]any)
-						if !ok {
-							continue
-						}
-						chapter.Pages = append(chapter.Pages, ChapterPage{
-							PageNum:     getInt(pm, "page_num"),
-							OcrMarkdown: getString(pm, "ocr_markdown"),
-						})
-					}
-					// Sort pages by page number
-					sort.Slice(chapter.Pages, func(i, j int) bool {
-						return chapter.Pages[i].PageNum < chapter.Pages[j].PageNum
-					})
-				}
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
 			}
-		}
-
-		// Fetch paragraphs if requested
-		if includeParagraphs && chapterDocID != "" {
-			paraQuery := fmt.Sprintf(`{
-				Paragraph(filter: {chapter: {_docID: {_eq: %q}}}, order: {sort_order: ASC}) {
-					_docID
-					sort_order
-					start_page
-					raw_text
-					polished_text
-					word_count
-				}
-			}`, chapterDocID)
-
-			paraResp, err := client.Query(r.Context(), paraQuery)
-			if err == nil {
-				if paraData, ok := paraResp.Data["Paragraph"].([]any); ok {
-					for _, p := range paraData {
-						pm, ok := p.(map[string]any)
-						if !ok {
-							continue
-						}
-						chapter.Paragraphs = append(chapter.Paragraphs, ChapterParagraph{
-							ID:           getString(pm, "_docID"),
-							SortOrder:    getInt(pm, "sort_order"),
-							StartPage:    getInt(pm, "start_page"),
-							RawText:      getString(pm, "raw_text"),
-							PolishedText: getString(pm, "polished_text"),
-							WordCount:    getInt(pm, "word_count"),
-						})
-					}
-				}
+			if errMsg := pageResp.Error(); errMsg != "" {
+				writeError(w, http.StatusInternalServerError, errMsg)
+				return
 			}
+			pageData, ok := pageResp.Data["Page"].([]any)
+			if !ok {
+				writeError(w, http.StatusInternalServerError, "unexpected Page response format")
+				return
+			}
+			for _, p := range pageData {
+				pm, ok := p.(map[string]any)
+				if !ok {
+					continue
+				}
+				chapter.Pages = append(chapter.Pages, ChapterPage{
+					PageNum:     getInt(pm, "page_num"),
+					OcrMarkdown: getString(pm, "ocr_markdown"),
+				})
+			}
+			// Sort pages by page number
+			sort.Slice(chapter.Pages, func(i, j int) bool {
+				return chapter.Pages[i].PageNum < chapter.Pages[j].PageNum
+			})
 		}
 
 		chapters = append(chapters, chapter)
@@ -277,6 +267,74 @@ func (e *GetBookChaptersEndpoint) handler(w http.ResponseWriter, r *http.Request
 	sort.Slice(chapters, func(i, j int) bool {
 		return chapters[i].SortOrder < chapters[j].SortOrder
 	})
+
+	// Fetch all requested paragraphs in one query, then attach them to their
+	// canonical chapter. DefraDB exposes the generated relationship key as
+	// _chapterID, which avoids one query per chapter.
+	if includeParagraphs {
+		chapterIndex := make(map[string]int, len(chapters))
+		quotedChapterIDs := make([]string, 0, len(chapters))
+		for i := range chapters {
+			chapterID := chapters[i].ID
+			if chapterID == "" {
+				continue
+			}
+			chapterIndex[chapterID] = i
+			quotedChapterIDs = append(quotedChapterIDs, fmt.Sprintf("%q", chapterID))
+		}
+		if len(quotedChapterIDs) > 0 {
+			paraQuery := fmt.Sprintf(`{
+				Paragraph(filter: {_chapterID: {_in: [%s]}}, order: {sort_order: ASC}) {
+					_docID
+					_chapterID
+					sort_order
+					start_page
+					raw_text
+					polished_text
+					word_count
+				}
+			}`, strings.Join(quotedChapterIDs, ", "))
+
+			paraResp, err := client.Query(r.Context(), paraQuery)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			if errMsg := paraResp.Error(); errMsg != "" {
+				writeError(w, http.StatusInternalServerError, errMsg)
+				return
+			}
+			paraData, ok := paraResp.Data["Paragraph"].([]any)
+			if !ok {
+				writeError(w, http.StatusInternalServerError, "unexpected Paragraph response format")
+				return
+			}
+			for _, p := range paraData {
+				pm, ok := p.(map[string]any)
+				if !ok {
+					continue
+				}
+				chapterID := getString(pm, "_chapterID")
+				chapterIdx, ok := chapterIndex[chapterID]
+				if !ok {
+					continue
+				}
+				chapters[chapterIdx].Paragraphs = append(chapters[chapterIdx].Paragraphs, ChapterParagraph{
+					ID:           getString(pm, "_docID"),
+					SortOrder:    getInt(pm, "sort_order"),
+					StartPage:    getInt(pm, "start_page"),
+					RawText:      getString(pm, "raw_text"),
+					PolishedText: getString(pm, "polished_text"),
+					WordCount:    getInt(pm, "word_count"),
+				})
+			}
+			for i := range chapters {
+				sort.Slice(chapters[i].Paragraphs, func(j, k int) bool {
+					return chapters[i].Paragraphs[j].SortOrder < chapters[i].Paragraphs[k].SortOrder
+				})
+			}
+		}
+	}
 
 	resp := ChaptersResponse{
 		BookID:      bookID,

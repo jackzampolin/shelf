@@ -12,20 +12,32 @@ type Config struct {
 
 // OCRProviderCfg configures an OCR provider.
 type OCRProviderCfg struct {
-	Type          string  `mapstructure:"type" yaml:"type"`             // "mistral-ocr"
-	APIKey        string  `mapstructure:"api_key" yaml:"api_key"`       // API key (supports ${ENV_VAR} syntax)
-	RateLimit     float64 `mapstructure:"rate_limit" yaml:"rate_limit"` // Requests per second
-	Enabled       bool    `mapstructure:"enabled" yaml:"enabled"`
-	IncludeImages bool    `mapstructure:"include_images" yaml:"include_images"` // Extract images (Mistral only)
+	Type                  string   `mapstructure:"type" yaml:"type"`             // "mistral-ocr" or "chandra"
+	APIKey                string   `mapstructure:"api_key" yaml:"api_key"`       // API key (supports ${ENV_VAR} syntax)
+	RateLimit             float64  `mapstructure:"rate_limit" yaml:"rate_limit"` // Requests per second
+	Enabled               bool     `mapstructure:"enabled" yaml:"enabled"`
+	IncludeImages         bool     `mapstructure:"include_images" yaml:"include_images"`                   // Extract images from OCR output when supported
+	IncludeHeadersFooters bool     `mapstructure:"include_headers_footers" yaml:"include_headers_footers"` // Include page furniture in OCR markdown when supported
+	MaxOutputTokens       int      `mapstructure:"max_output_tokens" yaml:"max_output_tokens"`             // Max OCR output tokens per page (0 = provider default)
+	TimeoutSeconds        int      `mapstructure:"timeout_seconds" yaml:"timeout_seconds"`                 // OCR HTTP timeout in seconds (0 = provider default)
+	Temperature           float64  `mapstructure:"temperature" yaml:"temperature"`                         // OCR generation temperature
+	TopP                  float64  `mapstructure:"top_p" yaml:"top_p"`                                     // OCR nucleus sampling value
+	BaseURLs              []string `mapstructure:"base_urls" yaml:"base_urls"`                             // Optional self-hosted endpoints (supports ${ENV_VAR})
+	MaxConcurrency        int      `mapstructure:"max_concurrency" yaml:"max_concurrency"`                 // Max concurrent in-flight requests (0 = provider default)
+	MaxRetries            int      `mapstructure:"max_retries" yaml:"max_retries"`                         // Max provider retries (0 = provider default)
 }
 
 // LLMProviderCfg configures an LLM provider.
 type LLMProviderCfg struct {
-	Type      string  `mapstructure:"type" yaml:"type"`             // "openrouter"
-	Model     string  `mapstructure:"model" yaml:"model"`           // Model name
-	APIKey    string  `mapstructure:"api_key" yaml:"api_key"`       // API key (supports ${ENV_VAR} syntax)
-	RateLimit float64 `mapstructure:"rate_limit" yaml:"rate_limit"` // Requests per second
-	Enabled   bool    `mapstructure:"enabled" yaml:"enabled"`
+	Type           string   `mapstructure:"type" yaml:"type"`             // "openrouter"
+	Model          string   `mapstructure:"model" yaml:"model"`           // Model name
+	APIKey         string   `mapstructure:"api_key" yaml:"api_key"`       // API key (supports ${ENV_VAR} syntax)
+	RateLimit      float64  `mapstructure:"rate_limit" yaml:"rate_limit"` // Requests per second
+	Enabled        bool     `mapstructure:"enabled" yaml:"enabled"`
+	BaseURLs       []string `mapstructure:"base_urls" yaml:"base_urls"`             // Optional self-hosted endpoints (supports ${ENV_VAR})
+	MaxConcurrency int      `mapstructure:"max_concurrency" yaml:"max_concurrency"` // Max concurrent in-flight requests (0 = provider default)
+	TimeoutSeconds int      `mapstructure:"timeout_seconds" yaml:"timeout_seconds"` // HTTP timeout in seconds (0 = provider default)
+	MaxRetries     int      `mapstructure:"max_retries" yaml:"max_retries"`         // Provider attempts per request (0 = provider default)
 }
 
 // TTSProviderCfg configures a TTS provider.
@@ -46,18 +58,19 @@ type TTSProviderCfg struct {
 
 // DefaultsCfg specifies default provider selections.
 type DefaultsCfg struct {
-	OCRProviders          []string `mapstructure:"ocr_providers" yaml:"ocr_providers"`                     // Ordered list of OCR providers
-	LLMProvider           string   `mapstructure:"llm_provider" yaml:"llm_provider"`                       // Default LLM provider
-	TTSProvider           string   `mapstructure:"tts_provider" yaml:"tts_provider"`                       // Default TTS provider
-	OpenAITTSInstructions string   `mapstructure:"openai_tts_instructions" yaml:"openai_tts_instructions"` // Default instructions for OpenAI gpt-4o-mini-tts
-	MaxWorkers            int      `mapstructure:"max_workers" yaml:"max_workers"`                         // Max concurrent workers
+	OCRProviders            []string `mapstructure:"ocr_providers" yaml:"ocr_providers"`                         // Ordered list of OCR providers
+	LLMProvider             string   `mapstructure:"llm_provider" yaml:"llm_provider"`                           // Default LLM provider
+	TTSProvider             string   `mapstructure:"tts_provider" yaml:"tts_provider"`                           // Default TTS provider
+	OpenAITTSInstructions   string   `mapstructure:"openai_tts_instructions" yaml:"openai_tts_instructions"`     // Default instructions for OpenAI gpt-4o-mini-tts
+	MaxWorkers              int      `mapstructure:"max_workers" yaml:"max_workers"`                             // Max concurrent workers
+	RequireHealthyProviders bool     `mapstructure:"require_healthy_providers" yaml:"require_healthy_providers"` // Fail startup if provider health checks fail
 }
 
 // DefraConfig holds DefraDB container configuration.
 type DefraConfig struct {
 	// ContainerName is the Docker container name (default: shelf-defra)
 	ContainerName string `mapstructure:"container_name" yaml:"container_name"`
-	// Image is the Docker image to use (default: sourcenetwork/defradb:latest)
+	// Image is the Docker image to use (default: sourcenetwork/defradb:1.0.0-rc1)
 	Image string `mapstructure:"image" yaml:"image"`
 	// Port is the host port to bind (default: 9181)
 	Port string `mapstructure:"port" yaml:"port"`
@@ -77,11 +90,13 @@ func DefaultConfig() *Config {
 		},
 		LLMProviders: map[string]LLMProviderCfg{
 			"openrouter": {
-				Type:      "openrouter",
-				Model:     "anthropic/claude-opus-4.6",
-				APIKey:    "${OPENROUTER_API_KEY}",
-				RateLimit: 150.0, // 150 RPS
-				Enabled:   true,
+				Type:           "openrouter",
+				Model:          "anthropic/claude-opus-4.6",
+				APIKey:         "${OPENROUTER_API_KEY}",
+				RateLimit:      150.0, // 150 RPS
+				TimeoutSeconds: 500,
+				MaxRetries:     7,
+				Enabled:        true,
 			},
 		},
 		TTSProviders: map[string]TTSProviderCfg{
@@ -109,15 +124,16 @@ func DefaultConfig() *Config {
 			},
 		},
 		Defaults: DefaultsCfg{
-			OCRProviders:          []string{"mistral"},
-			LLMProvider:           "openrouter",
-			TTSProvider:           "openai",
-			OpenAITTSInstructions: "",
-			MaxWorkers:            10,
+			OCRProviders:            []string{"mistral"},
+			LLMProvider:             "openrouter",
+			TTSProvider:             "openai",
+			OpenAITTSInstructions:   "",
+			MaxWorkers:              10,
+			RequireHealthyProviders: true,
 		},
 		Defra: DefraConfig{
 			ContainerName: "shelf-defra",
-			Image:         "sourcenetwork/defradb:latest",
+			Image:         "sourcenetwork/defradb:1.0.0-rc1",
 			Port:          "9181",
 		},
 	}

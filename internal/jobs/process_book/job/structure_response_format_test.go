@@ -1,0 +1,594 @@
+package job
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	pattern_analyzer "github.com/jackzampolin/shelf/internal/agents/pattern_analyzer"
+	"github.com/jackzampolin/shelf/internal/defra"
+	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/jobs/common"
+	"github.com/jackzampolin/shelf/internal/providers"
+	"github.com/jackzampolin/shelf/internal/svcctx"
+)
+
+func newStructureResponseFormatJob() *Job {
+	book := common.NewBookState("book-1")
+	book.TotalPages = 10
+	book.TocProvider = "qwen-local"
+	book.SetStructureChapters([]*common.ChapterState{
+		{
+			EntryID:        "ch_001",
+			Title:          "Chapter One",
+			Level:          1,
+			LevelName:      "chapter",
+			StartPage:      1,
+			EndPage:        3,
+			MechanicalText: "Chapter text.",
+			WordCount:      2,
+		},
+	})
+
+	return NewFromLoadResult(&common.LoadBookResult{Book: book})
+}
+
+func TestCreateStructureClassifyWorkUnitUsesInnerJSONSchema(t *testing.T) {
+	j := newStructureResponseFormatJob()
+
+	unit, err := j.createStructureClassifyWorkUnit(context.Background())
+	if err != nil {
+		t.Fatalf("createStructureClassifyWorkUnit error: %v", err)
+	}
+
+	if unit.ChatRequest.MaxTokens != common.ClassifyMaxOutputTokens(1) {
+		t.Fatalf("classify MaxTokens = %d, want %d", unit.ChatRequest.MaxTokens, common.ClassifyMaxOutputTokens(1))
+	}
+	assertResponseFormatSchemaName(t, unit.ChatRequest.ResponseFormat.JSONSchema, "entry_classifications")
+}
+
+func TestClassifyOutputLimitScalesAndCaps(t *testing.T) {
+	tests := []struct {
+		entries int
+		want    int
+	}{
+		{entries: 1, want: 4096},
+		{entries: 97, want: 9312},
+		{entries: 470, want: 32768},
+	}
+	for _, tt := range tests {
+		if got := common.ClassifyMaxOutputTokens(tt.entries); got != tt.want {
+			t.Fatalf("ClassifyMaxOutputTokens(%d) = %d, want %d", tt.entries, got, tt.want)
+		}
+	}
+}
+
+func TestStructureClassificationChunksGranularBooksWithinContextBudget(t *testing.T) {
+	j := newStructureResponseFormatJob()
+	chapters := make([]*common.ChapterState, 470)
+	for i := range chapters {
+		chapters[i] = &common.ChapterState{
+			EntryID: fmt.Sprintf("ch_%03d", i+1), Title: fmt.Sprintf("Section %d", i+1),
+			MechanicalText: strings.Repeat("source evidence ", 80),
+		}
+	}
+	j.Book.SetStructureChapters(chapters)
+	units := j.transitionToStructureClassify(context.Background())
+	if len(units) != 8 {
+		t.Fatalf("classification chunks = %d, want 8", len(units))
+	}
+	for i, unit := range units {
+		if unit.ChatRequest.MaxTokens > common.ClassifyMaxOutputTokens(structureClassifyChunkSize) {
+			t.Fatalf("chunk %d max tokens = %d, exceeds bounded chunk allowance", i, unit.ChatRequest.MaxTokens)
+		}
+		info, ok := j.Tracker.Get(unit.ID)
+		if !ok || info.ClassifyStart != i*structureClassifyChunkSize || info.ClassifyEnd <= info.ClassifyStart || info.ClassifyEnd-info.ClassifyStart > structureClassifyChunkSize {
+			t.Fatalf("chunk %d tracker info = %+v, ok=%v", i, info, ok)
+		}
+	}
+}
+
+func TestStructureClassificationFailureFailsClosed(t *testing.T) {
+	j := newStructureResponseFormatJob()
+	result := jobs.WorkResult{WorkUnitID: "classify-failed", Success: false, Error: errors.New("provider rejected request")}
+	_, err := j.HandleStructureClassifyComplete(context.Background(), result, WorkUnitInfo{
+		UnitType: WorkUnitTypeStructureClassify, StructurePhase: StructPhaseClassify,
+		RetryCount: MaxStructureRetries, ClassifyStart: 0, ClassifyEnd: 1,
+	})
+	if err == nil || !strings.Contains(err.Error(), "classification chunk 0-1 failed") {
+		t.Fatalf("error = %v, want fail-closed chunk error", err)
+	}
+}
+
+func TestStructureClassificationIncompleteCoverageRetries(t *testing.T) {
+	j := newStructureResponseFormatJob()
+	result := jobs.WorkResult{
+		WorkUnitID: "classify-incomplete",
+		Success:    true,
+		ChatResult: &providers.ChatResult{ParsedJSON: []byte(`{
+			"classifications":{"ch_001":"body"},
+			"content_types":{},
+			"audio_include":{"ch_001":true},
+			"reasoning":{"ch_001":"narrative body"}
+		}`)},
+	}
+	units, err := j.HandleStructureClassifyComplete(context.Background(), result, WorkUnitInfo{
+		UnitType: WorkUnitTypeStructureClassify, StructurePhase: StructPhaseClassify,
+		RetryCount: 0, ClassifyStart: 0, ClassifyEnd: 1,
+	})
+	if err != nil {
+		t.Fatalf("incomplete chunk should retry: %v", err)
+	}
+	if len(units) != 1 {
+		t.Fatalf("retry units = %d, want 1", len(units))
+	}
+	info, ok := j.Tracker.Get(units[0].ID)
+	if !ok || info.RetryCount != 1 || info.ClassifyStart != 0 || info.ClassifyEnd != 1 {
+		t.Fatalf("retry tracker info = %+v, ok=%v", info, ok)
+	}
+	if got := j.Book.GetStructureChapters()[0].MatterType; got != "" {
+		t.Fatalf("partial classification mutated book state: %q", got)
+	}
+}
+
+func TestStructureClassificationIncompleteCoverageFailsClosedAtLimit(t *testing.T) {
+	j := newStructureResponseFormatJob()
+	result := jobs.WorkResult{
+		WorkUnitID: "classify-incomplete",
+		Success:    true,
+		ChatResult: &providers.ChatResult{ParsedJSON: []byte(`{
+			"classifications":{"ch_001":"body"},
+			"content_types":{},
+			"audio_include":{"ch_001":true},
+			"reasoning":{"ch_001":"narrative body"}
+		}`)},
+	}
+	_, err := j.HandleStructureClassifyComplete(context.Background(), result, WorkUnitInfo{
+		UnitType: WorkUnitTypeStructureClassify, StructurePhase: StructPhaseClassify,
+		RetryCount: MaxStructureRetries, ClassifyStart: 0, ClassifyEnd: 1,
+	})
+	if err == nil || !strings.Contains(err.Error(), "content_types missing ch_001") {
+		t.Fatalf("error = %v, want missing-key failure", err)
+	}
+}
+
+func TestAlreadyPolishedTransitionCannotDrainSilently(t *testing.T) {
+	j := newStructureResponseFormatJob()
+	chapter := j.Book.GetStructureChapters()[0]
+	chapter.PolishDone = true
+	chapter.PolishedText = chapter.MechanicalText
+	j.Book.SetStructureChapters([]*common.ChapterState{chapter})
+	if units := j.transitionToStructurePolish(context.Background()); len(units) != 0 {
+		t.Fatalf("units = %d, want synchronous completion attempt", len(units))
+	}
+	if !strings.Contains(j.noWorkFailure, "persist already-complete polish results") {
+		t.Fatalf("noWorkFailure = %q, want actionable completion failure", j.noWorkFailure)
+	}
+}
+
+func TestCreateFinalizePatternWorkUnitBoundsStructuredOutput(t *testing.T) {
+	j := newStructureResponseFormatJob()
+	j.Book.SetLinkedEntries([]*common.LinkedTocEntry{})
+
+	unit, err := j.CreateFinalizePatternWorkUnit(context.Background())
+	if err != nil {
+		t.Fatalf("CreateFinalizePatternWorkUnit error: %v", err)
+	}
+	if unit.ChatRequest.MaxTokens != pattern_analyzer.MaxOutputTokens(0) {
+		t.Fatalf("pattern MaxTokens = %d, want %d", unit.ChatRequest.MaxTokens, pattern_analyzer.MaxOutputTokens(0))
+	}
+	assertResponseFormatSchemaName(t, unit.ChatRequest.ResponseFormat.JSONSchema, "pattern_analysis")
+}
+
+func TestPatternOutputLimitScalesAndCaps(t *testing.T) {
+	tests := []struct {
+		entries int
+		want    int
+	}{
+		{entries: 1, want: 4096},
+		{entries: 59, want: 5664},
+		{entries: 114, want: 10944},
+		{entries: 470, want: 32768},
+	}
+	for _, tt := range tests {
+		if got := pattern_analyzer.MaxOutputTokens(tt.entries); got != tt.want {
+			t.Fatalf("MaxOutputTokens(%d) = %d, want %d", tt.entries, got, tt.want)
+		}
+	}
+}
+
+func TestCreateChapterPolishWorkUnitUsesInnerJSONSchema(t *testing.T) {
+	j := newStructureResponseFormatJob()
+	chapter := j.Book.GetStructureChapters()[0]
+
+	unit := j.createChapterPolishWorkUnit(context.Background(), chapter)
+	if unit == nil {
+		t.Fatal("createChapterPolishWorkUnit returned nil")
+	}
+
+	wantTokens := common.PolishMaxOutputTokens(chapter.MechanicalText)
+	if unit.ChatRequest.MaxTokens != wantTokens {
+		t.Fatalf("polish MaxTokens = %d, want %d", unit.ChatRequest.MaxTokens, wantTokens)
+	}
+	assertResponseFormatSchemaName(t, unit.ChatRequest.ResponseFormat.JSONSchema, "text_edits")
+}
+
+func TestFailedStructurePolishErrorNamesChapter(t *testing.T) {
+	err := failedWorkUnitError(WorkUnitInfo{
+		UnitType:  WorkUnitTypeStructurePolish,
+		ChapterID: "ch_007",
+	}, errors.New("model output reached token limit"))
+	for _, want := range []string{"structure_polish", "chapter=ch_007", "model output reached token limit"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q missing %q", err, want)
+		}
+	}
+}
+
+func TestStructurePolishRetriesFailedGenerationBeforeFailingClosed(t *testing.T) {
+	j := newStructureResponseFormatJob()
+	result := jobs.WorkResult{
+		WorkUnitID: "failed-polish",
+		Success:    false,
+		Error:      errors.New("model output reached token limit"),
+	}
+	info := WorkUnitInfo{
+		UnitType:       WorkUnitTypeStructurePolish,
+		StructurePhase: StructPhasePolish,
+		ChapterID:      "ch_001",
+	}
+
+	units, err := j.HandleStructurePolishComplete(context.Background(), result, info)
+	if err != nil || len(units) != 1 {
+		t.Fatalf("first failure returned units=%d err=%v, want one retry", len(units), err)
+	}
+	retryInfo, ok := j.Tracker.Get(units[0].ID)
+	if !ok || retryInfo.RetryCount != 1 || retryInfo.ChapterID != "ch_001" {
+		t.Fatalf("retry info = %+v, ok=%v", retryInfo, ok)
+	}
+	chapter := j.Book.GetChapterByEntryID("ch_001")
+	if chapter.PolishDone || chapter.PolishFailed {
+		t.Fatalf("chapter was degraded before retries exhausted: %+v", chapter)
+	}
+
+	info.RetryCount = MaxStructureRetries
+	_, err = j.HandleStructurePolishComplete(context.Background(), result, info)
+	if err == nil {
+		t.Fatal("exhausted failure unexpectedly completed")
+	}
+	chapter = j.Book.GetChapterByEntryID("ch_001")
+	if !chapter.PolishDone || !chapter.PolishFailed {
+		t.Fatalf("chapter fallback state = %+v", chapter)
+	}
+}
+
+func TestStructurePolishProgressCountersPersistDuringFanout(t *testing.T) {
+	store := common.NewMemoryStateStore()
+	store.SetDoc("Book", "book-1", map[string]any{})
+	j := newStructureResponseFormatJob()
+	j.Book.Store = store
+	j.Book.SetStructurePhase(StructPhasePolish)
+	j.Book.SetStructureProgress(3, 3, 0, 0)
+
+	j.incrementStructurePolished(context.Background())
+	j.incrementStructurePolishFailed(context.Background())
+
+	doc := store.GetDoc("Book", "book-1")
+	if got := doc["structure_phase"]; got != StructPhasePolish {
+		t.Fatalf("structure_phase = %v, want %q", got, StructPhasePolish)
+	}
+	if got := doc["structure_chapters_polished"]; got != 1 {
+		t.Fatalf("structure_chapters_polished = %v, want 1", got)
+	}
+	if got := doc["structure_polish_failed"]; got != 1 {
+		t.Fatalf("structure_polish_failed = %v, want 1", got)
+	}
+}
+
+func TestFailedBookOperationErrorDoesNotClaimPageZero(t *testing.T) {
+	err := failedWorkUnitError(WorkUnitInfo{
+		UnitType: WorkUnitTypeTocExtract,
+	}, errors.New("model output reached token limit"))
+	for _, want := range []string{"toc_extract", "retries=0", "model output reached token limit"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q missing %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "page=") {
+		t.Fatalf("book-operation error claimed a page: %q", err)
+	}
+}
+
+func TestIsDefraDocIDExistsError(t *testing.T) {
+	err := errors.New("upsert error: a document with the given ID already exists. DocID: bae-123")
+	if !isDefraDocIDExistsError(err) {
+		t.Fatal("expected DocID exists error to be detected")
+	}
+	if isDefraDocIDExistsError(errors.New("upsert error: transaction conflict")) {
+		t.Fatal("transaction conflict should not be treated as DocID exists")
+	}
+}
+
+func TestDefraStructureWriteWithRetryRetriesTransactionConflict(t *testing.T) {
+	attempts := 0
+	result, err := defraStructureWriteWithRetry(context.Background(), func() (defra.WriteResult, error) {
+		attempts++
+		if attempts < 3 {
+			return defra.WriteResult{}, errors.New("update error: transaction conflict. Please retry")
+		}
+		return defra.WriteResult{DocID: "chapter-doc", CID: "cid-1"}, nil
+	})
+	if err != nil {
+		t.Fatalf("defraStructureWriteWithRetry error: %v", err)
+	}
+	if attempts != 3 {
+		t.Fatalf("attempts = %d, want 3", attempts)
+	}
+	if result.DocID != "chapter-doc" || result.CID != "cid-1" {
+		t.Fatalf("result = %+v, want chapter-doc/cid-1", result)
+	}
+}
+
+func TestDefraStructureWriteWithRetryRetriesTransientServerError(t *testing.T) {
+	attempts := 0
+	_, err := defraStructureWriteWithRetry(context.Background(), func() (defra.WriteResult, error) {
+		attempts++
+		if attempts < 3 {
+			return defra.WriteResult{}, errors.New("defra server error (status 500)")
+		}
+		return defra.WriteResult{DocID: "chapter-doc"}, nil
+	})
+	if err != nil {
+		t.Fatalf("defraStructureWriteWithRetry error: %v", err)
+	}
+	if attempts != 3 {
+		t.Fatalf("attempts = %d, want 3", attempts)
+	}
+}
+
+func TestPersistChapterSkeletonDocUpdatesExistingIdentityAfterDocIDCollision(t *testing.T) {
+	book := common.NewBookState("book-1")
+	j := NewFromLoadResult(&common.LoadBookResult{Book: book})
+	chapter := &common.ChapterState{
+		EntryID:    "ch_001",
+		UniqueKey:  "book-1:toc-1",
+		TocEntryID: "toc-1",
+		SortOrder:  100,
+	}
+	doc := map[string]any{
+		"_bookID":      "book-1",
+		"_toc_entryID": "toc-1",
+		"unique_key":   "book-1:toc-1",
+		"entry_id":     "ch_001",
+		"title":        "Chapter One",
+		"sort_order":   100,
+	}
+
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Query string `json:"query"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("failed to decode request body: %v", err)
+		}
+		requests = append(requests, body.Query)
+
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.Contains(body.Query, "upsert_Chapter"):
+			w.Write([]byte(`{"errors":[{"message":"a document with the given ID already exists. DocID: bae-hidden"}]}`))
+		case strings.Contains(body.Query, "Chapter(filter"):
+			w.Write([]byte(`{"data":{"Chapter":[{"_docID":"chapter-doc","unique_key":"book-1:toc-1:recreated:old","entry_id":"ch_001","sort_order":100,"_toc_entryID":"toc-1"}]}}`))
+		case strings.Contains(body.Query, "update_Chapter"):
+			if strings.Contains(body.Query, ":recreated:") {
+				t.Fatalf("update mutation kept recreated key: %s", body.Query)
+			}
+			if !strings.Contains(body.Query, `docID: "chapter-doc"`) {
+				t.Fatalf("update mutation did not target existing doc: %s", body.Query)
+			}
+			if !strings.Contains(body.Query, `unique_key: "book-1:toc-1"`) {
+				t.Fatalf("update mutation did not persist stable key: %s", body.Query)
+			}
+			w.Write([]byte(`{"data":{"update_Chapter":[{"_docID":"chapter-doc","_version":[{"cid":"cid-1"}]}]}}`))
+		default:
+			t.Fatalf("unexpected query: %s", body.Query)
+		}
+	}))
+	defer server.Close()
+
+	client := defra.NewClient(server.URL)
+	result, err := j.persistChapterSkeletonDoc(context.Background(), client, chapter, doc)
+	if err != nil {
+		t.Fatalf("persistChapterSkeletonDoc error: %v", err)
+	}
+	if result.DocID != "chapter-doc" || result.CID != "cid-1" {
+		t.Fatalf("result = %+v, want chapter-doc/cid-1", result)
+	}
+	if len(requests) != 3 {
+		t.Fatalf("requests = %d, want 3: %#v", len(requests), requests)
+	}
+	for _, req := range requests {
+		if strings.Contains(req, "add_Chapter") {
+			t.Fatalf("collision path created a new chapter: %s", req)
+		}
+	}
+}
+
+func TestAttachExistingChapterDocIDsUsesStableTocIdentity(t *testing.T) {
+	book := common.NewBookState("book-1")
+	chapter := &common.ChapterState{
+		EntryID:    "ch_001",
+		UniqueKey:  "book-1:toc-1",
+		TocEntryID: "toc-1",
+		SortOrder:  100,
+	}
+	book.SetStructureChapters([]*common.ChapterState{chapter})
+	j := NewFromLoadResult(&common.LoadBookResult{Book: book})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"data":{"Chapter":[{"_docID":"chapter-doc","unique_key":"old-key","entry_id":"ch_001","sort_order":100,"_toc_entryID":"toc-1"}]}}`))
+	}))
+	defer server.Close()
+
+	if err := j.attachExistingChapterDocIDs(context.Background(), defra.NewClient(server.URL), []*common.ChapterState{chapter}); err != nil {
+		t.Fatal(err)
+	}
+	if chapter.DocID != "chapter-doc" {
+		t.Fatalf("chapter DocID = %q, want existing chapter-doc", chapter.DocID)
+	}
+}
+
+func TestValidatePersistedStructureChaptersRejectsMissingPersistedFields(t *testing.T) {
+	book := common.NewBookState("book-1")
+	book.SetStructureChapters([]*common.ChapterState{
+		{
+			EntryID:    "ch_016",
+			DocID:      "chapter-doc",
+			TocEntryID: "toc-1",
+			SortOrder:  1600,
+			PolishDone: true,
+		},
+	})
+	j := NewFromLoadResult(&common.LoadBookResult{Book: book})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"data":{"Chapter":[{"_docID":"chapter-doc","entry_id":"ch_016","sort_order":1600,"_toc_entryID":"toc-1","extract_complete":null,"polish_complete":true,"matter_type":"body","content_type":null,"audio_include":null}]}}`))
+	}))
+	defer server.Close()
+
+	ctx := svcctx.WithServices(context.Background(), &svcctx.Services{
+		DefraClient: defra.NewClient(server.URL),
+	})
+	err := j.validatePersistedStructureChapters(ctx)
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	for _, want := range []string{
+		"ch_016 missing extract_complete",
+		"ch_016 missing content_type",
+		"ch_016 missing audio_include",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("validation error missing %q: %v", want, err)
+		}
+	}
+}
+
+func TestValidatePersistedStructureChaptersAcceptsFalseAudioInclude(t *testing.T) {
+	book := common.NewBookState("book-1")
+	book.SetStructureChapters([]*common.ChapterState{
+		{
+			EntryID:    "ch_029",
+			DocID:      "chapter-doc",
+			TocEntryID: "toc-1",
+			SortOrder:  2900,
+			PolishDone: true,
+		},
+	})
+	j := NewFromLoadResult(&common.LoadBookResult{Book: book})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"data":{"Chapter":[{"_docID":"chapter-doc","entry_id":"ch_029","sort_order":2900,"_toc_entryID":"toc-1","extract_complete":true,"polish_complete":true,"matter_type":"back_matter","content_type":"appendix","audio_include":false}]}}`))
+	}))
+	defer server.Close()
+
+	ctx := svcctx.WithServices(context.Background(), &svcctx.Services{
+		DefraClient: defra.NewClient(server.URL),
+	})
+	if err := j.validatePersistedStructureChapters(ctx); err != nil {
+		t.Fatalf("validatePersistedStructureChapters error: %v", err)
+	}
+}
+
+func TestDeleteStaleStructureChaptersDeletesRowsOutsideCurrentSkeleton(t *testing.T) {
+	book := common.NewBookState("book-1")
+	j := NewFromLoadResult(&common.LoadBookResult{Book: book})
+	current := []*common.ChapterState{{DocID: "keep-doc", EntryID: "ch_001"}}
+
+	deleted := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Query string `json:"query"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("failed to decode request body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case strings.Contains(body.Query, "Chapter(filter"):
+			w.Write([]byte(`{"data":{"Chapter":[{"_docID":"keep-doc","entry_id":"ch_001","sort_order":100,"_toc_entryID":"toc-1"},{"_docID":"stale-doc","entry_id":"old","sort_order":999,"_toc_entryID":"old-toc"}]}}`))
+		case strings.Contains(body.Query, "delete_Chapter"):
+			if !strings.Contains(body.Query, `docID: "stale-doc"`) {
+				t.Fatalf("deleted wrong chapter: %s", body.Query)
+			}
+			deleted++
+			w.Write([]byte(`{"data":{"delete_Chapter":[{"_docID":"stale-doc"}]}}`))
+		default:
+			t.Fatalf("unexpected query: %s", body.Query)
+		}
+	}))
+	defer server.Close()
+
+	client := defra.NewClient(server.URL)
+	if err := j.deleteStaleStructureChapters(context.Background(), client, current); err != nil {
+		t.Fatalf("deleteStaleStructureChapters error: %v", err)
+	}
+	if deleted != 1 {
+		t.Fatalf("deleted = %d, want 1", deleted)
+	}
+}
+
+func TestPolishJSONSchemaCapsEditArray(t *testing.T) {
+	schema := common.PolishJSONSchema()
+	payload := schema["schema"].(map[string]any)
+	props := payload["properties"].(map[string]any)
+	edits := props["edits"].(map[string]any)
+	if edits["maxItems"] != 50 {
+		t.Fatalf("edits.maxItems = %v, want 50", edits["maxItems"])
+	}
+}
+
+func TestComputeStructureStatsUsesChapterWordCountsAndFallbackText(t *testing.T) {
+	chapters := []*common.ChapterState{
+		{EntryID: "ch_001", WordCount: 10, PolishedText: "ignored because explicit count wins"},
+		{EntryID: "ch_002", PolishedText: "four words right here"},
+		{EntryID: "ch_003", MechanicalText: "fallback has three"},
+		nil,
+	}
+
+	totalChapters, totalWords := computeStructureStats(chapters)
+	if totalChapters != 3 {
+		t.Fatalf("totalChapters = %d, want 3", totalChapters)
+	}
+	if totalWords != 17 {
+		t.Fatalf("totalWords = %d, want 17", totalWords)
+	}
+}
+
+func assertResponseFormatSchemaName(t *testing.T, raw json.RawMessage, want string) {
+	t.Helper()
+	if string(raw) == "null" || len(raw) == 0 {
+		t.Fatalf("response format schema is %q, want object with name %q", string(raw), want)
+	}
+
+	var schema map[string]any
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		t.Fatalf("failed to unmarshal response format schema: %v", err)
+	}
+	if got, _ := schema["name"].(string); got != want {
+		t.Fatalf("schema name = %q, want %q; schema=%s", got, want, string(raw))
+	}
+	if _, ok := schema["schema"].(map[string]any); !ok {
+		t.Fatalf("schema payload missing nested schema object: %s", string(raw))
+	}
+}

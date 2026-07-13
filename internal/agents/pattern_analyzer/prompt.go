@@ -33,6 +33,27 @@ func SystemPrompt() string {
 // PromptKey is the hierarchical key for the system prompt.
 const PromptKey = "agents.pattern_analyzer.system"
 
+const (
+	minOutputTokens      = 4096
+	maxOutputTokens      = 32768
+	outputTokensPerEntry = 96
+)
+
+// MaxOutputTokens returns a bounded pattern-analysis allowance sized to the
+// linked ToC. Most books remain at the 4K floor, while granular books can emit
+// the strict pattern/range JSON without truncation. The 32K ceiling prevents a
+// malformed constrained generation from occupying a local model indefinitely.
+func MaxOutputTokens(entryCount int) int {
+	tokens := entryCount * outputTokensPerEntry
+	if tokens < minOutputTokens {
+		return minOutputTokens
+	}
+	if tokens > maxOutputTokens {
+		return maxOutputTokens
+	}
+	return tokens
+}
+
 // UserPromptKey is the hierarchical key for the user prompt template.
 const UserPromptKey = "agents.pattern_analyzer.user"
 
@@ -70,9 +91,9 @@ type CandidateHeading struct {
 type UserPromptData struct {
 	LinkedEntries       []LinkedEntry
 	Candidates          []CandidateHeading
-	CandidatesTruncated []CandidateHeading        // Overflow candidates not shown
-	DetectedChapters    []types.DetectedChapter   // Chapters from page pattern analysis (ground truth)
-	ChapterStartPages   []types.ChapterStartPage  // Pages with is_chapter_start=true
+	CandidatesTruncated []CandidateHeading       // Overflow candidates not shown
+	DetectedChapters    []types.DetectedChapter  // Chapters from page pattern analysis (ground truth)
+	ChapterStartPages   []types.ChapterStartPage // Pages with is_chapter_start=true
 	BodyStart           int
 	BodyEnd             int
 	TotalPages          int
@@ -128,15 +149,15 @@ func JSONSchema() map[string]any {
 						"items": map[string]any{
 							"type": "object",
 							"properties": map[string]any{
-								"pattern_type":   map[string]any{"type": "string", "enum": []string{"sequential", "named"}},
-								"level_name":     map[string]any{"type": []string{"string", "null"}},
-								"range_start":    map[string]any{"type": []string{"string", "null"}},
-								"range_end":      map[string]any{"type": []string{"string", "null"}},
-								"level":          map[string]any{"type": []string{"integer", "null"}},
-								"heading_format": map[string]any{"type": []string{"string", "null"}},
+								"pattern_type":   map[string]any{"type": "string", "enum": []string{"sequential"}},
+								"level_name":     map[string]any{"type": "string", "minLength": 1},
+								"range_start":    map[string]any{"type": "string", "minLength": 1},
+								"range_end":      map[string]any{"type": "string", "minLength": 1},
+								"level":          map[string]any{"type": "integer", "minimum": 1, "maximum": 6},
+								"heading_format": map[string]any{"type": "string", "minLength": 1},
 								"reasoning":      map[string]any{"type": "string"},
 							},
-							"required":             []string{"pattern_type", "reasoning"},
+							"required":             []string{"pattern_type", "level_name", "range_start", "range_end", "level", "heading_format", "reasoning"},
 							"additionalProperties": false,
 						},
 					},

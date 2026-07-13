@@ -3,6 +3,8 @@ package jobs
 import (
 	"context"
 	"time"
+
+	"github.com/jackzampolin/shelf/internal/providers"
 )
 
 // PoolType indicates what kind of work this pool handles.
@@ -40,6 +42,26 @@ type WorkerPool interface {
 	init(results chan<- workerResult)
 }
 
+// JobWorkCanceller is implemented by pools that can discard queued/parked
+// units for a cancelled job. In-flight provider calls may finish, but no queued
+// unit should consume inference after cancellation.
+type JobWorkCanceller interface {
+	CancelJob(jobID string) int
+}
+
+// PoolJobWorkStatus locates one job's units within a provider pool. It makes a
+// durable pending count operationally useful by distinguishing queued,
+// claimed/in-flight, and provider-parked work.
+type PoolJobWorkStatus struct {
+	Queued   int `json:"queued"`
+	InFlight int `json:"in_flight"`
+	Parked   int `json:"parked"`
+}
+
+type JobWorkStatusProvider interface {
+	JobWorkStatus(jobID string) PoolJobWorkStatus
+}
+
 // PoolStatus reports a pool's current state.
 type PoolStatus struct {
 	Name       string `json:"name"`
@@ -53,6 +75,11 @@ type PoolStatus struct {
 
 	// Only for provider pools (nil for CPU)
 	RateLimiter *RateLimiterStatus `json:"rate_limiter,omitempty"`
+
+	// Provider health circuit (provider pools only)
+	Health      string                     `json:"health,omitempty"`
+	ParkedUnits int                        `json:"parked_units,omitempty"`
+	Endpoints   []providers.EndpointStatus `json:"endpoints,omitempty"`
 }
 
 // RateLimiterStatus mirrors providers.RateLimiterStatus for API responses.

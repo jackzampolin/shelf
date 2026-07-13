@@ -414,12 +414,12 @@ func TestMemoryStateStore_FilterByField(t *testing.T) {
 	store := NewMemoryStateStore()
 	ctx := context.Background()
 
-	store.SetDoc("Page", "page-1", map[string]any{"book_id": "book-1", "page_num": float64(1)})
-	store.SetDoc("Page", "page-2", map[string]any{"book_id": "book-1", "page_num": float64(2)})
-	store.SetDoc("Page", "page-3", map[string]any{"book_id": "book-2", "page_num": float64(1)})
+	store.SetDoc("Page", "page-1", map[string]any{"_bookID": "book-1", "page_num": float64(1)})
+	store.SetDoc("Page", "page-2", map[string]any{"_bookID": "book-1", "page_num": float64(2)})
+	store.SetDoc("Page", "page-3", map[string]any{"_bookID": "book-2", "page_num": float64(1)})
 
 	resp, err := store.Execute(ctx, `{
-		Page(filter: {book_id: {_eq: "book-1"}}) {
+		Page(filter: {_bookID: {_eq: "book-1"}}) {
 			_docID
 			page_num
 		}

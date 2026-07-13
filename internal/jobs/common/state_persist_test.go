@@ -2,8 +2,40 @@ package common
 
 import (
 	"context"
+	"fmt"
 	"testing"
+
+	"github.com/jackzampolin/shelf/internal/defra"
 )
+
+type flakyAgentStateStore struct {
+	*MemoryStateStore
+	remainingFailures int
+	calls             int
+}
+
+type commitThenErrorAgentStateStore struct {
+	*MemoryStateStore
+	calls int
+}
+
+func (s *commitThenErrorAgentStateStore) UpsertWithVersion(ctx context.Context, collection string, filter, createInput, updateInput map[string]any) (defra.WriteResult, error) {
+	s.calls++
+	result, err := s.MemoryStateStore.UpsertWithVersion(ctx, collection, filter, createInput, updateInput)
+	if err != nil {
+		return result, err
+	}
+	return result, fmt.Errorf("defra server error (status 500): ")
+}
+
+func (s *flakyAgentStateStore) UpsertWithVersion(ctx context.Context, collection string, filter, createInput, updateInput map[string]any) (defra.WriteResult, error) {
+	s.calls++
+	if s.remainingFailures > 0 {
+		s.remainingFailures--
+		return defra.WriteResult{}, fmt.Errorf("defra server error (status 500)")
+	}
+	return s.MemoryStateStore.UpsertWithVersion(ctx, collection, filter, createInput, updateInput)
+}
 
 // TestBookState_PersistBookStatus tests the PersistBookStatus method.
 func TestBookState_PersistBookStatus(t *testing.T) {
@@ -89,9 +121,9 @@ func TestBookState_DeleteAllChapters(t *testing.T) {
 	store := NewMemoryStateStore()
 
 	// Create some chapters
-	store.SetDoc("Chapter", "ch1", map[string]any{"book_id": "book1", "title": "Chapter 1"})
-	store.SetDoc("Chapter", "ch2", map[string]any{"book_id": "book1", "title": "Chapter 2"})
-	store.SetDoc("Chapter", "ch3", map[string]any{"book_id": "book2", "title": "Other Book"})
+	store.SetDoc("Chapter", "ch1", map[string]any{"_bookID": "book1", "title": "Chapter 1"})
+	store.SetDoc("Chapter", "ch2", map[string]any{"_bookID": "book1", "title": "Chapter 2"})
+	store.SetDoc("Chapter", "ch3", map[string]any{"_bookID": "book2", "title": "Other Book"})
 
 	book := NewBookState("book1")
 	book.Store = store
@@ -154,14 +186,67 @@ func TestBookState_PersistNewAgentState(t *testing.T) {
 	}
 }
 
+func TestBookState_DeleteAgentStateByKeysDeletesAllMatchingRows(t *testing.T) {
+	store := NewMemoryStateStore()
+	store.SetDoc("AgentState", "as1", map[string]any{
+		"_bookID":      "book1",
+		"agent_type":   AgentTypeTocEntryFinder,
+		"entry_doc_id": "entry1",
+	})
+	store.SetDoc("AgentState", "as2", map[string]any{
+		"_bookID":      "book1",
+		"agent_type":   AgentTypeTocEntryFinder,
+		"entry_doc_id": "entry1",
+	})
+	store.SetDoc("AgentState", "as3", map[string]any{
+		"_bookID":      "book1",
+		"agent_type":   AgentTypeTocEntryFinder,
+		"entry_doc_id": "entry2",
+	})
+	store.SetDoc("AgentState", "as4", map[string]any{
+		"_bookID":      "book2",
+		"agent_type":   AgentTypeTocEntryFinder,
+		"entry_doc_id": "entry1",
+	})
+
+	book := NewBookState("book1")
+	book.Store = store
+	book.SetAgentState(&AgentState{
+		AgentID:    "agent2",
+		AgentType:  AgentTypeTocEntryFinder,
+		EntryDocID: "entry1",
+		DocID:      "as2",
+	})
+
+	if err := book.DeleteAgentStateByKeys(context.Background(), AgentTypeTocEntryFinder, "entry1"); err != nil {
+		t.Fatalf("DeleteAgentStateByKeys error: %v", err)
+	}
+
+	if got := store.GetDoc("AgentState", "as1"); got != nil {
+		t.Fatalf("matching duplicate as1 was not deleted: %#v", got)
+	}
+	if got := store.GetDoc("AgentState", "as2"); got != nil {
+		t.Fatalf("matching duplicate as2 was not deleted: %#v", got)
+	}
+	if got := store.GetDoc("AgentState", "as3"); got == nil {
+		t.Fatal("other entry state was deleted")
+	}
+	if got := store.GetDoc("AgentState", "as4"); got == nil {
+		t.Fatal("other book state was deleted")
+	}
+	if got := book.GetAgentState(AgentTypeTocEntryFinder, "entry1"); got != nil {
+		t.Fatalf("agent state still in memory: %#v", got)
+	}
+}
+
 // TestBookState_DeleteAgentStatesForType tests the DeleteAgentStatesForType method.
 func TestBookState_DeleteAgentStatesForType(t *testing.T) {
 	store := NewMemoryStateStore()
 
 	// Create some agent states
-	store.SetDoc("AgentState", "as1", map[string]any{"book_id": "book1", "agent_type": "toc_finder"})
-	store.SetDoc("AgentState", "as2", map[string]any{"book_id": "book1", "agent_type": "toc_finder"})
-	store.SetDoc("AgentState", "as3", map[string]any{"book_id": "book1", "agent_type": "chapter_finder"})
+	store.SetDoc("AgentState", "as1", map[string]any{"_bookID": "book1", "agent_type": "toc_finder"})
+	store.SetDoc("AgentState", "as2", map[string]any{"_bookID": "book1", "agent_type": "toc_finder"})
+	store.SetDoc("AgentState", "as3", map[string]any{"_bookID": "book1", "agent_type": "chapter_finder"})
 
 	book := NewBookState("book1")
 	book.Store = store
@@ -205,7 +290,7 @@ func TestBookState_PersistTocRecord(t *testing.T) {
 	book.Store = store
 
 	doc := map[string]any{
-		"book_id": "book1",
+		"_bookID": "book1",
 	}
 
 	docID, err := book.PersistTocRecord(context.Background(), doc)
@@ -232,9 +317,9 @@ func TestBookState_DeleteAllTocEntries(t *testing.T) {
 	store := NewMemoryStateStore()
 
 	// Create some ToC entries
-	store.SetDoc("TocEntry", "te1", map[string]any{"toc_id": "toc1", "title": "Entry 1"})
-	store.SetDoc("TocEntry", "te2", map[string]any{"toc_id": "toc1", "title": "Entry 2"})
-	store.SetDoc("TocEntry", "te3", map[string]any{"toc_id": "toc2", "title": "Other ToC"})
+	store.SetDoc("TocEntry", "te1", map[string]any{"_tocID": "toc1", "title": "Entry 1"})
+	store.SetDoc("TocEntry", "te2", map[string]any{"_tocID": "toc1", "title": "Entry 2"})
+	store.SetDoc("TocEntry", "te3", map[string]any{"_tocID": "toc2", "title": "Other ToC"})
 
 	book := NewBookState("book1")
 	book.Store = store
@@ -261,7 +346,7 @@ func TestBookState_DeleteAllTocEntries(t *testing.T) {
 // TestBookState_PersistFinalizePhase tests the PersistFinalizePhase method.
 func TestBookState_PersistFinalizePhase(t *testing.T) {
 	store := NewMemoryStateStore()
-	store.SetDoc("ToC", "toc1", map[string]any{"book_id": "book1"})
+	store.SetDoc("ToC", "toc1", map[string]any{"_bookID": "book1"})
 
 	book := NewBookState("book1")
 	book.Store = store
@@ -284,5 +369,192 @@ func TestBookState_PersistFinalizePhase(t *testing.T) {
 	// Verify memory was updated
 	if book.GetFinalizePhase() != "discover" {
 		t.Errorf("GetFinalizePhase() = %v, want 'discover'", book.GetFinalizePhase())
+	}
+}
+
+func TestPersistAgentStateScopesStableIDToBook(t *testing.T) {
+	store := NewMemoryStateStore()
+	bookA := NewBookState("book-a")
+	bookA.Store = store
+	bookB := NewBookState("book-b")
+	bookB.Store = store
+
+	stateA := &AgentState{AgentID: "chapter--1", AgentType: AgentTypeChapterFinder, EntryDocID: "entry-a"}
+	stateB := &AgentState{AgentID: "chapter--1", AgentType: AgentTypeChapterFinder, EntryDocID: "entry-b"}
+	if err := PersistAgentState(context.Background(), bookA, stateA); err != nil {
+		t.Fatal(err)
+	}
+	if err := PersistAgentState(context.Background(), bookB, stateB); err != nil {
+		t.Fatal(err)
+	}
+	if stateA.DocID == stateB.DocID {
+		t.Fatalf("cross-book agent states shared DocID %q", stateA.DocID)
+	}
+	if got := len(store.docs["AgentState"]); got != 2 {
+		t.Fatalf("AgentState count = %d, want 2", got)
+	}
+}
+
+func TestPersistAgentStateUpdatesKnownCheckpointByDocID(t *testing.T) {
+	store := NewMemoryStateStore()
+	store.SetDoc("Book", "book-1", map[string]any{})
+	store.SetDoc("AgentState", "state-1", map[string]any{
+		"_bookID":      "book-1",
+		"agent_id":     "agent-1",
+		"agent_type":   AgentTypeTocEntryFinder,
+		"entry_doc_id": "entry-1",
+		"iteration":    0,
+	})
+	book := NewBookState("book-1")
+	book.Store = store
+	book.SetAgentState(&AgentState{
+		DocID:      "state-1",
+		AgentID:    "agent-1",
+		AgentType:  AgentTypeTocEntryFinder,
+		EntryDocID: "entry-1",
+		Iteration:  0,
+	})
+	// If PersistAgentState accidentally uses upsert for a known checkpoint, this
+	// injected error makes the regression deterministic.
+	store.UpsertErr = fmt.Errorf("upsert update path must not be used")
+
+	checkpoint := &AgentState{
+		AgentID:      "agent-1",
+		AgentType:    AgentTypeTocEntryFinder,
+		EntryDocID:   "entry-1",
+		Iteration:    2,
+		MessagesJSON: `[{"role":"assistant","content":"checkpointed"}]`,
+	}
+	if err := PersistAgentState(context.Background(), book, checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	if checkpoint.DocID != "state-1" {
+		t.Fatalf("checkpoint docID = %q, want state-1", checkpoint.DocID)
+	}
+	stored := store.GetDoc("AgentState", "state-1")
+	if stored["iteration"] != 2 || stored["messages_json"] != checkpoint.MessagesJSON {
+		t.Fatalf("stored checkpoint = %#v", stored)
+	}
+}
+
+func TestPersistAgentStatesBatchUpdatesKnownCheckpointsByDocID(t *testing.T) {
+	store := NewMemoryStateStore()
+	store.SetDoc("Book", "book-1", map[string]any{})
+	book := NewBookState("book-1")
+	book.Store = store
+
+	states := []*AgentState{
+		{AgentID: "agent-1", AgentType: AgentTypeTocEntryFinder, EntryDocID: "entry-1", Iteration: 2, MessagesJSON: "one"},
+		{AgentID: "agent-2", AgentType: AgentTypeTocEntryFinder, EntryDocID: "entry-2", Iteration: 3, MessagesJSON: "two"},
+	}
+	for i, state := range states {
+		docID := fmt.Sprintf("state-%d", i+1)
+		store.SetDoc("AgentState", docID, map[string]any{
+			"_bookID":      book.BookID,
+			"agent_id":     state.AgentID,
+			"agent_type":   state.AgentType,
+			"entry_doc_id": state.EntryDocID,
+			"iteration":    0,
+		})
+		book.SetAgentState(&AgentState{
+			DocID:      docID,
+			AgentID:    state.AgentID,
+			AgentType:  state.AgentType,
+			EntryDocID: state.EntryDocID,
+		})
+	}
+	store.UpsertErr = fmt.Errorf("batch restart path must update known rows")
+
+	if err := PersistAgentStates(context.Background(), book, states); err != nil {
+		t.Fatal(err)
+	}
+	for i, state := range states {
+		docID := fmt.Sprintf("state-%d", i+1)
+		if state.DocID != docID {
+			t.Fatalf("state %d docID = %q, want %q", i, state.DocID, docID)
+		}
+		stored := store.GetDoc("AgentState", docID)
+		if stored["iteration"] != state.Iteration || stored["messages_json"] != state.MessagesJSON {
+			t.Fatalf("stored state %d = %#v", i, stored)
+		}
+	}
+}
+
+func TestPersistAgentStateRetriesTransientDefraWrite(t *testing.T) {
+	store := &flakyAgentStateStore{
+		MemoryStateStore:  NewMemoryStateStore(),
+		remainingFailures: 1,
+	}
+	book := NewBookState("book-a")
+	book.Store = store
+	state := &AgentState{AgentID: "agent-a", AgentType: AgentTypeChapterFinder, EntryDocID: "entry-a"}
+
+	if err := PersistAgentState(context.Background(), book, state); err != nil {
+		t.Fatal(err)
+	}
+	if store.calls != 2 {
+		t.Fatalf("upsert calls = %d, want one retry after transient 500", store.calls)
+	}
+	if state.DocID == "" {
+		t.Fatal("successful retry did not capture AgentState DocID")
+	}
+}
+
+func TestPersistAgentStateRecoversCommittedWriteAfterServerError(t *testing.T) {
+	store := &commitThenErrorAgentStateStore{MemoryStateStore: NewMemoryStateStore()}
+	book := NewBookState("book-a")
+	book.Store = store
+	state := &AgentState{
+		AgentID:          "agent-a",
+		AgentType:        AgentTypeChapterFinder,
+		EntryDocID:       "entry-a",
+		Iteration:        3,
+		MessagesJSON:     "messages",
+		PendingToolCalls: "pending",
+		ToolResults:      "results",
+		ResultJSON:       "result",
+	}
+
+	if err := PersistAgentState(context.Background(), book, state); err != nil {
+		t.Fatal(err)
+	}
+	if store.calls != 1 {
+		t.Fatalf("upsert calls = %d, want committed write recovered without retry", store.calls)
+	}
+	if state.DocID == "" {
+		t.Fatal("read-after-error recovery did not capture AgentState DocID")
+	}
+}
+
+func TestPersistAgentStateDoesNotAcceptStaleRowAfterServerError(t *testing.T) {
+	memory := NewMemoryStateStore()
+	memory.SetDoc("AgentState", "old", map[string]any{
+		"_bookID":            "book-a",
+		"agent_id":           "agent-a",
+		"agent_type":         AgentTypeChapterFinder,
+		"entry_doc_id":       "entry-a",
+		"iteration":          0,
+		"complete":           false,
+		"messages_json":      "old",
+		"pending_tool_calls": "",
+		"tool_results":       "",
+		"result_json":        "",
+	})
+	store := &flakyAgentStateStore{MemoryStateStore: memory, remainingFailures: 1}
+	book := NewBookState("book-a")
+	book.Store = store
+	state := &AgentState{
+		AgentID:      "agent-a",
+		AgentType:    AgentTypeChapterFinder,
+		EntryDocID:   "entry-a",
+		Iteration:    1,
+		MessagesJSON: "new",
+	}
+
+	if err := PersistAgentState(context.Background(), book, state); err != nil {
+		t.Fatal(err)
+	}
+	if store.calls != 2 {
+		t.Fatalf("upsert calls = %d, want retry after stale read-back", store.calls)
 	}
 }

@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"testing"
 	"time"
@@ -161,6 +162,24 @@ func TestProviderWorkerPool(t *testing.T) {
 		})
 		if err == nil {
 			t.Error("should fail with both client and provider")
+		}
+	})
+
+	t.Run("retriable errors are case-insensitive", func(t *testing.T) {
+		pool, err := NewProviderWorkerPool(ProviderWorkerPoolConfig{
+			Name:        "test-ocr",
+			OCRProvider: providers.NewMockOCRProvider(),
+		})
+		if err != nil {
+			t.Fatalf("NewProviderWorkerPool() error = %v", err)
+		}
+
+		timeoutErr := fmt.Errorf("chandra OCR failed: Post http://example/v1/chat/completions: net/http: request canceled (Client.Timeout exceeded while awaiting headers)")
+		if !pool.isRetriableError(timeoutErr) {
+			t.Fatal("expected Client.Timeout error to be retryable")
+		}
+		if !pool.isRetriableError(fmt.Errorf("connection closed: EOF")) {
+			t.Fatal("expected EOF error to be retryable")
 		}
 	})
 }

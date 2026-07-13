@@ -66,7 +66,7 @@ func (b *BookState) PersistChapterSkeleton(ctx context.Context, genUniqueKey fun
 			filter := map[string]any{"unique_key": uniqueKey}
 			createInput := map[string]any{
 				"unique_key":   uniqueKey,
-				"book_id":      b.BookID,
+				"_bookID":      b.BookID,
 				"entry_id":     chapter.EntryID,
 				"title":        chapter.Title,
 				"level":        chapter.Level,
@@ -74,7 +74,7 @@ func (b *BookState) PersistChapterSkeleton(ctx context.Context, genUniqueKey fun
 				"entry_number": chapter.EntryNumber,
 				"sort_order":   chapter.SortOrder,
 				"source":       chapter.Source,
-				"toc_entry_id": chapter.TocEntryID,
+				"_toc_entryID": chapter.TocEntryID,
 				"start_page":   chapter.StartPage,
 				"end_page":     chapter.EndPage,
 				"parent_id":    chapter.ParentID,
@@ -401,11 +401,17 @@ func (b *BookState) PersistChapterPolish(ctx context.Context) error {
 				return
 			}
 
+			editsJSON := chapter.EditsAppliedJSON
+			if editsJSON == "" {
+				editsJSON = "[]"
+			}
+
 			result, err := store.UpdateWithVersion(ctx, "Chapter", chapter.DocID, map[string]any{
-				"polished_text": chapter.PolishedText,
-				"word_count":    chapter.WordCount,
-				"polish_done":   chapter.PolishDone,
-				"polish_failed": chapter.PolishFailed,
+				"polished_text":      chapter.PolishedText,
+				"word_count":         chapter.WordCount,
+				"edits_applied_json": editsJSON,
+				"polish_complete":    chapter.PolishDone,
+				"polish_failed":      chapter.PolishFailed,
 			})
 			if err != nil {
 				results <- chapterResult{entryID: chapter.EntryID, err: fmt.Errorf("chapter %s: %w", chapter.EntryID, err)}
@@ -463,7 +469,7 @@ func (b *BookState) DeleteAllChapters(ctx context.Context) error {
 
 	// Query for all chapters
 	query := fmt.Sprintf(`{
-		Chapter(filter: {book_id: {_eq: "%s"}}) {
+		Chapter(filter: {_bookID: {_eq: "%s"}}) {
 			_docID
 		}
 	}`, b.BookID)

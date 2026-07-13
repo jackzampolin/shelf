@@ -14,10 +14,10 @@ type AudioSegment struct {
 
 // ChapterAudio contains audio data for a chapter.
 type ChapterAudio struct {
-	ChapterID    string         // e.g., "ch_001"
-	AudioFile    string         // e.g., "audio/ch_001.mp3"
-	DurationMS   int            // Total chapter duration
-	Segments     []AudioSegment // Paragraph-level timing
+	ChapterID  string         // e.g., "ch_001"
+	AudioFile  string         // e.g., "audio/ch_001.mp3"
+	DurationMS int            // Total chapter duration
+	Segments   []AudioSegment // Paragraph-level timing
 }
 
 // generateSMIL creates a SMIL file for a chapter with audio synchronization.
@@ -56,13 +56,4 @@ func generateSMIL(chapterID string, audio ChapterAudio) string {
 func formatSMILTime(ms int) string {
 	seconds := float64(ms) / 1000.0
 	return fmt.Sprintf("%.3fs", seconds)
-}
-
-// calculateTotalDuration returns the total duration in milliseconds from segments.
-func calculateTotalDuration(segments []AudioSegment) int {
-	if len(segments) == 0 {
-		return 0
-	}
-	last := segments[len(segments)-1]
-	return last.StartOffsetMS + last.DurationMS
 }

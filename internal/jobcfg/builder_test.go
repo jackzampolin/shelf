@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/jackzampolin/shelf/internal/config"
+	"github.com/jackzampolin/shelf/internal/jobs/process_book"
 )
 
 // mockStore implements config.Store for testing.
@@ -314,6 +315,42 @@ func TestBuilder_ProcessBookConfig(t *testing.T) {
 			t.Errorf("DebugAgents = %v, want false", cfg.DebugAgents)
 		}
 	})
+}
+
+func TestApplyProcessBookResumeMetadata(t *testing.T) {
+	tests := []struct {
+		name     string
+		metadata map[string]any
+		want     process_book.PipelineVariant
+		wantErr  bool
+	}{
+		{name: "legacy defaults to standard", metadata: map[string]any{"book_id": "book-1"}, want: process_book.VariantStandard},
+		{name: "ocr-only survives restart", metadata: map[string]any{"book_id": "book-1", "variant": "ocr-only"}, want: process_book.VariantOCROnly},
+		{name: "invalid variant is actionable", metadata: map[string]any{"book_id": "book-1", "variant": "bogus"}, wantErr: true},
+		{name: "non-string variant is actionable", metadata: map[string]any{"book_id": "book-1", "variant": 3}, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var cfg process_book.Config
+			err := applyProcessBookResumeMetadata(&cfg, tt.metadata)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.Variant != tt.want {
+				t.Fatalf("Variant = %q, want %q", cfg.Variant, tt.want)
+			}
+			if tt.want == process_book.VariantOCROnly && (!cfg.EnableOCR || cfg.EnableMetadata || cfg.EnableTocFinder) {
+				t.Fatalf("ocr-only stage flags = %#v", cfg)
+			}
+		})
+	}
 }
 
 func TestBuilder_OpenAITTSConfig(t *testing.T) {

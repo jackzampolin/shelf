@@ -18,6 +18,8 @@ const (
 	BookStatusIngested   BookStatus = "ingested"
 	BookStatusProcessing BookStatus = "processing"
 	BookStatusComplete   BookStatus = "complete"
+	BookStatusDegraded   BookStatus = "degraded"
+	BookStatusFailed     BookStatus = "failed"
 )
 
 // FrontMatterPageCount is the number of pages considered front matter for ToC search.
@@ -30,11 +32,6 @@ const ConsecutiveFrontMatterRequired = 30
 
 // PageState is an alias for common.PageState.
 type PageState = common.PageState
-
-// NewPageState creates a new page state with initialized maps.
-func NewPageState() *PageState {
-	return common.NewPageState()
-}
 
 // OpStatus is an alias for common.OpStatus.
 type OpStatus = common.OpStatus
@@ -56,6 +53,13 @@ const MaxBookOpRetries = 3
 // MaxPageOpRetries is the maximum number of retries for page-level operations.
 // Set higher (10) to handle transient failures on difficult pages (maps, images).
 const MaxPageOpRetries = 10
+
+// MaxOCRPageRetries is zero because OCR providers own their configured HTTP
+// retry and endpoint-failover budget. Repeating that budget at the workflow
+// layer makes attempts multiplicative and can leave one page executing for an
+// hour. Once the provider budget is exhausted, the job fails visibly with the
+// page number and a durable retry/repair re-emits only that incomplete page.
+const MaxOCRPageRetries = 0
 
 // WorkUnitType constants for type-safe work unit handling.
 const (
@@ -103,6 +107,7 @@ type WorkUnitInfo struct {
 	Provider   string // for OCR units
 	RetryCount int    // number of times this work unit has been retried
 	EntryDocID string // for link_toc units - which ToC entry this belongs to
+	RetryHint  string // feedback to include in a fresh link_toc agent prompt after rejection
 
 	// Finalize ToC fields
 	FinalizePhase string // pattern, discover, validate
@@ -111,6 +116,15 @@ type WorkUnitInfo struct {
 	// Structure fields
 	StructurePhase string // classify, polish
 	ChapterID      string // chapter entry ID for polish
+	ClassifyStart  int    // inclusive chapter index for classification chunks
+	ClassifyEnd    int    // exclusive chapter index for classification chunks
+}
+
+func maxRetriesForPageWorkUnit(unitType string) int {
+	if unitType == WorkUnitTypeOCR {
+		return MaxOCRPageRetries
+	}
+	return MaxPageOpRetries
 }
 
 // PDFInfo is an alias for common.PDFInfo for backwards compatibility.
@@ -125,6 +139,17 @@ type PDFInfo = common.PDFInfo
 // Only agent instances are stored directly on Job due to circular import constraints.
 type Job struct {
 	common.TrackedBaseJob[WorkUnitInfo]
+
+	// PipelineVariant is the execution plan selected when this job was
+	// submitted. It is durable job metadata, not mutable processing state.
+	PipelineVariant string
+
+	// noWorkFailure records a synchronous phase-transition failure. Some book
+	// phases do their setup inline after the preceding unit completes; if setup
+	// cannot emit downstream work, the scheduler needs the stage-specific reason
+	// to fail the job visibly instead of leaving it running with zero pending.
+	// Access is protected by the job's Mu.
+	noWorkFailure string
 
 	// ToC agent (stateful during execution)
 	TocAgent *agent.Agent
@@ -167,6 +192,15 @@ func (j *Job) MetricsFor() *jobs.WorkUnitMetrics {
 	return j.BaseJob.MetricsFor(j.Type())
 }
 
+// JobMetadata returns the durable inputs needed to reconstruct this job after
+// a Shelf restart.
+func (j *Job) JobMetadata() map[string]any {
+	if j.PipelineVariant == "" {
+		return nil
+	}
+	return map[string]any{"variant": j.PipelineVariant}
+}
+
 // CountOcrPages returns the number of pages that have completed OCR.
 func (j *Job) CountOcrPages() int {
 	return j.Book.CountOcrPages()
@@ -204,17 +238,13 @@ func (j *Job) LiveStatus() *jobs.LiveStatus {
 	}
 
 	// Count page completion from in-memory state
-	var ocrComplete int
+	var ocrComplete, ocrQuarantined int
 	book.ForEachPage(func(pageNum int, state *common.PageState) {
-		// OCR is complete when all providers are done
-		allOcr := true
-		for _, provider := range book.OcrProviders {
-			if !state.OcrComplete(provider) {
-				allOcr = false
-				break
-			}
+		if quarantined, _ := state.OCRQuarantine(); quarantined {
+			ocrQuarantined++
+			return
 		}
-		if allOcr {
+		if state.OcrResolved(book.OcrProviders) {
 			ocrComplete++
 		}
 	})
@@ -229,6 +259,7 @@ func (j *Job) LiveStatus() *jobs.LiveStatus {
 	return &jobs.LiveStatus{
 		TotalPages:        book.TotalPages,
 		OcrComplete:       ocrComplete,
+		OcrQuarantined:    ocrQuarantined,
 		MetadataComplete:  metadataState.IsComplete(),
 		TocFound:          book.GetTocFound(),
 		TocExtracted:      tocExtractState.IsComplete(),

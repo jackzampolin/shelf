@@ -11,16 +11,16 @@ import (
 )
 
 // Chat sends a chat completion request.
-func (c *OpenRouterClient) Chat(ctx context.Context, req *ChatRequest) (*ChatResult, error) {
+func (c *OpenAIChatClient) Chat(ctx context.Context, req *ChatRequest) (*ChatResult, error) {
 	return c.doChat(ctx, req, nil)
 }
 
 // ChatWithTools sends a chat request with tool definitions.
-func (c *OpenRouterClient) ChatWithTools(ctx context.Context, req *ChatRequest, tools []Tool) (*ChatResult, error) {
+func (c *OpenAIChatClient) ChatWithTools(ctx context.Context, req *ChatRequest, tools []Tool) (*ChatResult, error) {
 	return c.doChat(ctx, req, tools)
 }
 
-func (c *OpenRouterClient) doChat(ctx context.Context, req *ChatRequest, tools []Tool) (*ChatResult, error) {
+func (c *OpenAIChatClient) doChat(ctx context.Context, req *ChatRequest, tools []Tool) (*ChatResult, error) {
 	start := time.Now()
 
 	// Generate request ID if not provided
@@ -34,13 +34,20 @@ func (c *OpenRouterClient) doChat(ctx context.Context, req *ChatRequest, tools [
 		model = c.defaultModel
 	}
 
-	// Build OpenRouter request
+	// Build OpenAI-compatible chat request.
 	orReq := openRouterRequest{
-		Model:       model,
-		Messages:    make([]openRouterMessage, 0, len(req.Messages)),
-		Temperature: req.Temperature,
-		MaxTokens:   req.MaxTokens,
-		Usage:       &openRouterUsageRequest{Include: true}, // Request cost tracking
+		Model:     model,
+		Messages:  make([]openRouterMessage, 0, len(req.Messages)),
+		TopP:      req.TopP,
+		MaxTokens: req.MaxTokens,
+	}
+	if req.Temperature != 0 || req.TemperatureSet {
+		temperature := req.Temperature
+		orReq.Temperature = &temperature
+	}
+	// OpenRouter-specific cost-tracking flag; self-hosted servers don't support it.
+	if c.sendUsageInclude {
+		orReq.Usage = &openRouterUsageRequest{Include: true}
 	}
 
 	// Convert messages
@@ -91,7 +98,7 @@ func (c *OpenRouterClient) doChat(ctx context.Context, req *ChatRequest, tools [
 		if err != nil {
 			return &ChatResult{
 				RequestID:    requestID,
-				Provider:     OpenRouterName,
+				Provider:     c.name,
 				ModelUsed:    model,
 				Success:      false,
 				ErrorType:    "schema_adapter",
@@ -105,11 +112,14 @@ func (c *OpenRouterClient) doChat(ctx context.Context, req *ChatRequest, tools [
 	// Add tools if specified
 	if len(tools) > 0 {
 		orReq.Tools = tools
+		if req.ToolChoice != nil {
+			orReq.ToolChoice = req.ToolChoice
+		}
 	}
 
 	result := &ChatResult{
 		RequestID: requestID,
-		Provider:  OpenRouterName,
+		Provider:  c.name,
 		ModelUsed: model,
 	}
 
@@ -159,6 +169,7 @@ func (c *OpenRouterClient) doChat(ctx context.Context, req *ChatRequest, tools [
 		}
 
 		choice := orResp.Choices[0]
+		result.FinishReason = choice.FinishReason
 
 		// Include reasoning_details for reasoning models.
 		if len(choice.Message.ReasoningDetails) > 0 {
@@ -198,6 +209,17 @@ func (c *OpenRouterClient) doChat(ctx context.Context, req *ChatRequest, tools [
 		}
 
 		result.Content = content
+		if choice.FinishReason == "length" {
+			result.Success = false
+			result.ErrorType = "output_truncated"
+			result.ErrorMessage = fmt.Sprintf(
+				"model output reached the %d-token limit before completion",
+				req.MaxTokens,
+			)
+			result.TotalTime = time.Since(start)
+			result.ExecutionTime = result.TotalTime
+			return result, fmt.Errorf("%s", result.ErrorMessage)
+		}
 
 		// Non-structured responses are complete at first successful provider reply.
 		if req.ResponseFormat == nil {

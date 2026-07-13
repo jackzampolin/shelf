@@ -22,7 +22,6 @@ type HeadingInfo struct {
 	Level int    `json:"level"`
 }
 
-
 // getHeadingPagesTool returns the tool definition for get_heading_pages.
 func getHeadingPagesTool() providers.Tool {
 	return providers.Tool{

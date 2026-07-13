@@ -8,10 +8,18 @@ import (
 	"github.com/jackzampolin/shelf/internal/jobs"
 )
 
-// TaskConcatenateChapter is the task name for chapter audio concatenation.
-const TaskConcatenateChapter = "concatenate_chapter"
+// Task names for chapter audio concatenation. Each provider strategy pins its
+// own task name so persisted work units keep routing to the right handler.
+const (
+	// TaskConcatenateChapter is the ElevenLabs chapter concatenation task.
+	TaskConcatenateChapter = "concatenate_chapter"
+	// TaskConcatenateChapterOpenAI is the OpenAI chapter concatenation task.
+	TaskConcatenateChapterOpenAI = "concatenate_chapter_openai"
+)
 
 // ConcatenateHandler returns a CPUTaskHandler for concatenating chapter audio.
+// It serves both concatenation task names: the request's task name selects the
+// provider-appropriate default format when none is supplied.
 func ConcatenateHandler(homeDir *home.Dir) jobs.CPUTaskHandler {
 	return func(ctx context.Context, req *jobs.CPUWorkRequest) (*jobs.CPUWorkResult, error) {
 		data, ok := req.Data.(map[string]any)
@@ -31,7 +39,12 @@ func ConcatenateHandler(homeDir *home.Dir) jobs.CPUTaskHandler {
 
 		format, _ := data["format"].(string)
 		if format == "" {
-			format = "mp3_44100_128"
+			switch req.Task {
+			case TaskConcatenateChapterOpenAI:
+				format = "mp3"
+			default:
+				format = "mp3_44100_128"
+			}
 		}
 
 		outputPath, err := ConcatenateChapterAudio(ctx, bookID, chapterDocID, homeDir, format)

@@ -31,11 +31,18 @@ Services struct created once at startup. Middleware injects into HTTP requests. 
 ## Available Extractors
 
 ```go
-svcctx.DefraClientFrom(ctx)
-svcctx.JobManagerFrom(ctx)
-svcctx.RegistryFrom(ctx)
-svcctx.SchedulerFrom(ctx)
-svcctx.LoggerFrom(ctx)
+svcctx.ServicesFrom(ctx)       // *Services (full struct)
+svcctx.DefraClientFrom(ctx)    // *defra.Client
+svcctx.DefraSinkFrom(ctx)      // *defra.Sink (async writes)
+svcctx.JobManagerFrom(ctx)     // *jobs.Manager
+svcctx.RegistryFrom(ctx)       // *providers.Registry
+svcctx.SchedulerFrom(ctx)      // *jobs.Scheduler
+svcctx.LoggerFrom(ctx)         // *slog.Logger
+svcctx.HomeFrom(ctx)           // *home.Dir
+svcctx.ConfigStoreFrom(ctx)    // config.Store
+svcctx.MetricsQueryFrom(ctx)   // *metrics.Query
+svcctx.LLMCallStoreFrom(ctx)   // *llmcall.Store
+svcctx.PromptResolverFrom(ctx) // *prompts.Resolver
 ```
 
 ## Why This Works

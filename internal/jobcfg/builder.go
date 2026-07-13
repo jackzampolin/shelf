@@ -14,7 +14,6 @@ import (
 	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/jobs/process_book"
 	"github.com/jackzampolin/shelf/internal/jobs/tts_generate"
-	"github.com/jackzampolin/shelf/internal/jobs/tts_generate_openai"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
@@ -198,14 +197,48 @@ func toInt(v any, key string) (int, error) {
 
 // ProcessBookJobFactory returns a JobFactory that reads config from the store.
 func ProcessBookJobFactory(store config.Store) jobs.JobFactory {
-	return common.MakeJobFactory(func(ctx context.Context, bookID string) (jobs.Job, error) {
+	return func(ctx context.Context, id string, metadata map[string]any) (jobs.Job, error) {
+		bookID, ok := metadata["book_id"].(string)
+		if !ok || bookID == "" {
+			return nil, fmt.Errorf("missing book_id in job metadata")
+		}
+
 		builder := NewBuilder(store)
 		cfg, err := builder.ProcessBookConfig(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to build config: %w", err)
 		}
-		return process_book.NewJob(ctx, cfg, bookID)
-	})
+		if err := applyProcessBookResumeMetadata(&cfg, metadata); err != nil {
+			return nil, err
+		}
+
+		job, err := process_book.NewJob(ctx, cfg, bookID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create job: %w", err)
+		}
+		job.SetRecordID(id)
+		return job, nil
+	}
+}
+
+func applyProcessBookResumeMetadata(cfg *process_book.Config, metadata map[string]any) error {
+	value, exists := metadata["variant"]
+	if !exists {
+		// Legacy records predate durable variants and always represented the
+		// standard pipeline.
+		cfg.ApplyVariant(process_book.VariantStandard)
+		return nil
+	}
+	variantString, ok := value.(string)
+	if !ok || variantString == "" {
+		return fmt.Errorf("invalid process-book variant in job metadata: %v", value)
+	}
+	variant := process_book.PipelineVariant(variantString)
+	if !variant.IsValid() {
+		return fmt.Errorf("invalid process-book variant in job metadata: %q", variantString)
+	}
+	cfg.ApplyVariant(variant)
+	return nil
 }
 
 // TTSConfig builds a tts_generate.Config from the store.
@@ -224,6 +257,9 @@ func (b *Builder) TTSConfig(ctx context.Context) (tts_generate.Config, error) {
 }
 
 // TTSJobFactory returns a JobFactory that reads config from the store.
+// Used to resume persisted "tts-generate" jobs: the provider is pinned by the
+// job type (elevenlabs), so defaults.tts_provider must NOT leak into the
+// config — a resumed job would otherwise fail the provider/strategy pairing.
 func TTSJobFactory(store config.Store) jobs.JobFactory {
 	return common.MakeJobFactory(func(ctx context.Context, bookID string) (jobs.Job, error) {
 		builder := NewBuilder(store)
@@ -231,18 +267,19 @@ func TTSJobFactory(store config.Store) jobs.JobFactory {
 		if err != nil {
 			return nil, fmt.Errorf("failed to build TTS config: %w", err)
 		}
-		return tts_generate.NewJob(ctx, cfg, bookID)
+		cfg.TTSProvider = "" // pinned by job type, never by config defaults
+		return tts_generate.NewJob(ctx, tts_generate.JobTypeElevenLabs, cfg, bookID)
 	})
 }
 
-// OpenAITTSConfig builds a tts_generate_openai.Config from the store.
-func (b *Builder) OpenAITTSConfig(ctx context.Context) (tts_generate_openai.Config, error) {
+// OpenAITTSConfig builds the OpenAI TTS job config from the store.
+func (b *Builder) OpenAITTSConfig(ctx context.Context) (tts_generate.Config, error) {
 	instructions, err := b.getString(ctx, "defaults.openai_tts_instructions")
 	if err != nil {
-		return tts_generate_openai.Config{}, fmt.Errorf("failed to get openai_tts_instructions: %w", err)
+		return tts_generate.Config{}, fmt.Errorf("failed to get openai_tts_instructions: %w", err)
 	}
 
-	return tts_generate_openai.Config{
+	return tts_generate.Config{
 		TTSProvider:  "openai",
 		Format:       "",
 		Instructions: instructions,
@@ -257,6 +294,6 @@ func OpenAITTSJobFactory(store config.Store) jobs.JobFactory {
 		if err != nil {
 			return nil, fmt.Errorf("failed to build OpenAI TTS config: %w", err)
 		}
-		return tts_generate_openai.NewJob(ctx, cfg, bookID)
+		return tts_generate.NewJob(ctx, tts_generate.JobTypeOpenAI, cfg, bookID)
 	})
 }

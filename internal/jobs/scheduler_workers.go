@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"time"
 
 	"github.com/jackzampolin/shelf/internal/providers"
 )
+
+var providerHealthCheckTimeout = 5 * time.Second
 
 // RegisterFactory registers a job factory for a job type.
 // Required for resuming jobs after restart.
@@ -21,6 +24,9 @@ func (s *Scheduler) RegisterFactory(jobType string, factory JobFactory) {
 // If the scheduler is already running, the pool is started immediately.
 func (s *Scheduler) RegisterPool(p WorkerPool) {
 	s.mu.Lock()
+	if providerPool, ok := p.(*ProviderWorkerPool); ok {
+		providerPool.onWaitChange = s.providerWaitChanged
+	}
 
 	// Initialize pool with shared results channel
 	p.init(s.results)
@@ -46,21 +52,30 @@ func (s *Scheduler) RegisterPool(p WorkerPool) {
 // This is the recommended way to set up pools - one provider = one pool.
 // Each pool pulls its rate limit from the provider's configured value.
 func (s *Scheduler) InitFromRegistry(registry *providers.Registry) error {
-	return s.InitFromRegistryWithHealthCheck(context.Background(), registry, false)
+	return s.InitFromRegistryWithHealthCheck(context.Background(), registry, false, false)
+}
+
+// InitFromRegistryStrict runs health checks and fails fast on the first unreachable provider.
+func (s *Scheduler) InitFromRegistryStrict(ctx context.Context, registry *providers.Registry) error {
+	return s.InitFromRegistryWithHealthCheck(ctx, registry, true, true)
 }
 
 // InitFromRegistryWithHealthCheck creates pools with optional health checking.
 // When runHealthChecks is true, verifies each provider is reachable before creating pools.
-// Failed health checks are logged as warnings but don't prevent pool creation.
-func (s *Scheduler) InitFromRegistryWithHealthCheck(ctx context.Context, registry *providers.Registry, runHealthChecks bool) error {
+// Failed health checks are logged as warnings unless failFast is true.
+func (s *Scheduler) InitFromRegistryWithHealthCheck(ctx context.Context, registry *providers.Registry, runHealthChecks, failFast bool) error {
 	// Create pools from LLM clients
 	for name, client := range registry.LLMClients() {
+		var healthErr error
 		if runHealthChecks {
-			if err := client.HealthCheck(ctx); err != nil {
-				s.logger.Warn("LLM provider health check failed",
-					"name", name,
-					"error", err,
-				)
+			checkCtx, cancel := context.WithTimeout(ctx, providerHealthCheckTimeout)
+			healthErr = client.HealthCheck(checkCtx)
+			cancel()
+			if healthErr != nil {
+				if failFast {
+					return fmt.Errorf("LLM provider %q failed health check: %w", name, healthErr)
+				}
+				s.logger.Warn("LLM provider health check failed", "name", name, "error", healthErr)
 			} else {
 				s.logger.Debug("LLM provider health check passed", "name", name)
 			}
@@ -76,16 +91,21 @@ func (s *Scheduler) InitFromRegistryWithHealthCheck(ctx context.Context, registr
 			return fmt.Errorf("failed to create LLM pool %s: %w", name, err)
 		}
 		s.RegisterPool(pool)
+		pool.openOnStartup(ctx, healthErr)
 	}
 
 	// Create pools from OCR providers
 	for name, provider := range registry.OCRProviders() {
+		var healthErr error
 		if runHealthChecks {
-			if err := provider.HealthCheck(ctx); err != nil {
-				s.logger.Warn("OCR provider health check failed",
-					"name", name,
-					"error", err,
-				)
+			checkCtx, cancel := context.WithTimeout(ctx, providerHealthCheckTimeout)
+			healthErr = provider.HealthCheck(checkCtx)
+			cancel()
+			if healthErr != nil {
+				if failFast {
+					return fmt.Errorf("OCR provider %q failed health check: %w", name, healthErr)
+				}
+				s.logger.Warn("OCR provider health check failed", "name", name, "error", healthErr)
 			} else {
 				s.logger.Debug("OCR provider health check passed", "name", name)
 			}
@@ -101,16 +121,21 @@ func (s *Scheduler) InitFromRegistryWithHealthCheck(ctx context.Context, registr
 			return fmt.Errorf("failed to create OCR pool %s: %w", name, err)
 		}
 		s.RegisterPool(pool)
+		pool.openOnStartup(ctx, healthErr)
 	}
 
 	// Create pools from TTS providers
 	for name, provider := range registry.TTSProviders() {
+		var healthErr error
 		if runHealthChecks {
-			if err := provider.HealthCheck(ctx); err != nil {
-				s.logger.Warn("TTS provider health check failed",
-					"name", name,
-					"error", err,
-				)
+			checkCtx, cancel := context.WithTimeout(ctx, providerHealthCheckTimeout)
+			healthErr = provider.HealthCheck(checkCtx)
+			cancel()
+			if healthErr != nil {
+				if failFast {
+					return fmt.Errorf("TTS provider %q failed health check: %w", name, healthErr)
+				}
+				s.logger.Warn("TTS provider health check failed", "name", name, "error", healthErr)
 			} else {
 				s.logger.Debug("TTS provider health check passed", "name", name)
 			}
@@ -126,6 +151,7 @@ func (s *Scheduler) InitFromRegistryWithHealthCheck(ctx context.Context, registr
 			return fmt.Errorf("failed to create TTS pool %s: %w", name, err)
 		}
 		s.RegisterPool(pool)
+		pool.openOnStartup(ctx, healthErr)
 	}
 
 	s.logger.Info("initialized pools from registry",
@@ -135,6 +161,57 @@ func (s *Scheduler) InitFromRegistryWithHealthCheck(ctx context.Context, registr
 	)
 
 	return nil
+}
+
+// RefreshProviderClients applies same-name provider replacements from a
+// hot-reloaded registry to existing scheduler pools. Queued, in-flight, and
+// circuit-parked work stays attached to the original pool; the next attempt or
+// health probe uses the new client. Pool sizing and rate limits intentionally
+// remain restart-scoped because changing goroutine topology in place would make
+// in-flight accounting ambiguous.
+func (s *Scheduler) RefreshProviderClients(registry *providers.Registry) int {
+	s.mu.RLock()
+	pools := make(map[string]*ProviderWorkerPool, len(s.pools))
+	for name, candidate := range s.pools {
+		if pool, ok := candidate.(*ProviderWorkerPool); ok {
+			pools[name] = pool
+		}
+	}
+	s.mu.RUnlock()
+
+	refreshed := 0
+	for name, pool := range pools {
+		var err error
+		switch pool.Type() {
+		case PoolTypeLLM:
+			var client providers.LLMClient
+			client, err = registry.GetLLM(name)
+			if err == nil {
+				err = pool.replaceProvider(client, nil, nil)
+			}
+		case PoolTypeOCR:
+			var provider providers.OCRProvider
+			provider, err = registry.GetOCR(name)
+			if err == nil {
+				err = pool.replaceProvider(nil, provider, nil)
+			}
+		case PoolTypeTTS:
+			var provider providers.TTSProvider
+			provider, err = registry.GetTTS(name)
+			if err == nil {
+				err = pool.replaceProvider(nil, nil, provider)
+			}
+		}
+		if err != nil {
+			s.logger.Warn("provider pool not refreshed from config",
+				"name", name, "type", pool.Type(), "error", err)
+			continue
+		}
+		refreshed++
+		s.logger.Info("provider pool client refreshed from config",
+			"name", name, "type", pool.Type())
+	}
+	return refreshed
 }
 
 // InitCPUPool creates a single CPU worker pool.

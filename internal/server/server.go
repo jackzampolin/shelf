@@ -19,7 +19,6 @@ import (
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/process_book"
 	"github.com/jackzampolin/shelf/internal/jobs/tts_generate"
-	"github.com/jackzampolin/shelf/internal/jobs/tts_generate_openai"
 	"github.com/jackzampolin/shelf/internal/llmcall"
 	"github.com/jackzampolin/shelf/internal/metrics"
 	"github.com/jackzampolin/shelf/internal/prompts"
@@ -33,7 +32,6 @@ import (
 
 	chapter_finder "github.com/jackzampolin/shelf/internal/agents/chapter_finder"
 	gap_investigator "github.com/jackzampolin/shelf/internal/agents/gap_investigator"
-	page_pattern_analyzer "github.com/jackzampolin/shelf/internal/agents/page_pattern_analyzer"
 	pattern_analyzer "github.com/jackzampolin/shelf/internal/agents/pattern_analyzer"
 	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
 	toc_finder "github.com/jackzampolin/shelf/internal/agents/toc_finder"
@@ -43,18 +41,20 @@ import (
 // It manages the DefraDB container lifecycle - starting it on server start
 // and stopping it on server shutdown.
 type Server struct {
-	httpServer     *http.Server
-	defraManager   *defra.DockerManager
-	defraClient    *defra.Client
-	defraSink      *defra.Sink
-	jobManager     *jobs.Manager
-	scheduler      *jobs.Scheduler
-	registry       *providers.Registry
-	configMgr      *config.Manager
-	configStore    config.Store
-	promptResolver *prompts.Resolver
-	logger         *slog.Logger
-	home           *home.Dir
+	httpServer      *http.Server
+	defraManager    *defra.DockerManager
+	defraClient     *defra.Client
+	defraSink       *defra.Sink
+	jobManager      *jobs.Manager
+	scheduler       *jobs.Scheduler
+	registry        *providers.Registry
+	configMgr       *config.Manager
+	configStore     config.Store
+	promptResolver  *prompts.Resolver
+	logger          *slog.Logger
+	home            *home.Dir
+	schedulerDone   chan struct{}
+	schedulerCancel context.CancelFunc
 
 	// services holds all core services for context enrichment
 	services *svcctx.Services
@@ -115,12 +115,6 @@ func New(cfg Config) (*Server, error) {
 	// If config manager provided, set up providers and hot reload
 	if cfg.ConfigManager != nil {
 		registry.Reload(cfg.ConfigManager.Get().ToProviderRegistryConfig())
-
-		// Watch for config changes
-		cfg.ConfigManager.OnChange(func(c *config.Config) {
-			registry.Reload(c.ToProviderRegistryConfig())
-			cfg.Logger.Info("provider registry reloaded from config")
-		})
 	}
 
 	s := &Server{
@@ -131,12 +125,29 @@ func New(cfg Config) (*Server, error) {
 		home:         cfg.Home,
 	}
 
+	if cfg.ConfigManager != nil {
+		// Registry reload alone is insufficient once jobs are active: scheduler
+		// pools retain their concrete clients and provider circuits. Refresh
+		// same-name pool clients in place so endpoint restoration can close an
+		// open circuit and replay parked work without a process restart.
+		cfg.ConfigManager.OnChange(func(c *config.Config) {
+			registry.Reload(c.ToProviderRegistryConfig())
+			s.mu.RLock()
+			scheduler := s.scheduler
+			s.mu.RUnlock()
+			refreshed := 0
+			if scheduler != nil {
+				refreshed = scheduler.RefreshProviderClients(registry)
+			}
+			cfg.Logger.Info("provider registry reloaded from config",
+				"active_pools_refreshed", refreshed)
+		})
+	}
+
 	// Create endpoint registry and register all endpoints
 	// Job configs are read from DefraDB at request time, not passed here
 	s.endpointRegistry = api.NewRegistry()
-	for _, ep := range endpoints.All(endpoints.Config{
-		DefraManager: defraManager,
-	}) {
+	for _, ep := range endpoints.All(endpoints.Config{}) {
 		s.endpointRegistry.Register(ep)
 	}
 
@@ -236,12 +247,30 @@ func (s *Server) Start(ctx context.Context) (retErr error) {
 		return fmt.Errorf("schema initialization failed: %w", err)
 	}
 
-	// Create config store and seed defaults
+	// Bind this Defra endpoint to the canonical Shelf home before any config
+	// seeding or job resumption writes. A transient cross-home Docker/Defra
+	// attachment must fail closed instead of materializing another corpus.
 	s.configStore = config.NewStore(s.defraClient)
+	if s.home != nil {
+		claimed, identityErr := ensureDatastoreIdentity(ctx, s.configStore, s.defraClient, s.home.Path())
+		if identityErr != nil {
+			_ = s.shutdown()
+			return fmt.Errorf("Defra datastore identity check failed: %w", identityErr)
+		}
+		s.logger.Info("verified Defra datastore identity", "claimed", claimed)
+	}
+
+	// Seed defaults only after datastore identity is verified.
 	s.logger.Info("seeding config defaults")
-	if err := config.SeedDefaults(ctx, s.configStore, s.logger); err != nil {
+	var seedErr error
+	if s.configMgr != nil {
+		seedErr = config.SeedDefaultsFromConfig(ctx, s.configStore, s.logger, s.configMgr.Get())
+	} else {
+		seedErr = config.SeedDefaults(ctx, s.configStore, s.logger)
+	}
+	if seedErr != nil {
 		_ = s.shutdown()
-		return fmt.Errorf("config seeding failed: %w", err)
+		return fmt.Errorf("config seeding failed: %w", seedErr)
 	}
 
 	// Create prompt resolver and register all embedded prompts
@@ -251,7 +280,6 @@ func (s *Server) Start(ctx context.Context) (retErr error) {
 	extract_toc.RegisterPrompts(s.promptResolver)
 	toc_finder.RegisterPrompts(s.promptResolver)
 	toc_entry_finder.RegisterPrompts(s.promptResolver)
-	page_pattern_analyzer.RegisterPrompts(s.promptResolver)
 	pattern_analyzer.RegisterPrompts(s.promptResolver)
 	chapter_finder.RegisterPrompts(s.promptResolver)
 	gap_investigator.RegisterPrompts(s.promptResolver)
@@ -284,17 +312,40 @@ func (s *Server) Start(ctx context.Context) (retErr error) {
 	})
 	s.defraSink.Start(ctx)
 
-	// Create scheduler for job execution (sink enables fire-and-forget metrics)
-	s.scheduler = jobs.NewScheduler(jobs.SchedulerConfig{
+	// Create scheduler for job execution (sink enables fire-and-forget metrics).
+	// Publish it under the server mutex because config hot-reload callbacks may
+	// arrive concurrently during startup.
+	scheduler := jobs.NewScheduler(jobs.SchedulerConfig{
 		Manager: s.jobManager,
 		Logger:  s.logger,
 		Sink:    s.defraSink,
 	})
+	s.mu.Lock()
+	s.scheduler = scheduler
+	s.mu.Unlock()
 
-	// Initialize workers from provider registry
-	if err := s.scheduler.InitFromRegistry(s.registry); err != nil {
+	// Initialize workers from provider registry. For local inference a down
+	// endpoint stalls the pipeline, so configured deployments can fail fast.
+	requireHealthy := false
+	if s.configMgr != nil {
+		requireHealthy = s.configMgr.Get().Defaults.RequireHealthyProviders
+	}
+	if err := s.scheduler.InitFromRegistryWithHealthCheck(ctx, s.registry, true, requireHealthy); err != nil {
 		_ = s.shutdown()
 		return fmt.Errorf("failed to initialize workers: %w", err)
+	}
+
+	if s.configMgr != nil {
+		pbCfg, err := jobcfg.NewBuilder(s.configStore).ProcessBookConfig(ctx)
+		if err != nil {
+			_ = s.shutdown()
+			return fmt.Errorf("failed to load process-book config for provider validation: %w", err)
+		}
+		llmNames := dedupeNonEmpty(pbCfg.MetadataProvider, pbCfg.TocProvider)
+		if err := validateProviderRoutingForStartup(s.logger, s.registry, llmNames, pbCfg.OcrProviders, requireHealthy); err != nil {
+			_ = s.shutdown()
+			return fmt.Errorf("provider routing validation failed: %w", err)
+		}
 	}
 
 	// Initialize CPU pool for CPU-bound tasks (uses runtime.NumCPU())
@@ -303,20 +354,31 @@ func (s *Server) Start(ctx context.Context) (retErr error) {
 	// Register CPU task handlers
 	s.scheduler.RegisterCPUHandler(ingest.TaskExtractPage, ingest.ExtractPageHandler())
 	s.scheduler.RegisterCPUHandler(tts_generate.TaskConcatenateChapter, tts_generate.ConcatenateHandler(s.home))
-	s.scheduler.RegisterCPUHandler(tts_generate_openai.TaskConcatenateChapter, tts_generate_openai.ConcatenateHandler(s.home))
+	s.scheduler.RegisterCPUHandler(tts_generate.TaskConcatenateChapterOpenAI, tts_generate.ConcatenateHandler(s.home))
 
 	// Register job factories for resumption
 	// These factories read config from DefraDB, so resumed jobs use current settings
 	s.scheduler.RegisterFactory(process_book.JobType, jobcfg.ProcessBookJobFactory(s.configStore))
-	s.scheduler.RegisterFactory(tts_generate.JobType, jobcfg.TTSJobFactory(s.configStore))
-	s.scheduler.RegisterFactory(tts_generate_openai.JobType, jobcfg.OpenAITTSJobFactory(s.configStore))
+	s.scheduler.RegisterFactory(tts_generate.JobTypeElevenLabs, jobcfg.TTSJobFactory(s.configStore))
+	s.scheduler.RegisterFactory(tts_generate.JobTypeOpenAI, jobcfg.OpenAITTSJobFactory(s.configStore))
 
-	// Start scheduler in background
-	go s.scheduler.Start(ctx)
+	// Start scheduler in background and retain a completion signal so shutdown
+	// keeps the Defra sink alive until in-flight workers have unwound.
+	schedulerDone := make(chan struct{})
+	schedulerCtx, schedulerCancel := context.WithCancel(ctx)
+	s.mu.Lock()
+	s.schedulerDone = schedulerDone
+	s.schedulerCancel = schedulerCancel
+	s.mu.Unlock()
+	go func() {
+		defer close(schedulerDone)
+		s.scheduler.Start(schedulerCtx)
+	}()
 
 	// Create services struct for context enrichment
 	s.services = &svcctx.Services{
 		DefraClient:    s.defraClient,
+		DefraManager:   s.defraManager,
 		DefraSink:      s.defraSink,
 		JobManager:     s.jobManager,
 		Registry:       s.registry,
@@ -334,13 +396,6 @@ func (s *Server) Start(ctx context.Context) (retErr error) {
 		return svcctx.WithServices(ctx, s.services)
 	})
 
-	// Resume any interrupted jobs from previous run
-	if resumed, err := s.scheduler.Resume(ctx); err != nil {
-		s.logger.Warn("failed to resume jobs", "error", err)
-	} else if resumed > 0 {
-		s.logger.Info("resumed interrupted jobs", "count", resumed)
-	}
-
 	// Start HTTP server in goroutine
 	errCh := make(chan error, 1)
 	go func() {
@@ -349,6 +404,16 @@ func (s *Server) Start(ctx context.Context) (retErr error) {
 			errCh <- err
 		}
 		close(errCh)
+	}()
+
+	// Resume any interrupted jobs from previous run after binding HTTP so
+	// health checks and operator controls stay available during large resumes.
+	go func() {
+		if resumed, err := s.scheduler.Resume(schedulerCtx); err != nil {
+			s.logger.Warn("failed to resume jobs", "error", err)
+		} else if resumed > 0 {
+			s.logger.Info("resumed interrupted jobs", "count", resumed)
+		}
 	}()
 
 	// Wait for context cancellation or error
@@ -375,6 +440,27 @@ func (s *Server) shutdown() error {
 
 	if err := s.httpServer.Shutdown(shutdownCtx); err != nil {
 		s.logger.Error("HTTP server shutdown error", "error", err)
+	}
+
+	// Context cancellation stops dispatch and provider calls. Wait for their
+	// handlers to return before closing the write sink, otherwise a successful
+	// result already being persisted races a closed channel and is recomputed on
+	// the next start. The outer shutdown deadline keeps a misbehaving provider
+	// from hanging process exit forever.
+	s.mu.RLock()
+	schedulerDone := s.schedulerDone
+	schedulerCancel := s.schedulerCancel
+	s.mu.RUnlock()
+	if schedulerCancel != nil {
+		schedulerCancel()
+	}
+	if schedulerDone != nil {
+		select {
+		case <-schedulerDone:
+			s.logger.Info("scheduler quiesced before sink shutdown")
+		case <-shutdownCtx.Done():
+			s.logger.Warn("timed out waiting for scheduler shutdown", "error", shutdownCtx.Err())
+		}
 	}
 
 	// Stop write sink (flushes remaining writes)
@@ -421,22 +507,6 @@ func (s *Server) IsRunning() bool {
 // Returns nil if the server hasn't started yet.
 func (s *Server) DefraClient() *defra.Client {
 	return s.defraClient
-}
-
-// JobManager returns the job manager.
-// Returns nil if the server hasn't started yet.
-func (s *Server) JobManager() *jobs.Manager {
-	return s.jobManager
-}
-
-// Addr returns the server's listen address.
-func (s *Server) Addr() string {
-	return s.httpServer.Addr
-}
-
-// Registry returns the provider registry.
-func (s *Server) Registry() *providers.Registry {
-	return s.registry
 }
 
 // withServices wraps a handler to enrich the request context with services.

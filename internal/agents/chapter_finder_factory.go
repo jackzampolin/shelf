@@ -2,7 +2,6 @@ package agents
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/jackzampolin/shelf/internal/agent"
 	chapter_finder "github.com/jackzampolin/shelf/internal/agents/chapter_finder"
@@ -33,11 +32,10 @@ func NewChapterFinderAgent(ctx context.Context, cfg ChapterFinderConfig) *agent.
 
 	userPrompt := chapter_finder.BuildUserPrompt(cfg.Entry, cfg.Book.TotalPages, cfg.ExcludedRanges)
 
-	// Build agent ID from entry info for tracing
-	agentID := fmt.Sprintf("chapter-%s-%s", cfg.Entry.LevelName, cfg.Entry.Identifier)
-
+	// Let agent.New allocate a fresh ID. DefraDB tombstones deleted documents,
+	// so reusing a deterministic ID after successful cleanup prevents a later
+	// run from persisting its resumable state. Resume restores the saved ID.
 	return agent.New(ctx, agent.Config{
-		ID:    agentID,
 		Tools: finderTools,
 		InitialMessages: []providers.Message{
 			{Role: "system", Content: cfg.SystemPrompt},

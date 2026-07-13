@@ -283,4 +283,3 @@ func TestPageExtractResult_Fields(t *testing.T) {
 		t.Errorf("PageNum = %d, want 1", result.PageNum)
 	}
 }
-

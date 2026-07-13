@@ -3,6 +3,8 @@ package jobs
 import (
 	"context"
 	"fmt"
+
+	"github.com/jackzampolin/shelf/internal/providers"
 )
 
 // JobStatus returns the status of a specific job.
@@ -52,6 +54,12 @@ func (s *Scheduler) PoolStatuses() map[string]PoolStatus {
 // Deprecated: Use PoolStatuses() for the new format.
 // This method is kept for backward compatibility with existing API consumers.
 func (s *Scheduler) WorkerStatus() map[string]WorkerStatusInfo {
+	return s.WorkerStatusForJob("")
+}
+
+// WorkerStatusForJob includes global pool load plus the queried job's exact
+// queued, claimed/in-flight, and parked unit counts.
+func (s *Scheduler) WorkerStatusForJob(jobID string) map[string]WorkerStatusInfo {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -60,8 +68,21 @@ func (s *Scheduler) WorkerStatus() map[string]WorkerStatusInfo {
 		ps := p.Status()
 		status[name] = WorkerStatusInfo{
 			Type:        ps.Type,
+			Workers:     ps.Workers,
+			InFlight:    ps.InFlight,
 			QueueDepth:  ps.QueueDepth,
+			Health:      ps.Health,
+			ParkedUnits: ps.ParkedUnits,
+			Endpoints:   ps.Endpoints,
 			RateLimiter: ps.RateLimiter,
+		}
+		if perJob, ok := p.(JobWorkStatusProvider); ok && jobID != "" {
+			jobStatus := perJob.JobWorkStatus(jobID)
+			entry := status[name]
+			entry.JobQueued = jobStatus.Queued
+			entry.JobInFlight = jobStatus.InFlight
+			entry.JobParked = jobStatus.Parked
+			status[name] = entry
 		}
 	}
 	return status
@@ -70,9 +91,17 @@ func (s *Scheduler) WorkerStatus() map[string]WorkerStatusInfo {
 // WorkerStatusInfo reports a worker's current state.
 // Deprecated: Use PoolStatus instead.
 type WorkerStatusInfo struct {
-	Type        string             `json:"type"`
-	QueueDepth  int                `json:"queue_depth"`
-	RateLimiter *RateLimiterStatus `json:"rate_limiter,omitempty"`
+	Type        string                     `json:"type"`
+	Workers     int                        `json:"workers"`
+	InFlight    int                        `json:"in_flight"`
+	QueueDepth  int                        `json:"queue_depth"`
+	Health      string                     `json:"health,omitempty"`
+	ParkedUnits int                        `json:"parked_units,omitempty"`
+	JobQueued   int                        `json:"job_queued"`
+	JobInFlight int                        `json:"job_in_flight"`
+	JobParked   int                        `json:"job_parked"`
+	Endpoints   []providers.EndpointStatus `json:"endpoints,omitempty"`
+	RateLimiter *RateLimiterStatus         `json:"rate_limiter,omitempty"`
 }
 
 // JobProgress returns the per-provider progress for a specific job.

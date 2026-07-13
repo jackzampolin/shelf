@@ -1,0 +1,591 @@
+package job
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strconv"
+	"strings"
+	"unicode"
+
+	"github.com/jackzampolin/shelf/internal/agent"
+	"github.com/jackzampolin/shelf/internal/agents"
+	chapter_finder "github.com/jackzampolin/shelf/internal/agents/chapter_finder"
+	gap_investigator "github.com/jackzampolin/shelf/internal/agents/gap_investigator"
+	"github.com/jackzampolin/shelf/internal/defra"
+	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/jobs/common"
+	"github.com/jackzampolin/shelf/internal/svcctx"
+)
+
+// loadExistingPatternResults checks the DB for pattern_analysis_json from a previous
+// finalize attempt. If found, loads it into BookState and returns true.
+// This allows crash recovery to skip the pattern analysis LLM call.
+func (j *Job) loadExistingPatternResults(ctx context.Context) bool {
+	logger := svcctx.LoggerFrom(ctx)
+
+	if err := defra.ValidateID(j.Book.BookID); err != nil {
+		if logger != nil {
+			logger.Error("loadExistingPatternResults invalid book ID", "book_id", j.Book.BookID, "error", err)
+		}
+		return false
+	}
+
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return false
+	}
+
+	query := fmt.Sprintf(`{
+		Book(filter: {_docID: {_eq: "%s"}}) {
+			pattern_analysis_json
+		}
+	}`, j.Book.BookID)
+
+	resp, err := defraClient.Execute(ctx, query, nil)
+	if err != nil {
+		if logger != nil {
+			logger.Error("loadExistingPatternResults query failed", "book_id", j.Book.BookID, "error", err)
+		}
+		return false
+	}
+
+	books, ok := resp.Data["Book"].([]any)
+	if !ok || len(books) == 0 {
+		return false
+	}
+
+	bookData, ok := books[0].(map[string]any)
+	if !ok {
+		return false
+	}
+
+	paJSON, ok := bookData["pattern_analysis_json"].(string)
+	if !ok || paJSON == "" {
+		return false
+	}
+
+	var data struct {
+		Patterns  []common.DiscoveredPattern `json:"patterns"`
+		Excluded  []common.ExcludedRange     `json:"excluded_ranges"`
+		Reasoning string                     `json:"reasoning"`
+	}
+	if err := json.Unmarshal([]byte(paJSON), &data); err != nil {
+		if logger != nil {
+			logger.Error("loadExistingPatternResults failed to parse pattern_analysis_json", "book_id", j.Book.BookID, "error", err)
+		}
+		return false
+	}
+
+	sanitizedPatterns := sanitizeDiscoveredPatternsWithCandidates(
+		data.Patterns, j.loadCandidateHeadings(),
+	)
+	sanitizedExcluded := sanitizeExcludedRanges(j.Book.TotalPages, data.Excluded)
+	controlDataChanged := len(sanitizedPatterns) != len(data.Patterns) ||
+		len(sanitizedExcluded) != len(data.Excluded)
+	if len(sanitizedPatterns) != len(data.Patterns) && logger != nil {
+		logger.Warn("discarded malformed persisted discovered patterns",
+			"book_id", j.Book.BookID,
+			"received", len(data.Patterns),
+			"accepted", len(sanitizedPatterns))
+	}
+	if len(sanitizedExcluded) != len(data.Excluded) && logger != nil {
+		logger.Warn("discarded unsafe persisted pattern exclusions",
+			"book_id", j.Book.BookID,
+			"received", len(data.Excluded),
+			"accepted", len(sanitizedExcluded))
+	}
+	j.Book.SetFinalizePatternResult(&common.FinalizePatternResult{
+		Patterns:  sanitizedPatterns,
+		Excluded:  sanitizedExcluded,
+		Reasoning: data.Reasoning,
+	})
+	// Recompute rather than trusting persisted model-derived entries. This
+	// reapplies current validation and identifier normalization during resume.
+	j.generateEntriesToFind(ctx)
+	// Keep durable status and the next restart aligned with the sanitized state.
+	// Otherwise the running job is safe but /detailed continues to advertise
+	// phantom discovery work from the rejected persisted plan.
+	if controlDataChanged {
+		if _, err := j.persistFinalizePatternResults(ctx); err != nil && logger != nil {
+			logger.Warn("failed to persist sanitized pattern analysis",
+				"book_id", j.Book.BookID,
+				"error", err)
+		}
+	}
+
+	if logger != nil {
+		logger.Debug("loadExistingPatternResults reusing saved pattern analysis",
+			"book_id", j.Book.BookID,
+			"patterns", len(sanitizedPatterns),
+			"entries_to_find", j.Book.GetEntriesToFindCount())
+	}
+
+	return true
+}
+
+// sanitizeExcludedRanges treats model-produced exclusion ranges as untrusted
+// control data. Discovery only needs late/back-matter exclusions; accepting an
+// early or unlabeled range can suppress chapter discovery across most of a
+// book. Front matter is already outside the derived body range.
+func sanitizeExcludedRanges(totalPages int, ranges []common.ExcludedRange) []common.ExcludedRange {
+	if totalPages <= 0 {
+		return nil
+	}
+	lateFloor := (totalPages + 1) / 2
+	result := make([]common.ExcludedRange, 0, len(ranges))
+	for _, excluded := range ranges {
+		if excluded.StartPage < lateFloor || excluded.StartPage > excluded.EndPage || excluded.EndPage > totalPages {
+			continue
+		}
+		if _, ok := backMatterLabelFromText(excluded.Reason); !ok {
+			continue
+		}
+		result = append(result, excluded)
+	}
+	return result
+}
+
+// sanitizeDiscoveredPatterns treats model-produced discovery plans as
+// untrusted control data. The downstream finder requires a complete, globally
+// addressable numeric/Roman sequence; partial fields otherwise become a junk
+// empty entry key and plausible-looking structure corruption.
+func sanitizeDiscoveredPatterns(patterns []common.DiscoveredPattern) []common.DiscoveredPattern {
+	result := make([]common.DiscoveredPattern, 0, len(patterns))
+	for _, pattern := range patterns {
+		pattern.PatternType = strings.TrimSpace(pattern.PatternType)
+		pattern.LevelName = strings.TrimSpace(pattern.LevelName)
+		pattern.HeadingFormat = strings.TrimSpace(pattern.HeadingFormat)
+		pattern.RangeStart = strings.TrimSpace(pattern.RangeStart)
+		pattern.RangeEnd = strings.TrimSpace(pattern.RangeEnd)
+		pattern.Reasoning = strings.TrimSpace(pattern.Reasoning)
+		if pattern.PatternType != "sequential" ||
+			pattern.LevelName == "" ||
+			pattern.HeadingFormat == "" ||
+			!strings.Contains(pattern.HeadingFormat, "{n}") ||
+			!hasDiscoveryHeadingAnchor(pattern.HeadingFormat) ||
+			pattern.RangeStart == "" ||
+			pattern.RangeEnd == "" ||
+			pattern.Level < 1 || pattern.Level > 6 ||
+			pattern.Reasoning == "" {
+			continue
+		}
+		start := normalizeSequenceIdentifier(pattern.RangeStart)
+		end := normalizeSequenceIdentifier(pattern.RangeEnd)
+		if start == "" || end == "" {
+			continue
+		}
+		sequence := generateSequence(pattern.RangeStart, pattern.RangeEnd)
+		if len(sequence) == 0 || len(sequence) > 500 ||
+			(len(sequence) == 1 && start != end) {
+			continue
+		}
+		result = append(result, pattern)
+	}
+	return result
+}
+
+// sanitizeDiscoveredPatternsWithCandidates additionally proves that a model's
+// claimed heading format exists in the source-derived candidate headings. This
+// rejects invented anchors (for example, "Section {n}" when candidates contain
+// only bare Roman numerals) and locally restarting sequences.
+func sanitizeDiscoveredPatternsWithCandidates(patterns []common.DiscoveredPattern, candidates []*candidateHeading) []common.DiscoveredPattern {
+	structurallyValid := sanitizeDiscoveredPatterns(patterns)
+	result := make([]common.DiscoveredPattern, 0, len(structurallyValid))
+	for _, pattern := range structurallyValid {
+		if discoveredPatternHasCandidateSupport(pattern, candidates) {
+			result = append(result, pattern)
+		}
+	}
+	return result
+}
+
+func discoveredPatternHasCandidateSupport(pattern common.DiscoveredPattern, candidates []*candidateHeading) bool {
+	sequence := generateSequence(pattern.RangeStart, pattern.RangeEnd)
+	if len(sequence) == 0 {
+		return false
+	}
+	targets := make(map[string]bool, len(sequence))
+	for _, identifier := range sequence {
+		targets[normalizeSequenceIdentifier(identifier)] = true
+	}
+	anchorTokens := discoveryTokens(strings.ReplaceAll(pattern.HeadingFormat, "{n}", ""))
+	if len(anchorTokens) == 0 {
+		return false
+	}
+	supportPages := make(map[string]map[int]bool)
+	for _, candidate := range candidates {
+		candidateTokens := discoveryTokens(candidate.Text)
+		if !containsDiscoveryTokens(candidateTokens, anchorTokens) {
+			continue
+		}
+		for _, token := range candidateTokens {
+			identifier := normalizeSequenceIdentifier(token)
+			if !targets[identifier] {
+				continue
+			}
+			if supportPages[identifier] == nil {
+				supportPages[identifier] = make(map[int]bool)
+			}
+			supportPages[identifier][candidate.PageNum] = true
+		}
+	}
+	for _, pages := range supportPages {
+		if len(pages) > 1 {
+			return false
+		}
+	}
+	required := 2
+	if len(targets) == 1 {
+		required = 1
+	}
+	return len(supportPages) >= required
+}
+
+func discoveryTokens(value string) []string {
+	return strings.FieldsFunc(strings.ToLower(value), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+}
+
+func containsDiscoveryTokens(haystack, needles []string) bool {
+	available := make(map[string]bool, len(haystack))
+	for _, token := range haystack {
+		available[token] = true
+	}
+	for _, token := range needles {
+		if !available[token] {
+			return false
+		}
+	}
+	return true
+}
+
+// hasDiscoveryHeadingAnchor rejects identifier-only patterns such as "{n}" or
+// "({n})". A bare number/Roman numeral is not globally addressable: the same
+// marker commonly restarts inside every chapter, so a finder can produce
+// plausible links while collapsing unrelated local sections into one global
+// sequence. Require a lexical anchor such as "CHAPTER" or "Part".
+func hasDiscoveryHeadingAnchor(format string) bool {
+	anchor := strings.ReplaceAll(format, "{n}", "")
+	for _, r := range anchor {
+		if unicode.IsLetter(r) {
+			return true
+		}
+	}
+	return false
+}
+
+// Helper functions
+
+func buildPagePatternContext(_ *common.BookState) *PagePatternContext {
+	// Early pattern analysis has been removed - return empty context.
+	// Body boundaries will be derived from ToC entries in StartFinalizePhase.
+	return &PagePatternContext{}
+}
+
+func (j *Job) estimatePageLocation(entries []*common.LinkedTocEntry, pattern common.DiscoveredPattern, identifier string, index, total int) int {
+	var beforePage, afterPage int
+	beforeFound, afterFound := false, false
+
+	for _, entry := range entries {
+		if entry.ActualPage == nil || entry.LevelName != pattern.LevelName {
+			continue
+		}
+
+		cmp := compareIdentifiers(entry.EntryNumber, identifier)
+		if cmp < 0 && *entry.ActualPage > beforePage {
+			beforePage = *entry.ActualPage
+			beforeFound = true
+		} else if cmp > 0 && (!afterFound || *entry.ActualPage < afterPage) {
+			afterPage = *entry.ActualPage
+			afterFound = true
+		}
+	}
+
+	if beforeFound && afterFound {
+		return beforePage + (afterPage-beforePage)/2
+	} else if beforeFound {
+		return beforePage + 10
+	} else if afterFound {
+		return afterPage - 10
+	}
+
+	bodyRange := j.Book.GetBodyEnd() - j.Book.GetBodyStart()
+	if total > 0 {
+		return j.Book.GetBodyStart() + (bodyRange * index / total)
+	}
+	return j.Book.GetBodyStart() + bodyRange/2
+}
+
+func compareIdentifiers(a, b string) int {
+	aNum, aErr := strconv.Atoi(a)
+	bNum, bErr := strconv.Atoi(b)
+	if aErr == nil && bErr == nil {
+		if aNum < bNum {
+			return -1
+		} else if aNum > bNum {
+			return 1
+		}
+		return 0
+	}
+
+	aRoman := romanToInt(strings.ToUpper(a))
+	bRoman := romanToInt(strings.ToUpper(b))
+	if aRoman > 0 && bRoman > 0 {
+		if aRoman < bRoman {
+			return -1
+		} else if aRoman > bRoman {
+			return 1
+		}
+		return 0
+	}
+
+	return strings.Compare(strings.ToLower(a), strings.ToLower(b))
+}
+
+func normalizeSequenceIdentifier(identifier string) string {
+	value := strings.ToLower(strings.TrimSpace(identifier))
+	value = strings.Join(strings.Fields(strings.ReplaceAll(value, "-", " ")), " ")
+	if value == "" {
+		return ""
+	}
+	if number, err := strconv.Atoi(value); err == nil && number > 0 {
+		return strconv.Itoa(number)
+	}
+	numberWords := map[string]int{
+		"one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+		"six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+		"eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+		"sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20,
+		"twenty one": 21, "twenty two": 22, "twenty three": 23, "twenty four": 24,
+		"twenty five": 25, "twenty six": 26, "twenty seven": 27, "twenty eight": 28,
+		"twenty nine": 29, "thirty": 30,
+	}
+	if number := numberWords[value]; number > 0 {
+		return strconv.Itoa(number)
+	}
+	if number := romanToInt(strings.ToUpper(value)); number > 0 {
+		return strconv.Itoa(number)
+	}
+	return value
+}
+
+func discoveredEntryAlreadyLinked(entries []*common.LinkedTocEntry, candidate *common.EntryToFind, scanPage int) bool {
+	candidateIdentifier := normalizeSequenceIdentifier(candidate.Identifier)
+	if candidateIdentifier == "" {
+		return false
+	}
+	candidateLevel := strings.ToLower(strings.TrimSpace(candidate.LevelName))
+	for _, entry := range entries {
+		if entry.ActualPage == nil || *entry.ActualPage != scanPage {
+			continue
+		}
+		if normalizeSequenceIdentifier(entry.EntryNumber) != candidateIdentifier {
+			continue
+		}
+		existingLevel := strings.ToLower(strings.TrimSpace(entry.LevelName))
+		if candidateLevel == "" || existingLevel == "" || candidateLevel == existingLevel {
+			return true
+		}
+	}
+	return false
+}
+
+func generateSequence(start, end string) []string {
+	startNum, startErr := strconv.Atoi(start)
+	endNum, endErr := strconv.Atoi(end)
+	if startErr == nil && endErr == nil {
+		var result []string
+		for i := startNum; i <= endNum; i++ {
+			result = append(result, strconv.Itoa(i))
+		}
+		return result
+	}
+
+	startRoman := romanToInt(strings.ToUpper(start))
+	endRoman := romanToInt(strings.ToUpper(end))
+	if startRoman > 0 && endRoman > 0 {
+		var result []string
+		for i := startRoman; i <= endRoman; i++ {
+			result = append(result, intToRoman(i))
+		}
+		return result
+	}
+
+	return []string{start}
+}
+
+func romanToInt(s string) int {
+	romanMap := map[byte]int{
+		'I': 1, 'V': 5, 'X': 10, 'L': 50,
+		'C': 100, 'D': 500, 'M': 1000,
+	}
+
+	result := 0
+	for i := 0; i < len(s); i++ {
+		val, ok := romanMap[s[i]]
+		if !ok {
+			return 0
+		}
+		if i+1 < len(s) && romanMap[s[i+1]] > val {
+			result -= val
+		} else {
+			result += val
+		}
+	}
+	return result
+}
+
+func intToRoman(num int) string {
+	values := []int{1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1}
+	symbols := []string{"M", "CM", "D", "CD", "C", "XC", "L", "XL", "X", "IX", "V", "IV", "I"}
+
+	var result strings.Builder
+	for i := 0; i < len(values); i++ {
+		for num >= values[i] {
+			num -= values[i]
+			result.WriteString(symbols[i])
+		}
+	}
+	return result.String()
+}
+
+func titleCase(s string) string {
+	if s == "" {
+		return s
+	}
+	runes := []rune(s)
+	runes[0] = unicode.ToUpper(runes[0])
+	return string(runes)
+}
+
+func (j *Job) getPageDocID(pageNum int) string {
+	state := j.Book.GetPage(pageNum)
+	if state == nil {
+		return ""
+	}
+	return state.GetPageDocID()
+}
+
+func (j *Job) applyGapFix(ctx context.Context, gapKey string, result *gap_investigator.Result) (defra.WriteResult, error) {
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return defra.WriteResult{}, fmt.Errorf("defra client not in context")
+	}
+
+	switch result.FixType {
+	case "add_entry":
+		if result.ScanPage == 0 {
+			return defra.WriteResult{}, nil
+		}
+
+		pageDocID := j.getPageDocID(result.ScanPage)
+		sortOrder := result.ScanPage * 1000
+		uniqueKey := fmt.Sprintf("%s:validated:%s", j.TocDocID, gapKey)
+
+		entryData := map[string]any{
+			"_tocID":     j.TocDocID,
+			"unique_key": uniqueKey,
+			"title":      result.Title,
+			"level":      result.Level,
+			"level_name": result.LevelName,
+			"sort_order": sortOrder,
+			"source":     "validated",
+		}
+
+		if pageDocID != "" {
+			entryData["_actual_pageID"] = pageDocID
+		}
+
+		filter := map[string]any{
+			"unique_key": map[string]any{"_eq": uniqueKey},
+		}
+
+		writeResult, err := defraClient.UpsertWithVersion(ctx, "TocEntry", filter, entryData, entryData)
+		if err != nil {
+			return defra.WriteResult{}, fmt.Errorf("failed to upsert validated entry: %w", err)
+		}
+		j.Book.TrackWrite("TocEntry", writeResult.DocID, writeResult.CID)
+		return writeResult, nil
+
+	case "correct_entry":
+		if result.EntryDocID == "" || result.ScanPage == 0 {
+			return defra.WriteResult{}, nil
+		}
+
+		pageDocID := j.getPageDocID(result.ScanPage)
+		if pageDocID != "" {
+			// Use sync write for entry corrections - this is the result of LLM work
+			writeResult, err := common.SendTracked(ctx, j.Book, defra.WriteOp{
+				Collection: "TocEntry",
+				DocID:      result.EntryDocID,
+				Document: map[string]any{
+					"_actual_pageID": pageDocID,
+				},
+				Op: defra.OpUpdate,
+			})
+			if err != nil {
+				return defra.WriteResult{}, fmt.Errorf("failed to correct entry %s: %w", result.EntryDocID, err)
+			}
+			return writeResult, nil
+		}
+
+	case "flag_for_review":
+		logger := svcctx.LoggerFrom(ctx)
+		if logger != nil {
+			logger.Debug("gap flagged for review",
+				"gap_key", gapKey,
+				"reasoning", result.Reasoning)
+		}
+
+	case "no_fix_needed":
+		// Nothing to do
+	}
+
+	return defra.WriteResult{}, nil
+}
+
+func (j *Job) convertDiscoverAgentUnits(agentUnits []agent.WorkUnit, entryKey string) []jobs.WorkUnit {
+	jobUnits := agents.ConvertToJobUnits(agentUnits, agents.ConvertConfig{
+		JobID:     j.RecordID,
+		Provider:  j.Book.TocProvider,
+		Stage:     "toc-discover",
+		ItemKey:   fmt.Sprintf("discover_%s", entryKey),
+		PromptKey: chapter_finder.PromptKey,
+		PromptCID: j.GetPromptCID(chapter_finder.PromptKey),
+		BookID:    j.Book.BookID,
+	})
+
+	for _, u := range jobUnits {
+		j.RegisterWorkUnit(u.ID, WorkUnitInfo{
+			UnitType:      WorkUnitTypeFinalizeDiscover,
+			FinalizePhase: FinalizePhaseDiscover,
+			FinalizeKey:   entryKey,
+		})
+	}
+
+	return jobUnits
+}
+
+func (j *Job) convertGapAgentUnits(agentUnits []agent.WorkUnit, gapKey string) []jobs.WorkUnit {
+	jobUnits := agents.ConvertToJobUnits(agentUnits, agents.ConvertConfig{
+		JobID:     j.RecordID,
+		Provider:  j.Book.TocProvider,
+		Stage:     "toc-validate",
+		ItemKey:   fmt.Sprintf("gap_%s", gapKey),
+		PromptKey: gap_investigator.PromptKey,
+		PromptCID: j.GetPromptCID(gap_investigator.PromptKey),
+		BookID:    j.Book.BookID,
+	})
+
+	for _, u := range jobUnits {
+		j.RegisterWorkUnit(u.ID, WorkUnitInfo{
+			UnitType:      WorkUnitTypeFinalizeGap,
+			FinalizePhase: FinalizePhaseValidate,
+			FinalizeKey:   gapKey,
+		})
+	}
+
+	return jobUnits
+}

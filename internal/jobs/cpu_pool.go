@@ -28,7 +28,8 @@ type CPUWorkerPool struct {
 	mu       sync.RWMutex
 
 	// In-flight tracking
-	inFlight atomic.Int32
+	inFlight      atomic.Int32
+	cancelledJobs sync.Map
 }
 
 // CPUWorkerPoolConfig configures a new CPU worker pool.
@@ -99,14 +100,21 @@ func (p *CPUWorkerPool) init(results chan<- workerResult) {
 // Start begins the pool's processing. Blocks until ctx cancelled.
 func (p *CPUWorkerPool) Start(ctx context.Context) {
 	p.logger.Debug("cpu pool started")
+	var wg sync.WaitGroup
 
 	// Start worker goroutines - all pull from same queue
 	for i := 0; i < p.workerCount; i++ {
-		go p.worker(ctx, i)
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			p.worker(ctx, workerID)
+		}(i)
 	}
 
-	// Block until context cancelled
+	// A CPU handler may already be persisting output when cancellation arrives.
+	// Wait for workers to return so the server cannot close Defra's sink under it.
 	<-ctx.Done()
+	wg.Wait()
 	p.logger.Debug("cpu pool stopping")
 }
 
@@ -114,11 +122,22 @@ func (p *CPUWorkerPool) Start(ctx context.Context) {
 func (p *CPUWorkerPool) worker(ctx context.Context, id int) {
 	p.logger.Debug("cpu worker started", "worker_id", id)
 	for {
+		// Prefer shutdown over buffered work. A plain select can repeatedly choose
+		// a ready queue after ctx cancellation and execute arbitrary queued tasks.
+		if ctx.Err() != nil {
+			return
+		}
 		select {
 		case <-ctx.Done():
 			return
 
 		case unit := <-p.queue:
+			if ctx.Err() != nil {
+				return
+			}
+			if p.jobCancelled(unit.JobID) {
+				continue
+			}
 			p.logger.Debug("cpu worker received unit", "worker_id", id, "unit_id", unit.ID, "job_id", unit.JobID)
 			p.inFlight.Add(1)
 			result := p.process(ctx, unit)
@@ -135,6 +154,7 @@ func (p *CPUWorkerPool) worker(ctx context.Context, id int) {
 
 // Submit adds a work unit to the pool's queue.
 func (p *CPUWorkerPool) Submit(unit *WorkUnit) error {
+	p.cancelledJobs.Delete(unit.JobID)
 	select {
 	case p.queue <- unit:
 		p.logger.Debug("cpu pool accepted unit", "unit_id", unit.ID, "job_id", unit.JobID, "queue_len", len(p.queue))
@@ -143,6 +163,21 @@ func (p *CPUWorkerPool) Submit(unit *WorkUnit) error {
 		p.logger.Warn("cpu pool queue full", "unit_id", unit.ID, "job_id", unit.JobID)
 		return fmt.Errorf("%w: %s", ErrWorkerQueueFull, p.name)
 	}
+}
+
+// CancelJob marks buffered CPU work to be discarded when dequeued. A channel
+// queue cannot be filtered safely while workers consume it, but cancelled units
+// never execute their handlers or emit results.
+func (p *CPUWorkerPool) CancelJob(jobID string) int {
+	if jobID != "" {
+		p.cancelledJobs.Store(jobID, struct{}{})
+	}
+	return 0
+}
+
+func (p *CPUWorkerPool) jobCancelled(jobID string) bool {
+	_, cancelled := p.cancelledJobs.Load(jobID)
+	return cancelled
 }
 
 // Status returns current pool status.

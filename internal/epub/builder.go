@@ -3,7 +3,6 @@ package epub
 
 import (
 	"archive/zip"
-	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -64,11 +63,11 @@ func (b *Builder) Build(outputPath string) error {
 	}
 	defer f.Close()
 
-	return b.WriteTo(f)
+	return b.Write(f)
 }
 
-// WriteTo writes the epub to a writer.
-func (b *Builder) WriteTo(w io.Writer) error {
+// Write writes the epub to a writer.
+func (b *Builder) Write(w io.Writer) error {
 	zw := zip.NewWriter(w)
 	defer zw.Close()
 
@@ -210,15 +209,6 @@ func (b *Builder) generateUUID() string {
 		return "urn:isbn:" + b.book.ISBN
 	}
 	return "urn:uuid:" + uuid.New().String()
-}
-
-// BuildToBuffer generates the epub and returns it as a byte buffer.
-func (b *Builder) BuildToBuffer() (*bytes.Buffer, error) {
-	buf := new(bytes.Buffer)
-	if err := b.WriteTo(buf); err != nil {
-		return nil, err
-	}
-	return buf, nil
 }
 
 const defaultStylesheet = `/* Shelf ePub Stylesheet */

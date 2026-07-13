@@ -10,6 +10,8 @@ import (
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
+const tocEntryFinderMaxIterations = 25
+
 // TocEntryFinderConfig configures ToC entry finder agent creation.
 type TocEntryFinderConfig struct {
 	Book          *common.BookState
@@ -24,30 +26,29 @@ type TocEntryFinderConfig struct {
 // The agent is ready for iteration via NextWorkUnits().
 // Context is required for observability logging.
 func NewTocEntryFinderAgent(ctx context.Context, cfg TocEntryFinderConfig) *agent.Agent {
-	entryTools := tools.New(tools.Config{
+	toolConfig := tools.Config{
 		Book:  cfg.Book,
 		Entry: cfg.Entry,
-	})
+	}
+	if cfg.BookStructure != nil {
+		toolConfig.BackMatterStart = cfg.BookStructure.BackMatterStart
+		toolConfig.BackMatterTypes = cfg.BookStructure.BackMatterTypes
+		toolConfig.TargetIsBackMatter = cfg.BookStructure.TargetIsBackMatter
+	}
+
+	entryTools := tools.New(toolConfig)
 
 	userPrompt := toc_entry_finder.BuildUserPrompt(cfg.Entry, cfg.Book.TotalPages, cfg.BookStructure)
 
-	// Build agent ID from entry info for tracing
-	agentID := "entry"
-	if cfg.Entry.EntryNumber != "" {
-		agentID += "-" + cfg.Entry.EntryNumber
-	}
-	if cfg.Entry.LevelName != "" {
-		agentID = cfg.Entry.LevelName + "-" + agentID
-	}
-
 	return agent.New(ctx, agent.Config{
-		ID:    agentID,
-		Tools: entryTools,
+		Tools:               entryTools,
+		RequireToolUse:      true,
+		MaxToolCallsPerTurn: 4,
 		InitialMessages: []providers.Message{
 			{Role: "system", Content: cfg.SystemPrompt},
 			{Role: "user", Content: userPrompt},
 		},
-		MaxIterations: 15, // Entry finding should be quick
+		MaxIterations: tocEntryFinderMaxIterations,
 		AgentType:     "toc_entry_finder",
 		BookID:        cfg.Book.BookID,
 		JobID:         cfg.JobID,

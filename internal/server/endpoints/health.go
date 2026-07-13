@@ -8,7 +8,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/jackzampolin/shelf/internal/api"
-	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
@@ -114,9 +113,17 @@ func (e *ReadyEndpoint) Command(getServerURL func() string) *cobra.Command {
 
 // StatusResponse is the detailed status response.
 type StatusResponse struct {
-	Server    string          `json:"server"`
-	Providers ProvidersStatus `json:"providers"`
-	Defra     DefraStatus     `json:"defra"`
+	Server    string                    `json:"server"`
+	Providers ProvidersStatus           `json:"providers"`
+	Pools     map[string]PoolHealthInfo `json:"pools,omitempty"`
+	Defra     DefraStatus               `json:"defra"`
+}
+
+// PoolHealthInfo reports a provider pool's circuit-breaker state.
+type PoolHealthInfo struct {
+	Health      string `json:"health"`
+	ParkedUnits int    `json:"parked_units,omitempty"`
+	QueueDepth  int    `json:"queue_depth,omitempty"`
 }
 
 // ProvidersStatus shows registered OCR and LLM providers.
@@ -133,10 +140,7 @@ type DefraStatus struct {
 }
 
 // StatusEndpoint handles GET /api/status.
-type StatusEndpoint struct {
-	// DefraManager is set by server since it's not in Services
-	DefraManager *defra.DockerManager
-}
+type StatusEndpoint struct{}
 
 func (e *StatusEndpoint) Route() (string, string, http.HandlerFunc) {
 	return "GET", "/api/status", e.handler
@@ -164,15 +168,33 @@ func (e *StatusEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		resp.Providers.LLM = registry.ListLLM()
 	}
 
+	// Per-pool circuit health (see provider_pool_health.go)
+	if scheduler := svcctx.SchedulerFrom(r.Context()); scheduler != nil {
+		pools := scheduler.PoolStatuses()
+		if len(pools) > 0 {
+			resp.Pools = make(map[string]PoolHealthInfo, len(pools))
+			for name, ps := range pools {
+				if ps.Health == "" {
+					continue // CPU pools have no circuit
+				}
+				resp.Pools[name] = PoolHealthInfo{
+					Health:      ps.Health,
+					ParkedUnits: ps.ParkedUnits,
+					QueueDepth:  ps.QueueDepth,
+				}
+			}
+		}
+	}
+
 	// Get DefraDB container status
-	if e.DefraManager != nil {
-		status, err := e.DefraManager.Status(r.Context())
+	if dm := svcctx.DefraManagerFrom(r.Context()); dm != nil {
+		status, err := dm.Status(r.Context())
 		if err != nil {
 			resp.Defra.Container = "error"
 		} else {
 			resp.Defra.Container = string(status)
 		}
-		resp.Defra.URL = e.DefraManager.URL()
+		resp.Defra.URL = dm.URL()
 	} else {
 		resp.Defra.Container = "not_initialized"
 	}

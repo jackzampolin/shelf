@@ -2,8 +2,10 @@ package endpoints
 
 import (
 	"fmt"
+	"mime"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/spf13/cobra"
@@ -84,6 +86,72 @@ func (e *PageImageEndpoint) Command(_ func() string) *cobra.Command {
 	return nil
 }
 
+// ExtractedImageEndpoint handles GET /api/books/{book_id}/pages/{page_num}/extracted-images/{image_id}.
+type ExtractedImageEndpoint struct{}
+
+var _ api.Endpoint = (*ExtractedImageEndpoint)(nil)
+
+func (e *ExtractedImageEndpoint) Route() (string, string, http.HandlerFunc) {
+	return "GET", "/api/books/{book_id}/pages/{page_num}/extracted-images/{image_id}", e.handler
+}
+
+func (e *ExtractedImageEndpoint) RequiresInit() bool { return true }
+
+func (e *ExtractedImageEndpoint) handler(w http.ResponseWriter, r *http.Request) {
+	bookID := r.PathValue("book_id")
+	if bookID == "" {
+		writeError(w, http.StatusBadRequest, "book_id is required")
+		return
+	}
+
+	pageNumStr := r.PathValue("page_num")
+	pageNum, err := strconv.Atoi(pageNumStr)
+	if err != nil || pageNum < 1 {
+		writeError(w, http.StatusBadRequest, "page_num must be a positive integer")
+		return
+	}
+
+	imageID := r.PathValue("image_id")
+	if imageID == "" || filepath.Base(imageID) != imageID {
+		writeError(w, http.StatusBadRequest, "image_id must be a filename")
+		return
+	}
+
+	homeDir := svcctx.HomeFrom(r.Context())
+	if homeDir == nil {
+		writeError(w, http.StatusServiceUnavailable, "home directory not initialized")
+		return
+	}
+
+	imagePath := homeDir.ExtractedImagePath(bookID, pageNum, imageID)
+	file, err := os.Open(imagePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			writeError(w, http.StatusNotFound, fmt.Sprintf("extracted image %s not found", imageID))
+		} else {
+			writeError(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	defer file.Close()
+
+	fileInfo, err := file.Stat()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if contentType := mime.TypeByExtension(filepath.Ext(imageID)); contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
+	w.Header().Set("Cache-Control", "public, max-age=31536000")
+	http.ServeContent(w, r, imageID, fileInfo.ModTime(), file)
+}
+
+func (e *ExtractedImageEndpoint) Command(_ func() string) *cobra.Command {
+	return nil
+}
+
 // ListPagesResponse is the response for listing pages.
 type ListPagesResponse struct {
 	Pages      []PageSummary `json:"pages"`
@@ -92,8 +160,10 @@ type ListPagesResponse struct {
 
 // PageSummary is a brief summary of a page.
 type PageSummary struct {
-	PageNum     int  `json:"page_num"`
-	OcrComplete bool `json:"ocr_complete"`
+	PageNum             int    `json:"page_num"`
+	OcrComplete         bool   `json:"ocr_complete"`
+	OcrQuarantined      bool   `json:"ocr_quarantined"`
+	OcrQuarantineReason string `json:"ocr_quarantine_reason,omitempty"`
 }
 
 // ListPagesEndpoint handles GET /api/books/{book_id}/pages.
@@ -134,9 +204,11 @@ func (e *ListPagesEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 
 	// Query pages for this book
 	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}}, order: {page_num: ASC}) {
+		Page(filter: {_bookID: {_eq: "%s"}}, order: {page_num: ASC}) {
 			page_num
 			ocr_complete
+			ocr_quarantined
+			ocr_quarantine_reason
 		}
 	}`, bookID)
 
@@ -162,6 +234,10 @@ func (e *ListPagesEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 				if oc, ok := m["ocr_complete"].(bool); ok {
 					page.OcrComplete = oc
 				}
+				if q, ok := m["ocr_quarantined"].(bool); ok {
+					page.OcrQuarantined = q
+				}
+				page.OcrQuarantineReason, _ = m["ocr_quarantine_reason"].(string)
 				pages = append(pages, page)
 			}
 		}
@@ -179,15 +255,18 @@ func (e *ListPagesEndpoint) Command(_ func() string) *cobra.Command {
 
 // PageStatus contains processing status flags.
 type PageStatus struct {
-	ExtractComplete bool `json:"extract_complete"`
-	OcrComplete     bool `json:"ocr_complete"`
+	ExtractComplete     bool   `json:"extract_complete"`
+	OcrComplete         bool   `json:"ocr_complete"`
+	OcrQuarantined      bool   `json:"ocr_quarantined"`
+	OcrQuarantineReason string `json:"ocr_quarantine_reason,omitempty"`
 }
 
 // OcrResult represents a single OCR provider's output.
 type OcrResult struct {
-	Provider   string  `json:"provider"`
-	Text       string  `json:"text"`
-	Confidence float64 `json:"confidence"`
+	Provider         string         `json:"provider"`
+	Text             string         `json:"text"`
+	Confidence       float64        `json:"confidence"`
+	ProviderMetadata map[string]any `json:"provider_metadata,omitempty"`
 }
 
 // GetPageResponse is the response for getting a single page.
@@ -245,15 +324,18 @@ func (e *GetPageEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 
 	// Query page with OCR results
 	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, page_num: {_eq: %d}}) {
+		Page(filter: {_bookID: {_eq: "%s"}, page_num: {_eq: %d}}) {
 			page_num
 			ocr_markdown
 			extract_complete
 			ocr_complete
+			ocr_quarantined
+			ocr_quarantine_reason
 			ocr_results {
 				provider
 				text
 				confidence
+				provider_metadata
 			}
 		}
 	}`, bookID, pageNum)
@@ -299,6 +381,10 @@ func (e *GetPageEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	if oc, ok := m["ocr_complete"].(bool); ok {
 		response.Status.OcrComplete = oc
 	}
+	if q, ok := m["ocr_quarantined"].(bool); ok {
+		response.Status.OcrQuarantined = q
+	}
+	response.Status.OcrQuarantineReason, _ = m["ocr_quarantine_reason"].(string)
 
 	// OCR Results
 	if ocrResults, ok := m["ocr_results"].([]any); ok {
@@ -313,6 +399,9 @@ func (e *GetPageEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 				}
 				if c, ok := orm["confidence"].(float64); ok {
 					result.Confidence = c
+				}
+				if metadata, ok := orm["provider_metadata"].(map[string]any); ok {
+					result.ProviderMetadata = metadata
 				}
 				response.OcrResults = append(response.OcrResults, result)
 			}

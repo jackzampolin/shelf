@@ -1,7 +1,6 @@
 package testutil
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -100,21 +99,6 @@ func WaitForServer(url string, timeout time.Duration) error {
 	return fmt.Errorf("server not ready after %v", timeout)
 }
 
-// WaitForShutdown waits for a channel to receive a value or timeout.
-func WaitForShutdown(done <-chan error, timeout time.Duration) error {
-	select {
-	case err := <-done:
-		return err
-	case <-time.After(timeout):
-		return fmt.Errorf("timeout waiting for shutdown")
-	}
-}
-
-// HTTPClient returns an HTTP client for making requests.
-func HTTPClient() *http.Client {
-	return &http.Client{Timeout: 30 * time.Second}
-}
-
 // FindFreePort finds an available TCP port and returns it as a string.
 func FindFreePort() (string, error) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -123,28 +107,6 @@ func FindFreePort() (string, error) {
 	}
 	defer listener.Close()
 	return fmt.Sprintf("%d", listener.Addr().(*net.TCPAddr).Port), nil
-}
-
-// StartServer is a helper type for managing server lifecycle in tests.
-// Usage:
-//
-//	cfg := testutil.NewServerConfig(t)
-//	srv, err := server.New(server.Config{...from cfg...})
-//	starter := testutil.StartServer{Cancel: cancel, Done: done}
-//	t.Cleanup(func() { starter.Stop() })
-type StartServer struct {
-	Cancel context.CancelFunc
-	Done   <-chan error
-}
-
-// Stop cancels the server context and waits for shutdown.
-func (s *StartServer) Stop() {
-	if s.Cancel != nil {
-		s.Cancel()
-	}
-	if s.Done != nil {
-		<-s.Done
-	}
 }
 
 // StatusResponse matches the server's StatusResponse structure.

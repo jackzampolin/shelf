@@ -35,19 +35,9 @@ func SetOutputFormat(format string) {
 	}
 }
 
-// GetOutputFormat returns the current global output format.
-func GetOutputFormat() OutputFormat {
-	return globalOutputFormat
-}
-
 // Output writes data to stdout in the configured format.
 func Output(data any) error {
 	return OutputTo(os.Stdout, globalOutputFormat, data)
-}
-
-// OutputAs writes data to stdout in the specified format.
-func OutputAs(format OutputFormat, data any) error {
-	return OutputTo(os.Stdout, format, data)
 }
 
 // OutputTo writes data to the given writer in the specified format.
@@ -65,13 +55,6 @@ func OutputTo(w io.Writer, format OutputFormat, data any) error {
 	default:
 		return fmt.Errorf("unknown output format: %s", format)
 	}
-}
-
-// IsStructuredOutput returns true if the output format is structured (JSON/YAML).
-// This can be used by commands that want to provide human-friendly messages
-// only when not in structured output mode.
-func IsStructuredOutput() bool {
-	return globalOutputFormat == OutputFormatJSON || globalOutputFormat == OutputFormatYAML
 }
 
 // OutputToFile writes data to a file in JSON format.

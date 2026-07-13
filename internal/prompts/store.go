@@ -177,7 +177,7 @@ func (s *Store) SetBookOverride(ctx context.Context, bookID, promptKey, text, no
 	} else {
 		// Create new override
 		mutation := fmt.Sprintf(`mutation {
-			create_BookPromptOverride(input: {
+			add_BookPromptOverride(input: {
 				book_id: %q,
 				prompt_key: %q,
 				text: %q,
@@ -243,7 +243,7 @@ func (s *Store) SyncPrompt(ctx context.Context, embedded EmbeddedPrompt) error {
 	if existing == nil {
 		// Create new prompt
 		mutation := fmt.Sprintf(`mutation {
-			create_Prompt(input: {
+			add_Prompt(input: {
 				key: %q,
 				text: %q,
 				description: %q,

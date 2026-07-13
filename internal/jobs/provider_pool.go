@@ -4,14 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"math/rand"
-	"strings"
+	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/jackzampolin/shelf/internal/defra"
-	"github.com/jackzampolin/shelf/internal/llmcall"
-	"github.com/jackzampolin/shelf/internal/metrics"
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
@@ -24,6 +20,7 @@ type ProviderWorkerPool struct {
 	poolType PoolType
 
 	// Provider (one of these is set)
+	providerMu  sync.RWMutex
 	llmClient   providers.LLMClient
 	ocrProvider providers.OCRProvider
 	ttsProvider providers.TTSProvider
@@ -47,7 +44,25 @@ type ProviderWorkerPool struct {
 	workerCount int
 
 	// In-flight tracking
-	inFlight atomic.Int32
+	inFlight      atomic.Int32
+	inFlightMu    sync.Mutex
+	inFlightByJob map[string]int
+
+	// Resume dispatch gate. Startup reconstructs durable jobs sequentially; if
+	// workers consume the first book while the rest are still loading, an
+	// otherwise fair queue starts with every worker occupied by that one book.
+	dispatchGateMu    sync.Mutex
+	dispatchPauseRefs int
+	dispatchResume    chan struct{}
+
+	// Health circuit breaker (see provider_pool_health.go)
+	circuit *circuit
+
+	// Provider wait state is reported back to the scheduler per affected job.
+	waitMu        sync.Mutex
+	waitingJobs   map[string]struct{}
+	onWaitChange  func(provider, jobID string, waiting bool)
+	cancelledJobs sync.Map
 
 	// Metrics sink (optional)
 	sink *defra.Sink
@@ -100,8 +115,10 @@ func NewProviderWorkerPool(cfg ProviderWorkerPoolConfig) (*ProviderWorkerPool, e
 	}
 
 	p := &ProviderWorkerPool{
-		name: cfg.Name,
-		sink: cfg.Sink,
+		name:          cfg.Name,
+		sink:          cfg.Sink,
+		waitingJobs:   make(map[string]struct{}),
+		inFlightByJob: make(map[string]int),
 	}
 
 	// Determine type, RPS, and worker count from provider
@@ -161,6 +178,12 @@ func NewProviderWorkerPool(cfg ProviderWorkerPoolConfig) (*ProviderWorkerPool, e
 
 	p.rateLimiter = providers.NewRateLimiter(rps)
 	p.workerCount = workerCount
+	p.circuit = &circuit{cfg: circuitConfig{
+		TripThreshold: defaultCircuitTripThreshold,
+		ProbeInterval: defaultCircuitProbeInterval,
+		ParkMaxAge:    defaultParkMaxAge,
+		ParkCapacity:  4 * workerCount,
+	}}
 	p.logger = logger.With("pool", p.name, "type", p.poolType, "workers", workerCount, "rps", rps)
 
 	return p, nil
@@ -176,10 +199,59 @@ func (p *ProviderWorkerPool) Type() PoolType {
 	return p.poolType
 }
 
+// replaceProvider swaps the concrete client behind an already-running pool.
+// Config hot reload rebuilds registry providers, but queued and circuit-parked
+// work lives in the scheduler pool; replacing the client in place lets the
+// existing circuit prober observe a restored endpoint without losing work.
+// Worker count and rate limiting remain fixed until restart.
+func (p *ProviderWorkerPool) replaceProvider(
+	llm providers.LLMClient,
+	ocr providers.OCRProvider,
+	tts providers.TTSProvider,
+) error {
+	p.providerMu.Lock()
+	defer p.providerMu.Unlock()
+
+	switch p.poolType {
+	case PoolTypeLLM:
+		if llm == nil {
+			return fmt.Errorf("LLM pool %q requires an LLM client", p.name)
+		}
+		p.llmClient = llm
+	case PoolTypeOCR:
+		if ocr == nil {
+			return fmt.Errorf("OCR pool %q requires an OCR provider", p.name)
+		}
+		p.ocrProvider = ocr
+	case PoolTypeTTS:
+		if tts == nil {
+			return fmt.Errorf("TTS pool %q requires a TTS provider", p.name)
+		}
+		p.ttsProvider = tts
+	default:
+		return fmt.Errorf("pool %q is not provider-backed", p.name)
+	}
+	return nil
+}
+
+func (p *ProviderWorkerPool) providerSnapshot() (
+	providers.LLMClient,
+	providers.OCRProvider,
+	providers.TTSProvider,
+) {
+	p.providerMu.RLock()
+	defer p.providerMu.RUnlock()
+	return p.llmClient, p.ocrProvider, p.ttsProvider
+}
+
 // init initializes the priority queue and channels. Called by scheduler before Start.
 func (p *ProviderWorkerPool) init(results chan<- workerResult) {
 	p.queue = NewPriorityQueue()
-	p.work = make(chan *WorkUnit, p.workerCount) // Buffered to avoid blocking dispatcher
+	// Keep dispatch synchronous with worker availability. A worker-sized buffer
+	// lets the first book loaded after a restart pre-claim another full batch
+	// before the remaining books join the fair queue, and makes "in_flight"
+	// indistinguishable from waiting in an internal FIFO.
+	p.work = make(chan *WorkUnit)
 	p.results = results
 	p.logger.Debug("provider pool initialized")
 }
@@ -187,17 +259,29 @@ func (p *ProviderWorkerPool) init(results chan<- workerResult) {
 // Start begins the pool's processing. Blocks until ctx cancelled.
 func (p *ProviderWorkerPool) Start(ctx context.Context) {
 	p.logger.Debug("provider pool started")
+	var wg sync.WaitGroup
 
 	// Start dispatcher (owns rate limiter)
-	go p.dispatcher(ctx)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		p.dispatcher(ctx)
+	}()
 
 	// Start worker goroutines
 	for i := 0; i < p.workerCount; i++ {
-		go p.worker(ctx, i)
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			p.worker(ctx, workerID)
+		}(i)
 	}
 
-	// Block until context cancelled
+	// Stop dispatch, cancel in-flight calls, and do not report the pool stopped
+	// until every worker has unwound. The server keeps Defra's sink open while
+	// Scheduler.Start waits for this return.
 	<-ctx.Done()
+	wg.Wait()
 	p.logger.Debug("provider pool stopping")
 }
 
@@ -212,9 +296,38 @@ func (p *ProviderWorkerPool) dispatcher(ctx context.Context) {
 			// Context cancelled
 			return
 		}
+		if !p.waitForDispatch(ctx) {
+			return
+		}
+		if p.jobCancelled(unit.JobID) {
+			continue
+		}
+		p.claim(unit.JobID)
+
+		// Pause while the provider circuit is open (see provider_pool_health.go).
+		if ch := p.circuit.openWait(); ch != nil {
+			p.markJobWaiting(unit.JobID)
+			select {
+			case <-ch:
+				// Circuit closed; proceed with this unit.
+			case <-ctx.Done():
+				p.release(unit.JobID)
+				p.results <- workerResult{
+					JobID: unit.JobID,
+					Unit:  unit,
+					Result: WorkResult{
+						WorkUnitID: unit.ID,
+						Success:    false,
+						Error:      fmt.Errorf("circuit wait cancelled: %w", ctx.Err()),
+					},
+				}
+				return
+			}
+		}
 
 		// Wait for rate limit token (only dispatcher does this)
 		if err := p.rateLimiter.Wait(ctx); err != nil {
+			p.release(unit.JobID)
 			// Context cancelled, send failure result
 			p.results <- workerResult{
 				JobID: unit.JobID,
@@ -229,13 +342,52 @@ func (p *ProviderWorkerPool) dispatcher(ctx context.Context) {
 		}
 
 		// Send to work channel for workers to pick up
-		p.inFlight.Add(1)
 		select {
 		case p.work <- unit:
 			// Sent successfully
 		case <-ctx.Done():
-			p.inFlight.Add(-1)
+			p.release(unit.JobID)
 			return
+		}
+	}
+}
+
+func (p *ProviderWorkerPool) pauseDispatch() {
+	p.dispatchGateMu.Lock()
+	defer p.dispatchGateMu.Unlock()
+	p.dispatchPauseRefs++
+	if p.dispatchPauseRefs == 1 {
+		p.dispatchResume = make(chan struct{})
+	}
+}
+
+func (p *ProviderWorkerPool) resumeDispatch() {
+	p.dispatchGateMu.Lock()
+	defer p.dispatchGateMu.Unlock()
+	if p.dispatchPauseRefs == 0 {
+		return
+	}
+	p.dispatchPauseRefs--
+	if p.dispatchPauseRefs == 0 {
+		close(p.dispatchResume)
+		p.dispatchResume = nil
+	}
+}
+
+func (p *ProviderWorkerPool) waitForDispatch(ctx context.Context) bool {
+	for {
+		p.dispatchGateMu.Lock()
+		if p.dispatchPauseRefs == 0 {
+			p.dispatchGateMu.Unlock()
+			return true
+		}
+		resume := p.dispatchResume
+		p.dispatchGateMu.Unlock()
+
+		select {
+		case <-resume:
+		case <-ctx.Done():
+			return false
 		}
 	}
 }
@@ -252,8 +404,16 @@ func (p *ProviderWorkerPool) worker(ctx context.Context, id int) {
 			if !ok || unit == nil {
 				return
 			}
-			result := p.process(ctx, unit)
-			p.inFlight.Add(-1)
+			if p.jobCancelled(unit.JobID) {
+				p.release(unit.JobID)
+				continue
+			}
+			result, parked := p.process(ctx, unit)
+			p.release(unit.JobID)
+			if parked {
+				// Unit is held by the circuit for replay; no result yet.
+				continue
+			}
 			p.logger.Debug("worker sending result to scheduler",
 				"unit_id", unit.ID,
 				"job_id", unit.JobID,
@@ -271,6 +431,43 @@ func (p *ProviderWorkerPool) worker(ctx context.Context, id int) {
 	}
 }
 
+func (p *ProviderWorkerPool) claim(jobID string) {
+	p.inFlight.Add(1)
+	if jobID == "" {
+		return
+	}
+	p.inFlightMu.Lock()
+	p.inFlightByJob[jobID]++
+	p.inFlightMu.Unlock()
+}
+
+func (p *ProviderWorkerPool) release(jobID string) {
+	p.inFlight.Add(-1)
+	if jobID == "" {
+		return
+	}
+	p.inFlightMu.Lock()
+	if p.inFlightByJob[jobID] <= 1 {
+		delete(p.inFlightByJob, jobID)
+	} else {
+		p.inFlightByJob[jobID]--
+	}
+	p.inFlightMu.Unlock()
+}
+
+// JobWorkStatus reports where this job's pending provider units currently sit.
+func (p *ProviderWorkerPool) JobWorkStatus(jobID string) PoolJobWorkStatus {
+	status := PoolJobWorkStatus{}
+	if p.queue != nil {
+		status.Queued = p.queue.JobLen(jobID)
+	}
+	p.inFlightMu.Lock()
+	status.InFlight = p.inFlightByJob[jobID]
+	p.inFlightMu.Unlock()
+	status.Parked = p.circuit.jobLen(jobID)
+	return status
+}
+
 // Submit adds a work unit to the pool's priority queue.
 // Higher priority work units will be processed first.
 // Returns an error if the pool is not initialized or unit is nil.
@@ -278,13 +475,42 @@ func (p *ProviderWorkerPool) Submit(unit *WorkUnit) error {
 	if p.queue == nil {
 		return fmt.Errorf("pool not initialized: call init() before Submit()")
 	}
-	return p.queue.Push(unit)
+	p.cancelledJobs.Delete(unit.JobID)
+	if err := p.queue.Push(unit); err != nil {
+		return err
+	}
+	if p.circuit.isOpen() {
+		p.markJobWaiting(unit.JobID)
+	}
+	return nil
+}
+
+// CancelJob purges queued and parked work and marks already-dispatched buffered
+// units to be skipped by workers. Provider calls already in flight may finish.
+func (p *ProviderWorkerPool) CancelJob(jobID string) int {
+	if jobID == "" {
+		return 0
+	}
+	p.cancelledJobs.Store(jobID, struct{}{})
+	removed := 0
+	if p.queue != nil {
+		removed += p.queue.RemoveJob(jobID)
+	}
+	removed += p.circuit.removeJob(jobID)
+	p.removeWaitingJob(jobID)
+	return removed
+}
+
+func (p *ProviderWorkerPool) jobCancelled(jobID string) bool {
+	_, cancelled := p.cancelledJobs.Load(jobID)
+	return cancelled
 }
 
 // Status returns current pool status with priority queue breakdown.
 func (p *ProviderWorkerPool) Status() PoolStatus {
 	rlStatus := p.rateLimiter.Status()
 	queueStats := p.queue.Stats()
+	health, parkedCount := p.circuit.status()
 	return PoolStatus{
 		Name:            p.name,
 		Type:            string(p.poolType),
@@ -293,7 +519,28 @@ func (p *ProviderWorkerPool) Status() PoolStatus {
 		QueueDepth:      queueStats.Total,
 		QueueByPriority: &queueStats,
 		RateLimiter:     toRateLimiterStatus(rlStatus),
+		Health:          health,
+		ParkedUnits:     parkedCount,
+		Endpoints:       p.endpointStatuses(),
 	}
+}
+
+func (p *ProviderWorkerPool) endpointStatuses() []providers.EndpointStatus {
+	llm, ocr, tts := p.providerSnapshot()
+	var provider any
+	switch {
+	case llm != nil:
+		provider = llm
+	case ocr != nil:
+		provider = ocr
+	case tts != nil:
+		provider = tts
+	}
+	reporter, ok := provider.(providers.EndpointStatusReporter)
+	if !ok {
+		return nil
+	}
+	return reporter.EndpointStatuses()
 }
 
 func toRateLimiterStatus(status providers.RateLimiterStatus) *RateLimiterStatus {
@@ -305,364 +552,6 @@ func toRateLimiterStatus(status providers.RateLimiterStatus) *RateLimiterStatus 
 		TotalConsumed:   status.TotalConsumed,
 		TotalWaited:     status.TotalWaited,
 		Last429Time:     status.Last429Time,
-	}
-}
-
-// process executes a work unit with retry logic.
-func (p *ProviderWorkerPool) process(ctx context.Context, unit *WorkUnit) WorkResult {
-	result := WorkResult{
-		WorkUnitID: unit.ID,
-	}
-
-	// Validate work unit type matches pool type
-	if (unit.Type == WorkUnitTypeLLM && p.poolType != PoolTypeLLM) ||
-		(unit.Type == WorkUnitTypeOCR && p.poolType != PoolTypeOCR) ||
-		(unit.Type == WorkUnitTypeTTS && p.poolType != PoolTypeTTS) {
-		result.Success = false
-		result.Error = fmt.Errorf("work unit type %s does not match pool type %s", unit.Type, p.poolType)
-		return result
-	}
-
-	maxRetries := p.getMaxRetries()
-	var lastErr error
-
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		// Note: Rate limiting is handled by dispatcher, not here
-		// Workers just execute as fast as they can
-
-		switch p.poolType {
-		case PoolTypeLLM:
-			if unit.ChatRequest == nil {
-				result.Success = false
-				result.Error = fmt.Errorf("LLM work unit missing ChatRequest")
-				return result
-			}
-
-			var chatResult *providers.ChatResult
-			var err error
-
-			if len(unit.Tools) > 0 {
-				chatResult, err = p.llmClient.ChatWithTools(ctx, unit.ChatRequest, unit.Tools)
-			} else {
-				chatResult, err = p.llmClient.Chat(ctx, unit.ChatRequest)
-			}
-
-			result.ChatResult = chatResult
-			if err != nil {
-				lastErr = err
-				if p.isRetriableError(err) && attempt < maxRetries {
-					p.logger.Debug("LLM request failed, retrying",
-						"unit_id", unit.ID,
-						"attempt", attempt+1,
-						"max_attempts", maxRetries+1,
-						"error", err)
-					p.sleepBeforeRetry(ctx, err, attempt)
-					continue
-				}
-				result.Success = false
-				result.Error = err
-			} else {
-				result.Success = chatResult.Success
-				if !chatResult.Success {
-					resultErr := fmt.Errorf("%s: %s", chatResult.ErrorType, chatResult.ErrorMessage)
-					if p.isRetriableResultError(chatResult) && attempt < maxRetries {
-						lastErr = resultErr
-						p.logger.Debug("LLM result error, retrying",
-							"unit_id", unit.ID,
-							"attempt", attempt+1,
-							"max_attempts", maxRetries+1,
-							"error_type", chatResult.ErrorType)
-						p.sleepBeforeRetry(ctx, resultErr, attempt)
-						continue
-					}
-					result.Error = resultErr
-				}
-			}
-
-		case PoolTypeOCR:
-			if unit.OCRRequest == nil {
-				result.Success = false
-				result.Error = fmt.Errorf("OCR work unit missing OCRRequest")
-				return result
-			}
-
-			ocrResult, err := p.ocrProvider.ProcessImage(ctx, unit.OCRRequest.Image, unit.OCRRequest.PageNum)
-			result.OCRResult = ocrResult
-			if err != nil {
-				lastErr = err
-				if p.isRetriableError(err) && attempt < maxRetries {
-					p.logger.Debug("OCR request failed, retrying",
-						"unit_id", unit.ID,
-						"attempt", attempt+1,
-						"max_attempts", maxRetries+1,
-						"error", err)
-					p.sleepBeforeRetry(ctx, err, attempt)
-					continue
-				}
-				result.Success = false
-				result.Error = err
-			} else {
-				result.Success = ocrResult.Success
-				if !ocrResult.Success {
-					result.Error = fmt.Errorf("OCR failed: %s", ocrResult.ErrorMessage)
-				}
-			}
-
-		case PoolTypeTTS:
-			if unit.TTSRequest == nil {
-				result.Success = false
-				result.Error = fmt.Errorf("TTS work unit missing TTSRequest")
-				return result
-			}
-
-			ttsReq := &providers.TTSRequest{
-				Text:               unit.TTSRequest.Text,
-				Voice:              unit.TTSRequest.Voice,
-				Format:             unit.TTSRequest.Format,
-				Instructions:       unit.TTSRequest.Instructions,
-				PreviousRequestIDs: unit.TTSRequest.PreviousRequestIDs, // For ElevenLabs request stitching
-			}
-			ttsResult, err := p.ttsProvider.Generate(ctx, ttsReq)
-			result.TTSResult = ttsResult
-			if err != nil {
-				lastErr = err
-				if p.isRetriableError(err) && attempt < maxRetries {
-					p.logger.Debug("TTS request failed, retrying",
-						"unit_id", unit.ID,
-						"attempt", attempt+1,
-						"max_attempts", maxRetries+1,
-						"error", err)
-					p.sleepBeforeRetry(ctx, err, attempt)
-					continue
-				}
-				result.Success = false
-				result.Error = err
-			} else {
-				result.Success = ttsResult.Success
-				if !ttsResult.Success {
-					result.Error = fmt.Errorf("TTS failed: %s", ttsResult.ErrorMessage)
-				}
-			}
-		}
-
-		// If we got here without continuing, we're done
-		break
-	}
-
-	// If we exhausted retries, set the last error
-	if !result.Success && result.Error == nil && lastErr != nil {
-		result.Error = fmt.Errorf("failed after %d attempts: %w", maxRetries+1, lastErr)
-	}
-
-	// Record metrics
-	p.recordMetrics(ctx, unit, &result)
-
-	if result.Success {
-		p.logger.Debug("work unit completed", "unit_id", unit.ID)
-	} else {
-		p.logger.Warn("work unit failed", "unit_id", unit.ID, "error", result.Error)
-	}
-
-	return result
-}
-
-func (p *ProviderWorkerPool) getMaxRetries() int {
-	switch p.poolType {
-	case PoolTypeLLM:
-		if p.llmClient != nil {
-			return p.llmClient.MaxRetries()
-		}
-	case PoolTypeOCR:
-		if p.ocrProvider != nil {
-			return p.ocrProvider.MaxRetries()
-		}
-	case PoolTypeTTS:
-		if p.ttsProvider != nil {
-			return p.ttsProvider.MaxRetries()
-		}
-	}
-	return 7
-}
-
-func (p *ProviderWorkerPool) isRetriableError(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	// Check for structured RateLimitError
-	if rle, ok := providers.IsRateLimitError(err); ok {
-		p.rateLimiter.Record429(rle.RetryAfter)
-		p.logger.Debug("rate limit hit, backing off", "retry_after", rle.RetryAfter)
-		return true
-	}
-
-	errStr := err.Error()
-	if strings.Contains(errStr, "status 500") ||
-		strings.Contains(errStr, "status 502") ||
-		strings.Contains(errStr, "status 503") ||
-		strings.Contains(errStr, "status 504") {
-		return true
-	}
-	if strings.Contains(errStr, "status 429") ||
-		strings.Contains(errStr, "rate limit") {
-		p.rateLimiter.Record429(5 * time.Second)
-		return true
-	}
-	if strings.Contains(errStr, "timeout") ||
-		strings.Contains(errStr, "deadline exceeded") {
-		return true
-	}
-	if strings.Contains(errStr, "connection refused") ||
-		strings.Contains(errStr, "connection reset") ||
-		strings.Contains(errStr, "EOF") {
-		return true
-	}
-	return false
-}
-
-func (p *ProviderWorkerPool) isRetriableResultError(result *providers.ChatResult) bool {
-	if result == nil {
-		return false
-	}
-	return result.ErrorType == "json_parse" || result.ErrorType == "schema_validation"
-}
-
-func (p *ProviderWorkerPool) sleepBeforeRetry(ctx context.Context, err error, attempt int) {
-	var delay time.Duration
-
-	if rle, ok := providers.IsRateLimitError(err); ok && rle.RetryAfter > 0 {
-		delay = rle.RetryAfter
-		p.logger.Debug("sleeping for Retry-After duration", "delay", delay)
-	} else {
-		base := time.Duration(1000) * time.Millisecond
-		delay = base * time.Duration(1<<uint(attempt))
-		jitter := time.Duration(rand.Intn(1000)) * time.Millisecond
-		delay += jitter
-
-		if delay > 30*time.Second {
-			delay = 30*time.Second + jitter
-		}
-	}
-
-	select {
-	case <-time.After(delay):
-	case <-ctx.Done():
-	}
-}
-
-func (p *ProviderWorkerPool) recordMetrics(ctx context.Context, unit *WorkUnit, result *WorkResult) {
-	if p.sink == nil {
-		p.logger.Debug("recordMetrics: sink not configured, metrics and LLM calls not recorded")
-		return
-	}
-	if unit.Metrics == nil {
-		p.logger.Debug("recordMetrics: unit.Metrics is nil, skipping", "unit_id", unit.ID)
-		return
-	}
-
-	m := &metrics.Metric{
-		JobID:     unit.JobID,
-		BookID:    unit.Metrics.BookID,
-		Stage:     unit.Metrics.Stage,
-		ItemKey:   unit.Metrics.ItemKey,
-		Success:   result.Success,
-		CreatedAt: time.Now(),
-	}
-
-	switch p.poolType {
-	case PoolTypeLLM:
-		if result.ChatResult != nil {
-			m.Provider = result.ChatResult.Provider
-			m.Model = result.ChatResult.ModelUsed
-			m.CostUSD = result.ChatResult.CostUSD
-			m.PromptTokens = result.ChatResult.PromptTokens
-			m.CompletionTokens = result.ChatResult.CompletionTokens
-			m.ReasoningTokens = result.ChatResult.ReasoningTokens
-			m.TotalTokens = result.ChatResult.TotalTokens
-			// Add timing data
-			m.QueueSeconds = result.ChatResult.QueueTime.Seconds()
-			m.ExecutionSeconds = result.ChatResult.ExecutionTime.Seconds()
-			m.TotalSeconds = result.ChatResult.TotalTime.Seconds()
-			if !result.ChatResult.Success {
-				m.ErrorType = result.ChatResult.ErrorType
-			}
-		}
-	case PoolTypeOCR:
-		if result.OCRResult != nil {
-			m.Provider = p.name
-			m.CostUSD = result.OCRResult.CostUSD
-			// Add timing data
-			m.ExecutionSeconds = result.OCRResult.ExecutionTime.Seconds()
-			m.TotalSeconds = result.OCRResult.ExecutionTime.Seconds()
-			if !result.OCRResult.Success {
-				m.ErrorType = "ocr_error"
-			}
-		}
-	case PoolTypeTTS:
-		if result.TTSResult != nil {
-			m.Provider = p.name
-			m.CostUSD = result.TTSResult.CostUSD
-			// Add timing data
-			m.ExecutionSeconds = result.TTSResult.ExecutionTime.Seconds()
-			m.TotalSeconds = result.TTSResult.ExecutionTime.Seconds()
-			if !result.TTSResult.Success {
-				m.ErrorType = "tts_error"
-			}
-		}
-	}
-
-	p.logger.Debug("recordMetrics: sending metric",
-		"unit_id", unit.ID,
-		"book_id", m.BookID,
-		"stage", m.Stage,
-		"cost_usd", m.CostUSD)
-
-	if p.poolType == PoolTypeLLM {
-		writeResult, err := p.sink.SendSync(ctx, defra.WriteOp{
-			Op:         defra.OpCreate,
-			Collection: "Metric",
-			Document:   m.ToMap(),
-		})
-		if err != nil {
-			p.logger.Warn("recordMetrics: failed to persist metric",
-				"unit_id", unit.ID,
-				"error", err)
-		} else {
-			result.MetricDocID = writeResult.DocID
-		}
-	} else {
-		// Intentionally untracked: audit trail record, not mutable state.
-		p.sink.Send(defra.WriteOp{
-			Op:         defra.OpCreate,
-			Collection: "Metric",
-			Document:   m.ToMap(),
-			Source:     "ProviderPool:recordMetric",
-		})
-	}
-
-	// Also record LLM call for traceability (Phase 2)
-	if p.poolType == PoolTypeLLM && result.ChatResult != nil {
-		opts := llmcall.RecordOptions{
-			BookID:    unit.Metrics.BookID,
-			PageID:    unit.Metrics.PageID,
-			JobID:     unit.JobID,
-			PromptKey: unit.Metrics.PromptKey,
-			PromptCID: unit.Metrics.PromptCID,
-			Logger:    p.logger,
-		}
-		call := llmcall.FromChatResult(result.ChatResult, opts)
-		if call != nil {
-			// Intentionally untracked: audit trail record, not mutable state.
-			p.sink.Send(defra.WriteOp{
-				Op:         defra.OpCreate,
-				Collection: "LLMCall",
-				Document:   call.ToMap(),
-				Source:     "ProviderPool:recordLLMCall",
-			})
-			p.logger.Debug("recordMetrics: recorded LLM call",
-				"call_id", call.ID,
-				"prompt_key", opts.PromptKey)
-		}
 	}
 }
 

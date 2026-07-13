@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
@@ -81,9 +82,12 @@ var OpRegistry = map[OpType]*OpConfig{
 			book.setTocPageRangeUnlocked(0, 0)
 		},
 		ResetDBFields: map[string]any{
-			"toc_found":  false,
-			"start_page": nil,
-			"end_page":   nil,
+			"toc_found":              false,
+			"start_page":             nil,
+			"end_page":               nil,
+			"finder_override":        false,
+			"finder_override_reason": nil,
+			"finder_override_at":     nil,
 		},
 	},
 	OpTocExtract: {
@@ -114,16 +118,22 @@ var OpRegistry = map[OpType]*OpConfig{
 		DocIDSource: func(b *BookState) string { return b.TocDocID() },
 		CascadesTo:  []OpType{OpStructure},
 		AgentTypes:  []string{AgentTypeGapInvestigator, AgentTypeChapterFinder},
+		ResetDBFields: map[string]any{
+			"finalize_phase": nil,
+		},
 		ResetMemoryHook: func(book *BookState) {
 			book.finalizePhase = ""
 			book.finalizePatternResult = nil
 			book.entriesToFind = nil
 			book.finalizeGaps = nil
+			book.finalizeEntriesTotal = 0
 			book.finalizeEntriesComplete = 0
 			book.finalizeEntriesFound = 0
+			book.finalizeGapsTotal = 0
 			book.finalizeGapsComplete = 0
 			book.finalizeGapsFixes = 0
 		},
+		ResetHook: resetTocFinalizeHook,
 	},
 	OpStructure: {
 		Collection:  "Book",
@@ -177,7 +187,7 @@ func (b *BookState) OpComplete(op OpType) {
 
 // PersistOpComplete marks operation complete and returns commit CID.
 //
-// Deprecated: Use PersistOpCompleteAsync instead for better latency.
+// Deprecated: Use BookState.PersistOpCompleteAsync instead for better latency.
 func PersistOpComplete(ctx context.Context, book *BookState, op OpType) (string, error) {
 	cfg, ok := OpRegistry[op]
 	if !ok || cfg == nil {
@@ -235,15 +245,6 @@ func PersistOpComplete(ctx context.Context, book *BookState, op OpType) (string,
 	}
 
 	return result.CID, nil
-}
-
-// PersistOpCompleteAsync fires and forgets operation complete status to DB.
-// Delegates to BookState.PersistOpCompleteAsync for fire-and-forget behavior.
-func PersistOpCompleteAsync(ctx context.Context, book *BookState, op OpType) {
-	if book == nil {
-		return
-	}
-	book.PersistOpCompleteAsync(ctx, op)
 }
 
 // OpFail records a failure for the given operation (thread-safe).
@@ -348,7 +349,7 @@ func resetTocExtractHook(ctx context.Context, book *BookState, tocDocID string) 
 		return nil
 	}
 	if book.Store != nil {
-		return deleteCollectionDocsViaStore(ctx, book.Store, "TocEntry", "toc_id", tocDocID)
+		return deleteCollectionDocsViaStore(ctx, book.Store, "TocEntry", "_tocID", tocDocID)
 	}
 	return deleteTocEntries(ctx, tocDocID)
 }
@@ -358,16 +359,90 @@ func resetTocLinkHook(ctx context.Context, book *BookState, tocDocID string) err
 	if tocDocID == "" {
 		return nil
 	}
+	var err error
 	if book.Store != nil {
-		return updateCollectionDocsViaStore(ctx, book.Store, "TocEntry", "toc_id", tocDocID, map[string]any{"actual_page_id": nil})
+		err = updateCollectionDocsViaStore(ctx, book.Store, "TocEntry", "_tocID", tocDocID, map[string]any{
+			"_actual_pageID":        nil,
+			"link_retries":          0,
+			"link_failed":           false,
+			"link_failure_reason":   nil,
+			"link_failed_at":        nil,
+			"link_excluded":         false,
+			"link_exclusion_reason": nil,
+			"link_excluded_at":      nil,
+		})
+	} else {
+		err = clearTocEntryLinks(ctx, tocDocID)
 	}
-	return clearTocEntryLinks(ctx, tocDocID)
+	if err != nil {
+		return err
+	}
+
+	entries, err := reloadTocEntriesAfterLinkReset(ctx, book, tocDocID)
+	if err != nil {
+		return err
+	}
+	book.SetTocEntries(entries)
+
+	if logger := svcctx.LoggerFrom(ctx); logger != nil {
+		logger.Debug("reloaded ToC entries after link reset", "toc_id", tocDocID, "count", len(entries))
+	}
+	return nil
 }
 
-// resetStructureHook deletes all Chapter records for the book.
-func resetStructureHook(ctx context.Context, book *BookState, tocDocID string) error {
-	if book.Store != nil {
-		return deleteCollectionDocsViaStore(ctx, book.Store, "Chapter", "book_id", book.BookID)
+// resetTocFinalizeHook clears the restart checkpoint stored on Book. The
+// standard finalize operation fields and finalize_phase live on ToC, but the
+// pattern result and progress counters live on Book and must be reset with the
+// same operation. Otherwise a restarted job can reuse stale pattern analysis.
+func resetTocFinalizeHook(ctx context.Context, book *BookState, tocDocID string) error {
+	fields := map[string]any{
+		"pattern_analysis_json":     nil,
+		"finalize_entries_total":    0,
+		"finalize_entries_complete": 0,
+		"finalize_entries_found":    0,
+		"finalize_gaps_total":       0,
+		"finalize_gaps_complete":    0,
+		"finalize_gaps_fixes":       0,
 	}
-	return deleteChapters(ctx, book.BookID)
+	writeOp := defra.WriteOp{
+		Collection: "Book",
+		DocID:      book.BookID,
+		Document:   fields,
+		Op:         defra.OpUpdate,
+	}
+	if book.Store != nil {
+		if _, err := book.Store.SendSync(ctx, writeOp); err != nil {
+			return fmt.Errorf("failed to clear ToC finalize checkpoint: %w", err)
+		}
+		return nil
+	}
+	if err := SendToSinkSync(ctx, writeOp); err != nil {
+		return fmt.Errorf("failed to clear ToC finalize checkpoint: %w", err)
+	}
+	return nil
+}
+
+func reloadTocEntriesAfterLinkReset(ctx context.Context, book *BookState, tocDocID string) ([]*toc_entry_finder.TocEntry, error) {
+	if svcctx.DefraClientFrom(ctx) != nil {
+		entries, err := LoadTocEntries(ctx, tocDocID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to reload ToC entries after link reset: %w", err)
+		}
+		return entries, nil
+	}
+	if book.Store != nil {
+		entries, err := loadTocEntriesViaStore(ctx, book.Store, tocDocID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to reload ToC entries after link reset: %w", err)
+		}
+		return entries, nil
+	}
+	return nil, fmt.Errorf("cannot reload ToC entries after link reset: no Defra client or state store")
+}
+
+// resetStructureHook preserves Chapter records so a rerun can update them by
+// stable identity. The structure build prunes stale rows after the new skeleton
+// has been persisted successfully.
+func resetStructureHook(ctx context.Context, book *BookState, tocDocID string) error {
+	return nil
 }

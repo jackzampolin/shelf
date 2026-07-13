@@ -2,8 +2,11 @@ package defra
 
 import (
 	"context"
+	"reflect"
 	"testing"
 	"time"
+
+	"github.com/docker/docker/api/types/container"
 
 	"github.com/jackzampolin/shelf/internal/testutil"
 )
@@ -12,7 +15,7 @@ func TestDockerConfig_Defaults(t *testing.T) {
 	if DefaultContainerName != "shelf-defra" {
 		t.Errorf("unexpected default container name: %s", DefaultContainerName)
 	}
-	if DefaultImage != "sourcenetwork/defradb:latest" {
+	if DefaultImage != "sourcenetwork/defradb:1.0.0-rc1" {
 		t.Errorf("unexpected default image: %s", DefaultImage)
 	}
 	if DefaultPort != "9181" {
@@ -86,6 +89,37 @@ func TestGenerateContainerName_UniquePerPath(t *testing.T) {
 
 	if name1 == name2 {
 		t.Errorf("GenerateContainerName() should produce unique names: %q == %q", name1, name2)
+	}
+}
+
+func TestFindContainerByExactName(t *testing.T) {
+	containers := []container.Summary{
+		{ID: "benchmark", Names: []string{"/shelf-defra-am-hist"}},
+		{ID: "primary", Names: []string{"/shelf-defra"}},
+	}
+
+	got, ok := findContainerByExactName(containers, "shelf-defra")
+	if !ok || got.ID != "primary" {
+		t.Fatalf("find exact primary = %#v,%v, want primary", got, ok)
+	}
+	got, ok = findContainerByExactName(containers, "shelf-defra-am-hist")
+	if !ok || got.ID != "benchmark" {
+		t.Fatalf("find exact benchmark = %#v,%v, want benchmark", got, ok)
+	}
+	if got, ok := findContainerByExactName(containers, "shelf"); ok {
+		t.Fatalf("substring lookup unexpectedly matched %#v", got)
+	}
+}
+
+func TestDefraHealthcheckUsesAvailableImageTools(t *testing.T) {
+	health := defraHealthcheck()
+	wantPrefix := []string{"CMD", "bash", "-c"}
+	if len(health.Test) != 4 || !reflect.DeepEqual(health.Test[:3], wantPrefix) {
+		t.Fatalf("healthcheck command = %#v, want prefix %#v and script", health.Test, wantPrefix)
+	}
+	if health.Interval != 2*time.Second || health.Timeout != 5*time.Second ||
+		health.Retries != 10 || health.StartPeriod != 5*time.Second {
+		t.Fatalf("unexpected healthcheck timing: %#v", health)
 	}
 }
 

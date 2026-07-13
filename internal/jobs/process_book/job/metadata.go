@@ -15,7 +15,8 @@ func (j *Job) CreateMetadataWorkUnit(ctx context.Context) *jobs.WorkUnit {
 	unit, unitID := common.CreateMetadataWorkUnit(ctx, j)
 	if unit != nil {
 		j.RegisterWorkUnit(unitID, WorkUnitInfo{
-			UnitType: WorkUnitTypeMetadata,
+			UnitType:   WorkUnitTypeMetadata,
+			RetryCount: j.Book.GetMetadataState().Retries(),
 		})
 	}
 	return unit

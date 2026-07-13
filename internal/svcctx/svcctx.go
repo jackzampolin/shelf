@@ -20,6 +20,7 @@ import (
 // Components extract what they need via the individual extractors.
 type Services struct {
 	DefraClient    *defra.Client
+	DefraManager   *defra.DockerManager
 	DefraSink      *defra.Sink
 	JobManager     *jobs.Manager
 	Registry       *providers.Registry
@@ -50,6 +51,14 @@ func ServicesFrom(ctx context.Context) *Services {
 func DefraClientFrom(ctx context.Context) *defra.Client {
 	if s := ServicesFrom(ctx); s != nil {
 		return s.DefraClient
+	}
+	return nil
+}
+
+// DefraManagerFrom extracts the DefraDB container manager from context.
+func DefraManagerFrom(ctx context.Context) *defra.DockerManager {
+	if s := ServicesFrom(ctx); s != nil {
+		return s.DefraManager
 	}
 	return nil
 }
